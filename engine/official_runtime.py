@@ -119,6 +119,107 @@ def _actor_index(obs: dict) -> int:
     return int(actor)
 
 
+def _is_impossible_select(select: dict) -> bool:
+    """The one known-crashing wire state: a mandatory (minCount=1) MAIN
+    select (type=0) in TO_HAND context (7) with zero legal options. Neither
+    [] nor any other observed submission has been shown safe for this state
+    -- see artifacts/runtime_contract/impossible_select/ for the forensic
+    bundle captured the first time this actually recurs live.
+    """
+    return (
+        select.get("type") == 0
+        and select.get("context") == 7
+        and select.get("minCount") == 1
+        and select.get("maxCount") == 1
+        and len(select.get("option") or []) == 0
+    )
+
+
+_IMPOSSIBLE_SELECT_CAPTURED = False
+
+
+def _capture_impossible_select_evidence(
+    observation: dict,
+    action: list[int],
+    prev_observation: dict | None,
+    prev_action: list[int] | None,
+    *,
+    output_dir: Path | None = None,
+) -> None:
+    """Fired automatically the first time _is_impossible_select() matches in
+    any process. Writes the full raw/converted/diff bundle the runtime
+    contract audit requires, then tries the real battle_select(action) and
+    records whatever happens (success or full traceback) -- this call is
+    the only thing that can determine ADAPTER_BUG vs
+    ENGINE_INVALID_OBSERVATION vs ENGINE_TARGET_ENUMERATION_BUG, and it must
+    not be skipped or short-circuited by a try/except upstream swallowing it.
+    """
+    global _IMPOSSIBLE_SELECT_CAPTURED
+    if _IMPOSSIBLE_SELECT_CAPTURED:
+        return
+    _IMPOSSIBLE_SELECT_CAPTURED = True
+    import dataclasses
+    import traceback as _tb
+
+    out = output_dir or (Path(__file__).resolve().parents[1] / "artifacts" / "runtime_contract" / "impossible_select")
+    out.mkdir(parents=True, exist_ok=True)
+    select = observation.get("select") or {}
+
+    (out / "raw_observation.json").write_text(json.dumps(observation, indent=2, ensure_ascii=False, default=str))
+    (out / "raw_select.json").write_text(json.dumps(select, indent=2, ensure_ascii=False, default=str))
+    (out / "previous_action.json").write_text(json.dumps({
+        "previous_action": prev_action,
+        "previous_observation_select": (prev_observation.get("select") if prev_observation else None),
+    }, indent=2, ensure_ascii=False, default=str))
+    (out / "effect_context.json").write_text(json.dumps({
+        "effect": select.get("effect"),
+        "contextCard": select.get("contextCard"),
+        "deck": select.get("deck"),
+    }, indent=2, ensure_ascii=False, default=str))
+
+    try:
+        from black_engine.official_observation import normalize_official_observation
+        from black_engine.truth import build_truth_state
+        truth = build_truth_state(normalize_official_observation(observation))
+        our_converted = {
+            "select_type": truth.select_type, "select_context": truth.select_context,
+            "min_count": truth.min_count, "max_count": truth.max_count,
+            "option_count": len(truth.options), "actor": truth.actor,
+        }
+    except Exception as e:
+        our_converted = {"conversion_error": repr(e)}
+
+    try:
+        import cg.api as capi
+        official_dc = capi.to_observation_class(observation)
+        official_select = dataclasses.asdict(official_dc).get("select") if dataclasses.is_dataclass(official_dc) else None
+    except Exception as e:
+        official_select = {"conversion_error": repr(e)}
+
+    (out / "converted_select.json").write_text(json.dumps({
+        "our_truth_state": our_converted, "official_select": official_select,
+    }, indent=2, ensure_ascii=False, default=str))
+
+    (out / "conversion_diff.json").write_text(json.dumps({
+        "raw.type": select.get("type"), "converted.type": our_converted.get("select_type"),
+        "official.type": (official_select or {}).get("type") if isinstance(official_select, dict) else None,
+        "raw.context": select.get("context"), "converted.context": our_converted.get("select_context"),
+        "official.context": (official_select or {}).get("context") if isinstance(official_select, dict) else None,
+        "raw.option_count": len(select.get("option") or []), "converted.option_count": our_converted.get("option_count"),
+        "official.option_count": len((official_select or {}).get("option") or []) if isinstance(official_select, dict) else None,
+        "raw.effect": select.get("effect"),
+        "official.effect": (official_select or {}).get("effect") if isinstance(official_select, dict) else None,
+        "raw.contextCard": select.get("contextCard"),
+        "official.contextCard": (official_select or {}).get("contextCard") if isinstance(official_select, dict) else None,
+        "raw.deck": select.get("deck"),
+        "official.deck": (official_select or {}).get("deck") if isinstance(official_select, dict) else None,
+    }, indent=2, ensure_ascii=False, default=str))
+
+    # NOTE: does not call battle_select itself -- the caller (run_battle's
+    # main loop) makes the one real call and records the outcome via its
+    # own try/except, so this function only captures the *pre*-call state.
+
+
 def _legal_action(obs: dict, action: Any) -> list[int]:
     normalized = normalize_selection(obs, action)
     if normalized is None:
@@ -178,6 +279,8 @@ def run_battle(
     start_data: Any = None
     error: str | None = None
     steps = 0
+    prev_observation: dict | None = None
+    prev_action: list[int] | None = None
     try:
         observation, start_data = _start_observation(game, list(deck0), list(deck1))
         while steps < max_steps:
@@ -206,7 +309,20 @@ def run_battle(
                     "decision_ms": round(decision_ms, 6),
                 }
             )
-            observation = game.battle_select(action)
+            if _is_impossible_select(select):
+                _capture_impossible_select_evidence(observation, action, prev_observation, prev_action)
+                out = Path(__file__).resolve().parents[1] / "artifacts" / "runtime_contract" / "impossible_select"
+                try:
+                    next_observation = game.battle_select(action)
+                    (out / "traceback.txt").write_text(f"battle_select({action!r}) SUCCEEDED -- no exception")
+                except Exception:
+                    import traceback as _tb2
+                    (out / "traceback.txt").write_text(_tb2.format_exc())
+                    raise
+            else:
+                next_observation = game.battle_select(action)
+            prev_observation, prev_action = observation, action
+            observation = next_observation
             if not isinstance(observation, dict):
                 raise RuntimeError(
                     f"battle_select returned invalid observation: {type(observation)!r}"

@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 from engine.official_runtime import run_battle
@@ -91,3 +92,60 @@ def test_official_runner_rejects_non_60_deck():
         assert "60" in str(exc)
     else:
         raise AssertionError("non-60 deck was accepted")
+
+
+def test_is_impossible_select_matches_exact_captured_signature():
+    from engine.official_runtime import _is_impossible_select
+
+    impossible = {"type": 0, "context": 7, "minCount": 1, "maxCount": 1, "option": []}
+    assert _is_impossible_select(impossible) is True
+
+    # Any one field differing must not match -- this predicate must stay
+    # narrowly scoped to the one signature actually observed crashing.
+    assert _is_impossible_select({**impossible, "type": 1}) is False
+    assert _is_impossible_select({**impossible, "context": 8}) is False
+    assert _is_impossible_select({**impossible, "minCount": 0}) is False
+    assert _is_impossible_select({**impossible, "maxCount": 2}) is False
+    assert _is_impossible_select({**impossible, "option": [{}]}) is False
+
+
+def test_capture_impossible_select_evidence_writes_full_bundle(tmp_path):
+    import engine.official_runtime as runtime_module
+    from engine.official_runtime import _capture_impossible_select_evidence
+
+    # Reset the module-level once-only guard so this test is independent of
+    # test execution order / prior captures within the same process.
+    runtime_module._IMPOSSIBLE_SELECT_CAPTURED = False
+
+    observation = {
+        "current": {"yourIndex": 1, "turn": 20, "result": -1, "players": [{}, {
+            "active": [], "bench": [], "hand": None, "handCount": 0,
+            "discard": [], "prize": [None] * 6, "deckCount": 30,
+        }]},
+        "select": {"type": 0, "context": 7, "minCount": 1, "maxCount": 1, "option": [],
+                   "effect": None, "contextCard": None, "deck": None},
+        "logs": [],
+    }
+    prev_observation = {"current": {"yourIndex": 1, "turn": 20}, "select": {"type": 1, "context": 4}}
+
+    _capture_impossible_select_evidence(
+        observation, [], prev_observation, [0], output_dir=tmp_path
+    )
+
+    for name in (
+        "raw_observation.json", "raw_select.json", "previous_action.json",
+        "effect_context.json", "converted_select.json", "conversion_diff.json",
+    ):
+        assert (tmp_path / name).is_file(), f"missing {name}"
+
+    diff = json.loads((tmp_path / "conversion_diff.json").read_text())
+    assert diff["raw.type"] == 0
+    assert diff["raw.context"] == 7
+    assert diff["raw.option_count"] == 0
+
+    # The once-only guard must prevent a second call in the same process
+    # from silently overwriting first-occurrence evidence.
+    (tmp_path / "raw_select.json").write_text("SENTINEL")
+    _capture_impossible_select_evidence(observation, [], prev_observation, [0], output_dir=tmp_path)
+    assert (tmp_path / "raw_select.json").read_text() == "SENTINEL"
+    runtime_module._IMPOSSIBLE_SELECT_CAPTURED = False
