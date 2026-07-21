@@ -1,3 +1,5 @@
+from collections import Counter
+
 from black_engine.dragapult_worldline import DragapultWorldlinePolicy
 from black_engine.policy import BOSS, CRISPIN, DRAKLOAK, DUSKNOIR, SWITCH, T_ABILITY, T_EVOLVE, T_PLAY, T_RETREAT
 
@@ -18,7 +20,7 @@ def context(**overrides):
         "deck_count": 20,
         "hand_ids": (),
         "discard_ids": (),
-        "counts": {},
+        "counts": Counter(),
         "mine": [],
         "theirs": [{"id": 999, "hp": 300, "maxHp": 300}],
         "dragapult_lines": [{"id": 121, "energyCards": []}],
