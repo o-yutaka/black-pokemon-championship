@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "trained": false,
+  "source": "untrained-neutral",
+  "q_values": {},
+  "visits": {}
+}
