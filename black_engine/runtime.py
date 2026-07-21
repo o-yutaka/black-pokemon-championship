@@ -13,11 +13,20 @@ class RuntimeDecision:
     error: str | None = None
 
 
+def _is_deck_request(obs: Any) -> bool:
+    return (
+        isinstance(obs, dict)
+        and obs.get("current") is None
+        and obs.get("select") is None
+    )
+
+
 def _selection_contract(obs: dict) -> tuple[int, int, int]:
     select = obs.get("select") or {}
     options = select.get("option") or []
     minimum = int(select.get("minCount", 0) or 0)
-    maximum = int(select.get("maxCount", minimum) or minimum)
+    maximum_raw = select.get("maxCount", minimum)
+    maximum = minimum if maximum_raw is None else int(maximum_raw)
     return minimum, maximum, len(options)
 
 
@@ -60,8 +69,26 @@ class SubmissionRuntime:
 
     def decide(self, obs: dict | None, configuration=None) -> RuntimeDecision:
         started = time.perf_counter()
-        if not isinstance(obs, dict) or obs.get("select") is None:
-            return RuntimeDecision(list(self.deck), "deck", (time.perf_counter() - started) * 1000.0)
+        if _is_deck_request(obs):
+            return RuntimeDecision(
+                list(self.deck),
+                "deck",
+                (time.perf_counter() - started) * 1000.0,
+            )
+        if not isinstance(obs, dict):
+            return RuntimeDecision(
+                [],
+                "invalid_observation",
+                (time.perf_counter() - started) * 1000.0,
+                "observation_not_dict",
+            )
+        if obs.get("select") is None:
+            return RuntimeDecision(
+                [],
+                "no_select",
+                (time.perf_counter() - started) * 1000.0,
+            )
+
         error = None
         try:
             proposed = self.policy.agent(obs, configuration)
@@ -72,7 +99,13 @@ class SubmissionRuntime:
             error = "timeout" if elapsed > self.budget_ms else "invalid_selection"
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"
-        return RuntimeDecision(deterministic_fallback(obs), "fallback", (time.perf_counter() - started) * 1000.0, error)
+
+        return RuntimeDecision(
+            deterministic_fallback(obs),
+            "fallback",
+            (time.perf_counter() - started) * 1000.0,
+            error,
+        )
 
     def agent(self, obs: dict | None, configuration=None) -> list[int]:
         return self.decide(obs, configuration).selection
