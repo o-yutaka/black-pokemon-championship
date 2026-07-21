@@ -35,8 +35,52 @@ def test_official_runner_normalizes_and_finishes():
     assert report["result"] == 0
     assert report["steps"] == 1
     assert report["error"] is None
+    assert report["decision_ms_total"] >= 0
+    assert report["decision_ms_max"] >= 0
     assert game.actions == [[0]]
     assert game.finished is True
+
+
+def test_official_runner_exposes_read_only_decision_evidence():
+    game = FakeGame()
+    deck = list(range(60))
+    observed = []
+
+    def agent(obs, configuration=None):
+        return 0
+
+    def observer(obs, actor, raw_action, action, decision_ms):
+        observed.append(
+            {
+                "actor": actor,
+                "raw_action": raw_action,
+                "action": action,
+                "decision_ms": decision_ms,
+                "context": obs["select"]["context"],
+            }
+        )
+
+    report = run_battle(
+        deck,
+        agent,
+        deck,
+        agent,
+        game_module=game,
+        decision_observer=observer,
+    )
+
+    assert report["completed"] is True
+    assert observed == [
+        {
+            "actor": 0,
+            "raw_action": 0,
+            "action": [0],
+            "decision_ms": observed[0]["decision_ms"],
+            "context": 41,
+        }
+    ]
+    assert observed[0]["decision_ms"] >= 0
+    assert game.actions == [[0]]
 
 
 def test_official_runner_rejects_non_60_deck():
