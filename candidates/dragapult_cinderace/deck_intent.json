@@ -1,11 +1,14 @@
 {
-  "version": 1,
+  "version": 2,
   "candidate": "dragapult_cinderace",
-  "verdict": "CHAMPIONSHIP_CANDIDATE_HOLD_FOR_PAIRED_EVAL",
+  "name": "BLACK Phantom Turbo Final",
+  "verdict": "COMPLETE_IMPLEMENTATION_HOLD_FOR_OFFICIAL_ENGINE_EVAL",
+  "source_of_truth": "ptcg_engine source + CABT official wrapper contracts",
   "core": {
     "primary_attacker": "Dragapult ex 121",
+    "persistent_draw_and_lineage_engine": "Drakloak 120",
     "setup_accelerator": "Cinderace 666",
-    "spread_converter": "Dusknoir 133 / Dusclops 132",
+    "spread_converter": "Dusclops 132 / Dusknoir 133",
     "one_prize_finisher": "Azelf 217",
     "ace_spec": "Prime Catcher 1088"
   },
@@ -13,44 +16,72 @@
     "pokemon": 25,
     "trainers": 21,
     "energy": 14,
+    "lines": {
+      "Scorbunny-Cinderace": "1-4",
+      "Dreepy-Drakloak-Dragapult": "4-3-4",
+      "Duskull-Dusclops-Dusknoir": "3-2-2",
+      "Azelf": 2
+    },
     "basic_fire": 6,
     "basic_psychic": 8
   },
+  "count_decisions": [
+    "Drakloak is raised from two to three because its Ability is the persistent hand-quality engine and the non-Candy path to the second Dragapult.",
+    "Duskull is reduced from four to three because the bomb line is a converter, not the main attacker, and four copies overfill the Bench while competing for Rare Candy.",
+    "Dragapult remains 4-3-4 to survive Prize loss and sustain two attackers.",
+    "Dusclops and Dusknoir remain 2-2 because 50 and 130 are different Prize-routing tools; Dusclops must not always be skipped.",
+    "Energy remains Fire 6 / Psychic 8: Phantom Dive requires both colours, Psychic also activates Azelf and is the safer surplus colour."
+  ],
   "opening_plan": [
     "Prefer going second when Cinderace is available during setup.",
-    "Use Turbo Flare to fund Dragapult/Azelf Bench routes, never as an isolated 50-damage attack.",
-    "Buddy-Buddy Poffin establishes Dreepy plus Duskull/Azelf before committing evolution resources."
+    "Use Turbo Flare only when it accelerates a concrete Dragapult or Azelf route.",
+    "Buddy-Buddy Poffin establishes Dreepy plus Duskull or Azelf without filling the Bench blindly.",
+    "Do not spend Rare Candy on the bomb line while the first Dragapult attack route is incomplete."
   ],
   "midgame_plan": [
-    "Establish Dragapult through Drakloak or Rare Candy without consuming every Candy on one line.",
-    "Phantom Dive creates active pressure and a distributed counter reservoir.",
-    "Use Dusknoir/Dusclops only when the self-KO advances Prize mapping or creates a terminal sequence."
+    "Use Drakloak every legal turn before irreversible hand commitments when its selection can improve the route.",
+    "Complete the first Dragapult with one Fire and one Psychic, then reserve surplus Energy for the second attacker.",
+    "Phantom Dive allocates six counters one at a time toward KO, 50, 130 and future 200-damage breakpoints.",
+    "Dusclops 50 is retained for exact Prize conversion; Dusknoir 130 is used only when self-KO advances the Prize map or prevents a terminal loss.",
+    "Azelf receives Psychic Energy only when accumulated opposing damage creates a concrete one-Prize finisher route."
   ],
   "endgame_plan": [
     "Prime Catcher is the preferred Cinderace-to-Dragapult handoff plus gust action.",
-    "Azelf converts total opposing damage counters into a one-Prize lethal route.",
-    "Boss's Orders is reserved for a confirmed Prize conversion rather than generic disruption."
+    "Azelf converts the opposing damage reservoir into a one-Prize lethal route.",
+    "Boss's Orders is reserved for confirmed Prize conversion.",
+    "Do not attach duplicate colours to a ready Dragapult unless Search proves immediate retreat or attack value."
   ],
+  "effect_contracts": {
+    "Drakloak": "effect.id=120 card selection is scored by live route value, not raw card order.",
+    "Phantom Dive": "effect.id=121 chooses an opposing Bench target six times; each choice is evaluated against KO and 50/130/200 breakpoints.",
+    "Dusclops": "effect.id=132 selects one opposing Pokemon for five counters after self-KO.",
+    "Dusknoir": "effect.id=133 selects one opposing Pokemon for thirteen counters after self-KO.",
+    "Crispin": "effect.id=1198 selects different Basic Energy and attaches to the exact individual line missing that colour.",
+    "Rare Candy": "Evolve options are resolved from evolution card plus inPlay target; Dragapult attack readiness outranks nonterminal Dusknoir development."
+  },
   "search_package": {
     "Buddy-Buddy Poffin": 4,
     "Rare Candy": 3,
     "Tera Orb": 2,
     "Poke Pad": 1,
     "Dawn": 2,
-    "reason": "Replace discard-heavy generic search with role-specific tutors for two Stage 2 lines."
+    "reason": "Role-specific search supports two Stage 2 lines while Drakloak supplies repeatable hand quality without discard-heavy generic search."
   },
-  "rejected_from_baseline": [
-    "Three Ultra Ball package: too much hand destruction for a deck carrying setup-only Cinderace copies.",
-    "Two Rare Candy package: insufficient shared transition capacity for Dragapult and Dusknoir.",
-    "Judge/Xerosic main-deck slots before consistency is proven.",
-    "Special Energy that cannot pay both colored Phantom Dive requirements."
-  ],
   "promotion_gate": {
     "official_engine_required": true,
+    "static_and_focused_tests": "PASS required",
     "paired_seats": true,
     "minimum_games_per_live_cell": 500,
     "crashes": 0,
     "invalid_actions": 0,
-    "wilson_ci_lower_bound_above_baseline": true
+    "required_transition_captures": [
+      "Drakloak selection",
+      "Crispin two-energy sequence",
+      "Rare Candy exact target",
+      "Phantom Dive six counter choices",
+      "Dusclops 50 target",
+      "Dusknoir 130 target"
+    ],
+    "performance_claim": "forbidden until current-head official evaluation"
   }
 }
