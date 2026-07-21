@@ -17,6 +17,7 @@ BLACK_ENGINE_FILE_ORDER = (
     "__init__.py",
     "policy.py",
     "dragapult_worldline.py",
+    "dragapult_worldline_v2.py",
     "runtime.py",
     "support.py",
     "worldline/__init__.py",
