@@ -84,6 +84,19 @@ def main() -> int:
         report = validate_deck(deck, set(manifest["ace_spec_ids"]))
         if not report["ok"]:
             raise SystemExit(report["violations"])
+
+        if name == CANDIDATE:
+            legacy_entry = (directory / "main.py").read_text(encoding="utf-8")
+            if "NON_CANONICAL_ENTRYPOINT" not in legacy_entry:
+                raise SystemExit("Dragapult candidate directory must reject direct execution")
+            reports.append({
+                **report,
+                "candidate": name,
+                "handshake": "BLOCKED_NON_CANONICAL_USE_ROOT_SUBMISSION",
+                "official_engine": "UNEXECUTED",
+            })
+            continue
+
         spec = importlib.util.spec_from_file_location(f"{name}_main", directory / "main.py")
         module = importlib.util.module_from_spec(spec)
         assert spec and spec.loader
