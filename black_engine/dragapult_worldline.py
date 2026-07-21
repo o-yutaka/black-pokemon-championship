@@ -9,10 +9,12 @@ from .policy import (
     CRISPIN,
     DRAKLOAK,
     DRAGAPULT_EX,
+    FIRE_ENERGY,
     DUSCLOPS,
     DUSKNOIR,
     PHANTOM_DIVE,
     PRIME_CATCHER,
+    PSYCHIC_ENERGY,
     SWITCH,
     T_ABILITY,
     T_ATTACK,
@@ -25,7 +27,10 @@ from .policy import (
 from .policy import DragapultPolicy
 from .support import option_attack_id
 from .worldline import CandidatePlan, CausalJudge, WorldlineResult, build_board_vision
+from .worldline.model import PendingPlan, PlanStep
 from .worldline.pending import PendingPlanStore
+
+CTX_SWITCH, CTX_TO_ACTIVE = 3, 4
 
 
 def _remaining_prizes(player: dict[str, Any]) -> int | None:
@@ -66,6 +71,15 @@ class DragapultWorldlinePolicy(DragapultPolicy):
                 "opponent_prizes": _remaining_prizes(theirs),
                 "active_serial": vision.active_serial,
                 "opponent_active_serial": vision.opponent_active_serial,
+                "turn": int((ctx["current"] or {}).get("turn", (ctx["current"] or {}).get("turnCount", 0)) or 0),
+                "ready_bench_dragapult_serials": tuple(
+                    ref.serial
+                    for ref in vision.mine
+                    if ref.area == 5
+                    and ref.card_id == DRAGAPULT_EX
+                    and FIRE_ENERGY in ref.energy_card_ids
+                    and PSYCHIC_ENERGY in ref.energy_card_ids
+                ),
             }
         )
         return ctx
@@ -219,7 +233,85 @@ class DragapultWorldlinePolicy(DragapultPolicy):
             metadata={"legacy_score": base, "card_id": cid, "option_type": kind},
         )
 
+    @staticmethod
+    def _option_serial(option: dict, ctx: dict) -> int | None:
+        player_index = option.get("playerIndex", ctx["me"])
+        if type(player_index) is not int:
+            player_index = ctx["me"]
+        area = option.get("inPlayArea", option.get("area"))
+        slot = option.get("inPlayIndex", option.get("index"))
+        if type(area) is not int or type(slot) is not int or area not in {4, 5}:
+            return None
+        players = ctx["current"].get("players") if isinstance(ctx["current"], dict) else None
+        if not isinstance(players, list) or not 0 <= player_index < len(players):
+            return None
+        player = players[player_index] if isinstance(players[player_index], dict) else {}
+        zone = player.get("active" if area == 4 else "bench")
+        if not isinstance(zone, list) or not 0 <= slot < len(zone) or not isinstance(zone[slot], dict):
+            return None
+        serial = zone[slot].get("serial")
+        return serial if type(serial) is int else None
+
+    def _pending_choice(self, options: list, ctx: dict) -> int | None:
+        pending = self.pending.get()
+        if pending is None:
+            return None
+        bound_turn = pending.bindings.get("turn")
+        if type(bound_turn) is int and bound_turn != ctx.get("turn"):
+            self.pending.invalidate("turn_changed")
+            return None
+        step = pending.step
+        if step is None:
+            self.pending.clear()
+            return None
+        for index, option in enumerate(options):
+            if not isinstance(option, dict):
+                continue
+            kind = option.get("type")
+            cid = _resolved_card(option, ctx)
+            if step.expected_type is not None and kind != step.expected_type:
+                continue
+            if step.card_id is not None and cid != step.card_id:
+                continue
+            if step.attack_id is not None and option_attack_id(option) != step.attack_id:
+                continue
+            if step.target_serial is not None and self._option_serial(option, ctx) != step.target_serial:
+                continue
+            pending.advance()
+            self.last_runner_id = f"PENDING:{pending.candidate.plan_id}:{step.name}"
+            if pending.status == "COMPLETE":
+                self.pending.clear()
+            return index
+        return None
+
+    def _reserve_handoff(self, chosen: WorldlineResult, option: dict, ctx: dict) -> None:
+        if chosen.plan.plan_id != "CINDERACE_HANDOFF":
+            return
+        if _resolved_card(option, ctx) != SWITCH:
+            return
+        serials = ctx.get("ready_bench_dragapult_serials") or ()
+        if not serials:
+            return
+        serial = int(serials[0])
+        candidate = CandidatePlan(
+            plan_id="SWITCH_HANDOFF_PHANTOM",
+            goal="move the exact ready Dragapult active and complete Phantom Dive",
+            root_action_index=chosen.plan.root_action_index,
+            steps=(
+                PlanStep(name="select_ready_dragapult", target_serial=serial),
+                PlanStep(name="attack_phantom", expected_type=T_ATTACK, card_id=DRAGAPULT_EX, attack_id=PHANTOM_DIVE),
+            ),
+            reserved_serials=(serial,),
+            reserved_card_ids=(SWITCH, DRAGAPULT_EX),
+            abort_conditions=("target_serial_missing", "turn_changed", "phantom_unavailable"),
+            evidence=(f"ready_dragapult_serial={serial}",),
+        )
+        self.pending.set(PendingPlan(candidate=candidate, bindings={"turn": int(ctx.get("turn", 0))}))
+
     def choose_single(self, options: list, context: dict) -> int:
+        pending = self._pending_choice(options, context)
+        if pending is not None:
+            return pending
         results = [
             self._plan_for_option(index, option, context)
             for index, option in enumerate(options)
@@ -227,4 +319,7 @@ class DragapultWorldlinePolicy(DragapultPolicy):
         ]
         chosen = self.judge.choose(results)
         self.last_runner_id = chosen.plan.plan_id
+        chosen_option = options[chosen.plan.root_action_index]
+        if isinstance(chosen_option, dict):
+            self._reserve_handoff(chosen, chosen_option, context)
         return chosen.plan.root_action_index
