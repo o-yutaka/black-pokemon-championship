@@ -1,0 +1,42 @@
+{
+  "candidate_id": "mewtwo_spidops_v2_1_xerosic",
+  "title": "Team Rocket's Mewtwo ex / Spidops BLACK v2.1 Xerosic",
+  "status": "CHALLENGER_RUNTIME_WIRING_PENDING_OFFICIAL_GATE",
+  "parent_candidate": "mewtwo_spidops",
+  "policy_module": "black_engine.mewtwo_v21",
+  "deck_file": "deck.csv",
+  "ace_spec_ids": [1159],
+  "expected_total": 60,
+  "deck_diff": {
+    "remove": ["Poké Pad x1", "Brave Bangle x1"],
+    "add": ["Xerosic's Machinations x2"]
+  },
+  "primary_routes": [
+    "V2_FOUR_ROCKET_MEWTWO_ENGINE",
+    "SPIDOPS_RENEWABLE_ENERGY_RESERVOIR",
+    "MINIMUM_ERASURE_BALL_DISCARD",
+    "XEROSIC_POST_DRAW_HAND_COMPRESSION"
+  ],
+  "xerosic_contract": {
+    "card_id": 1197,
+    "effect": "Opponent discards until three cards remain.",
+    "priority_inputs": [
+      "opponent_hand_count",
+      "public_Alakazam_or_Dudunsparce_engine",
+      "recent_Lillies_Determination_log",
+      "exact_Mewtwo_terminal_available"
+    ]
+  },
+  "forbidden": [
+    "OVERWRITE_V2",
+    "PROMOTE_WITHOUT_OFFICIAL_ENGINE_EVIDENCE",
+    "PLAY_XEROSIC_INTO_THREE_OR_FEWER_CARDS",
+    "PLAY_XEROSIC_OVER_EXACT_TERMINAL"
+  ],
+  "remaining_gates": [
+    "static gate",
+    "official engine smoke",
+    "Alakazam A/B",
+    "Crustle Dragapult Garchomp Grimmsnarl regression pool"
+  ]
+}
