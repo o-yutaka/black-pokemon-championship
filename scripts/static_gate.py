@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import json
-import os
-import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 from pathlib import Path
 
@@ -14,31 +13,81 @@ if str(ROOT) not in sys.path:
 
 
 def main() -> int:
-    from submission_contract import REQUIRED_CG_FILES, validate_runtime_layout, validate_source_layout
+    from scripts.build_submission import build, inspect_archive
+    from submission_contract import REQUIRED_CG_FILES, validate_archive_layout, validate_source_layout
 
     source = validate_source_layout(ROOT)
     with tempfile.TemporaryDirectory(prefix="dragapult_submission_gate_") as raw:
-        staged = Path(raw)
-        for name in ("main.py", "deck.csv", "submission_contract.py"):
-            shutil.copy2(ROOT / name, staged / name)
-        shutil.copytree(ROOT / "black_engine", staged / "black_engine")
-        cg = staged / "cg"
+        temporary = Path(raw)
+        cg = temporary / "cg_source"
         cg.mkdir()
         for name in REQUIRED_CG_FILES:
-            (cg / name).write_bytes(b"x" if name == "libcg.so" else b"")
-        runtime = validate_runtime_layout(staged)
-        code = f"import sys,json; sys.path.insert(0,{str(staged)!r}); import main; print(json.dumps({{'deck':main.agent(None,None),'module':main.__file__}}))"
-        env = os.environ.copy()
-        env["PYTHONPATH"] = str(staged)
-        process = subprocess.run([sys.executable, "-I", "-c", code], cwd=staged, env=env, capture_output=True, text=True)
+            target = cg / name
+            target.write_bytes(b"test-libcg" if name == "libcg.so" else b"# fixture\n")
+
+        archive_path = build(cg, temporary / "submission.tar.gz")
+        archive = inspect_archive(archive_path)
+        if archive["root_entry"] != "main.py":
+            raise RuntimeError("main.py is not the first archive entry")
+
+        extracted = temporary / "extracted"
+        extracted.mkdir()
+        with tarfile.open(archive_path, "r:gz") as bundle:
+            bundle.extractall(extracted, filter="data")
+        runtime = validate_archive_layout(extracted)
+
+        probe = r'''
+import json
+from pathlib import Path
+
+namespace = {"__name__": "submission_bundle"}
+source = Path("main.py").read_text(encoding="utf-8")
+exec(compile(source, "main.py", "exec"), namespace)
+
+step0 = namespace["agent"]({
+    "current": None,
+    "select": None,
+    "search_begin_input": None,
+}, None)
+step1 = namespace["agent"]({
+    "current": {"yourIndex": 0, "players": []},
+    "select": {
+        "context": 0,
+        "minCount": 1,
+        "maxCount": 1,
+        "option": [{"type": 14}],
+    },
+}, None)
+print(json.dumps({"step0": step0, "step1": step1}))
+'''
+        process = subprocess.run(
+            [sys.executable, "-I", "-c", probe],
+            cwd=extracted,
+            capture_output=True,
+            text=True,
+        )
         if process.returncode != 0:
-            raise RuntimeError(f"isolated submission import failed: {process.stderr}")
+            raise RuntimeError(
+                "isolated extracted-bundle execution failed: "
+                + process.stderr
+            )
         payload = json.loads(process.stdout.strip().splitlines()[-1])
-        if len(payload.get("deck", [])) != 60:
+        if len(payload.get("step0", [])) != 60:
             raise RuntimeError("deck handshake failed")
-        if Path(payload["module"]).resolve() != (staged / "main.py").resolve():
-            raise RuntimeError("wrong main.py imported")
-    print(json.dumps({"verdict": "STATIC_GATE_PASS", "source": source, "runtime": runtime}, indent=2))
+        if payload.get("step1") != [0]:
+            raise RuntimeError(f"normal action contract failed: {payload.get('step1')}")
+
+    print(
+        json.dumps(
+            {
+                "verdict": "STATIC_GATE_PASS",
+                "source": source,
+                "runtime": runtime,
+                "archive": archive,
+            },
+            indent=2,
+        )
+    )
     return 0
 
 
