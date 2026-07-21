@@ -23,4 +23,4 @@ def test_garchomp_spiritomb_core():
     assert spiritomb_effective_damage(150,2)==210
     assert garchomp_damage(True,2)==320
     p=GarchompSpiritombPolicy(); c={'active_id':GARCHOMP_EX,'opp_remaining_hp':330,'roserade_count':0}
-    assert p.score_option({'type':T_ATTACK,'name':'Corkscrew Dive'},c) > p.score_option({'type':T_ATTACK,'name':'Draconic Buster'},c)
+    assert p.score_option({'type':T_ATTACK,'attackId':GARCHOMP_CORKSCREW_DIVE},c) > p.score_option({'type':T_ATTACK,'attackId':GARCHOMP_DRACONIC_BUSTER},c)
