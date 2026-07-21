@@ -1,0 +1,59 @@
+{
+  "version": "BLACK_MEWTWO_SPIDOPS_V2_1_XEROSIC",
+  "candidate": "mewtwo_spidops_v2_1_xerosic",
+  "status": "CHALLENGER_FIXED_FOR_ALAKAZAM_AND_REGRESSION_GATE",
+  "total_cards": 60,
+  "parent": "mewtwo_spidops",
+  "diff": {
+    "remove": {"1152": 1, "1175": 1},
+    "add": {"1197": 2}
+  },
+  "counts": {
+    "1": 7,
+    "3": 1,
+    "5": 2,
+    "15": 4,
+    "400": 4,
+    "401": 4,
+    "414": 2,
+    "431": 2,
+    "432": 1,
+    "463": 2,
+    "1094": 3,
+    "1097": 1,
+    "1119": 1,
+    "1134": 4,
+    "1152": 3,
+    "1159": 1,
+    "1197": 2,
+    "1216": 4,
+    "1217": 1,
+    "1218": 3,
+    "1220": 3,
+    "1227": 2,
+    "1257": 3
+  },
+  "intent": {
+    "primary": "Preserve the V2 four-Rocket and renewable Erasure Ball engine.",
+    "secondary": "Compress large opposing hands after Lillie's Determination or Dudunsparce/Alakazam draw chains.",
+    "cut_logic": "Trim one redundant non-Rule-Box search Item and the narrow Brave Bangle damage tool without reducing Basic Pokemon, Rocket density, Energy, recovery, or comeback Supporters."
+  },
+  "xerosic_use": {
+    "high": [
+      "opponent hand is 7 or more",
+      "opponent hand was recently refreshed by Lillie's Determination",
+      "Alakazam or Dudunsparce draw engine is publicly visible"
+    ],
+    "medium": ["opponent hand is 6 with a visible draw engine"],
+    "reject_or_penalize": [
+      "opponent hand is 3 or fewer",
+      "an exact Erasure Ball terminal route is available",
+      "the Supporter action is required for the immediate prize route"
+    ]
+  },
+  "freeze": {
+    "v2_parent_unchanged": true,
+    "production_submission_unchanged": true,
+    "promotion_requires_official_engine": true
+  }
+}
