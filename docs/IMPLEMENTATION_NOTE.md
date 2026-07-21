@@ -1,0 +1,1 @@
+The shared worldline kernel was added before standalone deck branches were split. Deck runtime wiring remains intentionally pending until each branch has deck-specific tests.
