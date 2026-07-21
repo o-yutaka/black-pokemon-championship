@@ -128,3 +128,48 @@ def test_face_down_active_sample_is_restricted_to_pokemon_cards(monkeypatch):
     for seed in range(20):
         sample = belief.sample_hidden(truth, your_full_deck=[1] * 60, rng=random.Random(seed))
         assert sample.opponent_active == (10,)
+
+def test_effect_card_mid_resolution_is_counted_as_visible():
+    # select.effect ("the card activating the effect currently being
+    # processed") for a just-played Supporter/Item is a real card that has
+    # left hand but hasn't landed in discard yet -- e.g. Team Rocket's
+    # Giovanni (1218) triggering its own Switch selection. Captured
+    # verbatim via cg.game.visualize_data() on a live failing state.
+    obs = _setup_observation([None], my_deck_count=46)
+    obs["select"] = {
+        "type": 3, "context": 3, "minCount": 1, "maxCount": 1,
+        "option": [{"type": 3, "area": 5, "index": 0, "playerIndex": 0}],
+        "effect": {"id": 1218, "serial": 39, "playerIndex": 0},
+    }
+    truth = build_truth_state(obs)
+    belief = BayesianBeliefModel((ArchetypeTemplate("oracle", tuple([10] * 60)),))
+    my_deck = [1] * 59 + [1218]
+
+    sample = belief.sample_hidden(truth, your_full_deck=my_deck, rng=random.Random(7))
+
+    assert 1218 not in sample.your_deck
+    assert len(sample.your_deck) == 46
+
+
+def test_effect_card_from_own_ability_is_not_double_counted():
+    # By contrast, when a Pokemon's own Ability is resolving (e.g. Spidops'
+    # Charging Up), select.effect refers to that *same* Pokemon, which is
+    # already counted via in_play -- counting it again would double-
+    # subtract one physical card from the template and flip the mismatch
+    # to "own deck one short" instead of "one over".
+    active = {"id": 401, "serial": 9, "playerIndex": 0, "hp": 130, "maxHp": 130,
+              "energyCards": [], "tools": [], "preEvolution": []}
+    obs = _setup_observation([None], my_deck_count=46)
+    obs["current"]["players"][0]["active"] = [active]
+    obs["select"] = {
+        "type": 1, "context": 22, "minCount": 1, "maxCount": 1,
+        "option": [{"type": 3, "area": 3, "index": 10, "playerIndex": 0}],
+        "effect": {"id": 401, "serial": 9, "playerIndex": 0},
+    }
+    truth = build_truth_state(obs)
+    belief = BayesianBeliefModel((ArchetypeTemplate("oracle", tuple([10] * 59) + (401,)),))
+    my_deck = [1] * 59 + [401]
+
+    sample = belief.sample_hidden(truth, your_full_deck=my_deck, rng=random.Random(7))
+
+    assert len(sample.your_deck) == 46

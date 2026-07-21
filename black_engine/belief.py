@@ -91,6 +91,7 @@ class BayesianBeliefModel:
             + list(opponent.discard_ids)
             + list(BayesianBeliefModel._stadium_cards(truth, opponent_index))
             + list(BayesianBeliefModel._looking_cards(truth, opponent_index))
+            + list(BayesianBeliefModel._effect_card(truth, opponent_index))
         )
 
     @staticmethod
@@ -117,6 +118,49 @@ class BayesianBeliefModel:
             if type(card_id) is int:
                 cards.append(card_id)
         return tuple(cards)
+
+    @staticmethod
+    def _effect_card(truth: TruthState, player_index: int) -> tuple[int, ...]:
+        """`select.effect` (SelectData.effect in cg.api) is "the card that is
+        activating the effect currently being processed" -- e.g. a
+        Supporter/Item that was just played and is mid-resolution (its own
+        effect asks a follow-up question, like Team Rocket's Giovanni's
+        Switch selection). It has already left hand but has not yet landed
+        in discard, so it produced the same 1-card "own hidden-zone
+        mismatch" pattern as an unaccounted Stadium/Tool/looking-zone card
+        whenever a decision was reached mid-effect-resolution. Found via
+        cg.game.visualize_data() on a live failing state, then confirmed
+        `effect` is present on the plain dict observation's `select` too
+        (not just the richer visualizer/dataclass view).
+
+        `effect` is NOT always a card missing from every other zone, though:
+        when a Pokemon's own Ability is resolving (e.g. Spidops' Charging
+        Up), `effect` refers to that same Pokemon, which is already counted
+        via in_play -- counting it again double-subtracted that card from
+        the template and produced the opposite-direction mismatch (own
+        deck one *short*). Only count it when its serial doesn't match an
+        already-in-play Pokemon for that player.
+        """
+        raw = truth.raw_observation if isinstance(truth.raw_observation, dict) else {}
+        select = raw.get("select") if isinstance(raw.get("select"), dict) else {}
+        effect = select.get("effect")
+        if not isinstance(effect, dict):
+            return ()
+        if int(effect.get("playerIndex", -1)) != player_index:
+            return ()
+        card_id = effect.get("id")
+        if type(card_id) is not int:
+            return ()
+        effect_serial = effect.get("serial")
+        current = raw.get("current") if isinstance(raw.get("current"), dict) else {}
+        players = current.get("players") if isinstance(current.get("players"), list) else []
+        player = players[player_index] if 0 <= player_index < len(players) else {}
+        if isinstance(player, dict):
+            for zone in ("active", "bench"):
+                for pokemon in player.get(zone) or []:
+                    if isinstance(pokemon, dict) and pokemon.get("serial") == effect_serial:
+                        return ()
+        return (card_id,)
 
     @staticmethod
     def _stadium_cards(truth: TruthState, player_index: int) -> tuple[int, ...]:
@@ -263,6 +307,7 @@ class BayesianBeliefModel:
             + [card for pokemon in truth.me.in_play for card in pokemon.all_public_card_ids]
             + list(self._stadium_cards(truth, truth.actor))
             + list(self._looking_cards(truth, truth.actor))
+            + list(self._effect_card(truth, truth.actor))
         )
         own_remaining = self._remaining_cards(your_full_deck, own_visible)
         # My own face-down Active/Bench slots (e.g. the pre-reveal setup
