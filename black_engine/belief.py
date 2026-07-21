@@ -70,6 +70,28 @@ class BayesianBeliefModel:
             + list(opponent.discard_ids)
         )
 
+    @staticmethod
+    def _opponent_opaque_slots(truth: TruthState) -> tuple[int, int]:
+        """Return (face-down active count, other face-down in-play count).
+
+        CABT represents an unrevealed setup Active as ``active: [null]``.  The
+        card physically exists but is intentionally absent from TruthState's
+        public Pokemon views.  It must still be removed from the 60-card
+        template before hand/prize/deck zones are sampled, and the sampled
+        Active identity must be supplied to cg.api.search_begin().
+        """
+        raw = truth.raw_observation if isinstance(truth.raw_observation, dict) else {}
+        current = raw.get("current") if isinstance(raw.get("current"), dict) else {}
+        players = current.get("players") if isinstance(current.get("players"), list) else []
+        opponent = players[1 - truth.actor] if 0 <= 1 - truth.actor < len(players) else {}
+        if not isinstance(opponent, dict):
+            return (0, 0)
+        active = opponent.get("active") if isinstance(opponent.get("active"), list) else []
+        bench = opponent.get("bench") if isinstance(opponent.get("bench"), list) else []
+        active_nulls = sum(value is None for value in active)
+        bench_nulls = sum(value is None for value in bench)
+        return (active_nulls, bench_nulls)
+
     def update(self, truth: TruthState) -> BeliefSnapshot:
         visible = self._visible_opponent_cards(truth)
         if not self.templates:
@@ -123,10 +145,21 @@ class BayesianBeliefModel:
         template = next(t for t in self.templates if t.name == chosen_name)
 
         opponent_remaining = self._remaining_cards(template.deck, snapshot.visible_opponent_cards)
+        active_nulls, other_opaque_nulls = self._opponent_opaque_slots(truth)
+        opaque_cards, opponent_remaining = self._sample_exact(
+            opponent_remaining,
+            active_nulls + other_opaque_nulls,
+            rng,
+        )
+        opponent_active = tuple(opaque_cards[:active_nulls])
         hand, opponent_remaining = self._sample_exact(opponent_remaining, truth.opponent.hand_count, rng)
         prize, opponent_remaining = self._sample_exact(opponent_remaining, len(truth.opponent.prize_ids), rng)
         if len(opponent_remaining) != truth.opponent.deck_count:
-            raise ValueError(f"opponent hidden-zone mismatch deck={len(opponent_remaining)} expected={truth.opponent.deck_count}")
+            raise ValueError(
+                "opponent hidden-zone mismatch "
+                f"deck={len(opponent_remaining)} expected={truth.opponent.deck_count} "
+                f"opaque_active={active_nulls} opaque_other={other_opaque_nulls}"
+            )
 
         own_visible = (
             list(truth.me.hand_ids)
@@ -152,7 +185,7 @@ class BayesianBeliefModel:
             opponent_deck=tuple(opponent_remaining),
             opponent_prize=tuple(prize),
             opponent_hand=tuple(hand),
-            opponent_active=(),
+            opponent_active=opponent_active,
             archetype=chosen_name,
             posterior_probability=snapshot.posterior[chosen_name],
         )
