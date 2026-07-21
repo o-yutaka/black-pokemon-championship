@@ -4,6 +4,25 @@ from dataclasses import dataclass, field
 from typing import Any, Iterable
 
 
+AREA_DECK = 1
+AREA_HAND = 2
+AREA_DISCARD = 3
+AREA_ACTIVE = 4
+AREA_BENCH = 5
+AREA_PRIZE = 6
+AREA_STADIUM = 7
+AREA_ENERGY = 8
+AREA_TOOL = 9
+AREA_PRE_EVOLUTION = 10
+
+T_PLAY = 7
+T_ENERGY = 8
+T_EVOLVE = 9
+T_ABILITY = 10
+T_RETREAT = 12
+T_ATTACK = 13
+
+
 def _int(value: Any, default: int = 0) -> int:
     return int(value) if type(value) is int else default
 
@@ -244,27 +263,122 @@ def _label(option: dict) -> str:
     return " ".join(values).strip().lower()
 
 
-def _option(value: Any, index: int) -> LegalOption:
+def _raw_player(current: dict, player_index: int) -> dict:
+    players = _list(current.get("players"))
+    if 0 <= player_index < len(players) and isinstance(players[player_index], dict):
+        return players[player_index]
+    return {}
+
+
+def _in_play_raw(player: dict) -> list[dict]:
+    values: list[dict] = []
+    for key in ("active", "bench"):
+        values.extend(v for v in _list(player.get(key)) if isinstance(v, dict))
+    return values
+
+
+def _zone_values(current: dict, select: dict, player_index: int, area: int) -> list:
+    # During search/effect windows CABT intentionally exposes only the searched
+    # slice in select.deck. Resolve AREA_DECK from that public selection payload,
+    # never from a hidden current.players[*].deck assumption.
+    if area == AREA_DECK:
+        return _list(select.get("deck"))
+
+    player = _raw_player(current, player_index)
+    direct_key = {
+        AREA_HAND: "hand",
+        AREA_DISCARD: "discard",
+        AREA_ACTIVE: "active",
+        AREA_BENCH: "bench",
+        AREA_PRIZE: "prize",
+        AREA_STADIUM: "stadium",
+    }.get(area)
+    if direct_key is not None:
+        value = current.get("stadium") if area == AREA_STADIUM else player.get(direct_key)
+        return _list(value)
+
+    in_play = _in_play_raw(player)
+    if area == AREA_ENERGY:
+        direct = _list(player.get("energy"))
+        if direct:
+            return direct
+        return [card for pokemon in in_play for card in _list(pokemon.get("energyCards"))]
+    if area == AREA_TOOL:
+        direct = _list(player.get("tool"))
+        if direct:
+            return direct
+        return [card for pokemon in in_play for card in _list(pokemon.get("tools")) + _list(pokemon.get("tool"))]
+    if area == AREA_PRE_EVOLUTION:
+        return [card for pokemon in in_play for card in _list(pokemon.get("preEvolution"))]
+    return []
+
+
+def _resolve_zone_card(current: dict, select: dict, player_index: int, area: Any, index: Any) -> int:
+    if type(area) is not int or type(index) is not int:
+        return -1
+    values = _zone_values(current, select, player_index, area)
+    if 0 <= index < len(values):
+        return _card_id(values[index])
+    return -1
+
+
+def _option(value: Any, index: int, current: dict, select: dict, actor: int) -> LegalOption:
     raw = value if isinstance(value, dict) else {}
+    action_type = _int(raw.get("type"), -1)
+
     attack = raw.get("attack")
     attack_id = -1
     if isinstance(attack, dict):
         attack_id = _int(attack.get("attackId"), _int(attack.get("id"), -1))
     if attack_id < 0:
         attack_id = _int(raw.get("attackId"), -1)
-    target = -1
-    for key in ("target", "pokemon", "to", "selectPokemon"):
-        target = _card_id(raw.get(key))
-        if target >= 0:
-            break
+
+    player_index = _int(raw.get("playerIndex"), actor)
+    if player_index not in (0, 1):
+        player_index = actor
+
     card = -1
     for key in ("card", "cardId", "id"):
         card = _card_id(raw.get(key))
         if card >= 0:
             break
+    area = raw.get("area")
+    if area is None and action_type == T_PLAY:
+        # Main-window PLAY options omit area but index the actor's hand.
+        area = AREA_HAND
+    if card < 0:
+        card = _resolve_zone_card(current, select, player_index, area, raw.get("index"))
+    if card < 0 and action_type in {T_ABILITY, T_RETREAT, T_ATTACK}:
+        # Ability/retreat/attack options identify their source Pokémon through
+        # inPlayArea/inPlayIndex rather than cardId.
+        card = _resolve_zone_card(
+            current,
+            select,
+            player_index,
+            raw.get("inPlayArea"),
+            raw.get("inPlayIndex"),
+        )
+
+    target = -1
+    for key in ("target", "pokemon", "to", "selectPokemon"):
+        target = _card_id(raw.get(key))
+        if target >= 0:
+            break
+    target_player = _int(raw.get("targetPlayerIndex"), player_index)
+    if target_player not in (0, 1):
+        target_player = player_index
+    if target < 0:
+        target = _resolve_zone_card(
+            current,
+            select,
+            target_player,
+            raw.get("inPlayArea"),
+            raw.get("inPlayIndex"),
+        )
+
     return LegalOption(
         index=index,
-        action_type=_int(raw.get("type"), -1),
+        action_type=action_type,
         card_id=card,
         target_id=target,
         attack_id=attack_id,
@@ -286,7 +400,10 @@ def build_truth_state(obs: dict) -> TruthState:
         for index in (0, 1)
     )
     select = obs.get("select") if isinstance(obs.get("select"), dict) else {}
-    options = tuple(_option(value, index) for index, value in enumerate(_list(select.get("option"))))
+    options = tuple(
+        _option(value, index, current, select, actor)
+        for index, value in enumerate(_list(select.get("option")))
+    )
     minimum = max(0, _int(select.get("minCount"), 1))
     maximum = max(0, _int(select.get("maxCount"), 1))
     return TruthState(
