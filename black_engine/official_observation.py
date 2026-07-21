@@ -6,6 +6,7 @@ from typing import Any
 
 AREA_ACTIVE = 4
 AREA_BENCH = 5
+BLACK_ATTACHED_ENERGY_MARKER = "_blackAttachedEnergyResolved"
 
 
 def _card_id(value: Any) -> int:
@@ -20,16 +21,16 @@ def _card_id(value: Any) -> int:
 
 
 def _attached_energy_option(current: dict[str, Any], option: dict[str, Any], actor: int) -> None:
-    """Materialize CABT attached-card selections without changing their raw keys.
+    """Materialize CABT attached-card references on a copied observation.
 
     Real Erasure Ball follow-up options use only:
 
     ``type=5, area=5, index=<bench pokemon>, energyIndex=<attached energy>``.
 
-    ``index`` therefore identifies the parent Pokemon, not the Energy card.  Add
-    synthetic ``card`` and ``target`` fields to the normalized copy so TruthState
-    can expose the selected Energy as ``card_id`` and its holder as ``target_id``.
-    The original observation supplied by CABT is never mutated.
+    ``index`` identifies the parent Pokemon, not the Energy card. Synthetic
+    ``card`` and ``target`` values let TruthState expose the actual Energy and
+    holder. A private marker lets evidence tooling omit these synthetic fields
+    and preserve the exact official raw-key contract.
     """
     energy_index = option.get("energyIndex")
     area = option.get("area")
@@ -65,10 +66,15 @@ def _attached_energy_option(current: dict[str, Any], option: dict[str, Any], act
 
     energy_id = _card_id(energies[energy_index])
     target_id = _card_id(pokemon)
-    if energy_id >= 0:
-        option.setdefault("card", energy_id)
-    if target_id >= 0:
-        option.setdefault("target", target_id)
+    resolved = False
+    if energy_id >= 0 and "card" not in option:
+        option["card"] = energy_id
+        resolved = True
+    if target_id >= 0 and "target" not in option:
+        option["target"] = target_id
+        resolved = True
+    if resolved:
+        option[BLACK_ATTACHED_ENERGY_MARKER] = True
 
 
 def normalize_official_observation(obs: dict[str, Any]) -> dict[str, Any]:
