@@ -50,8 +50,8 @@ class Determinization:
 class BayesianBeliefModel:
     """Bayesian archetype posterior using public evidence only.
 
-    Templates must come from replay/deck evidence. With no templates the model
-    disables search rather than fabricating hidden cards.
+    Templates are supplied from replay/deck evidence. With no templates the model
+    is disabled and search must fail closed rather than fabricate hidden cards.
     """
 
     def __init__(self, templates: Iterable[ArchetypeTemplate] = ()) -> None:
@@ -65,7 +65,10 @@ class BayesianBeliefModel:
     @staticmethod
     def _visible_opponent_cards(truth: TruthState) -> tuple[int, ...]:
         opponent = truth.opponent
-        return tuple([pokemon.card_id for pokemon in opponent.in_play] + list(opponent.discard_ids))
+        return tuple(
+            [card for pokemon in opponent.in_play for card in pokemon.all_public_card_ids]
+            + list(opponent.discard_ids)
+        )
 
     def update(self, truth: TruthState) -> BeliefSnapshot:
         visible = self._visible_opponent_cards(truth)
@@ -125,7 +128,11 @@ class BayesianBeliefModel:
         if len(opponent_remaining) != truth.opponent.deck_count:
             raise ValueError(f"opponent hidden-zone mismatch deck={len(opponent_remaining)} expected={truth.opponent.deck_count}")
 
-        own_visible = list(truth.me.hand_ids) + list(truth.me.discard_ids) + [p.card_id for p in truth.me.in_play]
+        own_visible = (
+            list(truth.me.hand_ids)
+            + list(truth.me.discard_ids)
+            + [card for pokemon in truth.me.in_play for card in pokemon.all_public_card_ids]
+        )
         own_remaining = self._remaining_cards(your_full_deck, own_visible)
         known_prize = [value for value in truth.me.prize_ids if value is not None]
         own_remaining = self._remaining_cards(own_remaining, known_prize)
