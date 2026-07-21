@@ -1,56 +1,63 @@
 {
-  "version": 1,
+  "version": 2,
   "candidate": "dragapult_cinderace",
-  "verdict": "CHAMPIONSHIP_CANDIDATE_HOLD_FOR_PAIRED_EVAL",
+  "verdict": "COMPLETE_IMPLEMENTATION_READY_FOR_OFFICIAL_ENGINE_EVAL",
   "core": {
     "primary_attacker": "Dragapult ex 121",
-    "setup_accelerator": "Cinderace 666",
-    "spread_converter": "Dusknoir 133 / Dusclops 132",
-    "one_prize_finisher": "Azelf 217",
+    "draw_engine": "Drakloak 120 / Recon Directive",
+    "setup_accelerator": "Cinderace 666 / Turbo Flare",
+    "spread_converter": "Dusclops 132 and Dusknoir 133 / Cursed Blast",
+    "one_prize_finisher": "Azelf 217 / Neurokinesis",
     "ace_spec": "Prime Catcher 1088"
   },
   "counts": {
     "pokemon": 25,
-    "trainers": 21,
-    "energy": 14,
+    "trainers": 22,
+    "energy": 13,
     "basic_fire": 6,
-    "basic_psychic": 8
+    "basic_psychic": 7,
+    "dragapult_line": "4-4-3",
+    "dusknoir_line": "3-2-2",
+    "cinderace_line": "1-0-4",
+    "azelf": 2
   },
+  "deck_decisions": [
+    "Drakloak is raised from 2 to 4 and Dragapult ex reduced from 4 to 3. Recon Directive is a repeatable draw/filter engine, while Tera Orb and Dawn already provide direct Dragapult access.",
+    "Duskull is reduced from 4 to 3. One live Cursed Blast line is required, but four Duskull overfills the five-slot Bench shared with two Dragapult lines, Azelf, and the Cinderace handoff.",
+    "Psychic Energy is reduced from 8 to 7, preserving thirteen total Energy. Cinderace and Crispin accelerate colored requirements, while the policy rejects redundant attachments.",
+    "Dawn is raised to 3 because one Supporter simultaneously finds a Basic, Stage 1, and Stage 2 and can assemble either complete evolution line.",
+    "Night Stretcher is raised to 2 because Cursed Blast self-KOs and the deck must recover Pokémon or the missing basic Energy color without discarding two cards.",
+    "Prime Catcher remains the ACE SPEC because it performs the exact Cinderace-to-Dragapult handoff while gusting the intended Prize target."
+  ],
   "opening_plan": [
-    "Prefer going second when Cinderace is available during setup.",
-    "Use Turbo Flare to fund Dragapult/Azelf Bench routes, never as an isolated 50-damage attack.",
-    "Buddy-Buddy Poffin establishes Dreepy plus Duskull/Azelf before committing evolution resources."
+    "Use Cinderace as the setup Active when offered.",
+    "Buddy-Buddy Poffin prefers Dreepy plus Duskull; a second Dreepy is next priority and Azelf is delayed until the damage-counter reservoir matters.",
+    "Turbo Flare attaches only colors that complete real Dragapult routes and does not place redundant Energy on a ready attacker."
   ],
   "midgame_plan": [
-    "Establish Dragapult through Drakloak or Rare Candy without consuming every Candy on one line.",
-    "Phantom Dive creates active pressure and a distributed counter reservoir.",
-    "Use Dusknoir/Dusclops only when the self-KO advances Prize mapping or creates a terminal sequence."
+    "Keep one or more Drakloak in play when immediate Phantom Dive is unavailable; every Recon Directive is a separate once-per-turn draw/filter activation.",
+    "Rare Candy priority is attack-ready Dragapult, immediate positive-prize Dusknoir route, backup Dragapult, then Cinderace recovery.",
+    "Phantom Dive's six counters are assigned one at a time: immediate KO, Mega/ex Prize target, entry into the 130/50 Cursed Blast bands, then lowest remaining HP.",
+    "Dusclops and Dusknoir are not activated merely because legal. Their self-KO must take a Prize, enable the active Dragapult KO, or create an Azelf terminal."
   ],
   "endgame_plan": [
-    "Prime Catcher is the preferred Cinderace-to-Dragapult handoff plus gust action.",
-    "Azelf converts total opposing damage counters into a one-Prize lethal route.",
-    "Boss's Orders is reserved for a confirmed Prize conversion rather than generic disruption."
-  ],
-  "search_package": {
-    "Buddy-Buddy Poffin": 4,
-    "Rare Candy": 3,
-    "Tera Orb": 2,
-    "Poke Pad": 1,
-    "Dawn": 2,
-    "reason": "Replace discard-heavy generic search with role-specific tutors for two Stage 2 lines."
-  },
-  "rejected_from_baseline": [
-    "Three Ultra Ball package: too much hand destruction for a deck carrying setup-only Cinderace copies.",
-    "Two Rare Candy package: insufficient shared transition capacity for Dragapult and Dusknoir.",
-    "Judge/Xerosic main-deck slots before consistency is proven.",
-    "Special Energy that cannot pay both colored Phantom Dive requirements."
+    "Prime Catcher and Switch move a ready Dragapult out from behind Cinderace before low-value setup actions.",
+    "Boss's Orders is reserved for a confirmed Prize conversion.",
+    "Azelf is powered only when Neurokinesis converts the total opposing damage-counter reservoir into a credible one-Prize finish."
   ],
   "promotion_gate": {
     "official_engine_required": true,
-    "paired_seats": true,
-    "minimum_games_per_live_cell": 500,
-    "crashes": 0,
+    "static_and_unit_tests": true,
+    "runtime_errors": 0,
     "invalid_actions": 0,
-    "wilson_ci_lower_bound_above_baseline": true
+    "required_captures": [
+      "Recon Directive LOOKING to hand",
+      "Rare Candy Evolve2 target pair",
+      "Turbo Flare Energy and Bench target",
+      "Phantom Dive six repeated DamageCounterAny targets",
+      "Dusclops 50 and Dusknoir 130 target",
+      "Crispin hand Energy and attachment target"
+    ],
+    "performance_claim": "HOLD_UNTIL_OFFICIAL_PAIRED_EVALUATION"
   }
 }
