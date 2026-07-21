@@ -15,8 +15,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from black_engine import build_candidate_base_policy
 from black_engine.factory import build_hybrid_policy
-from black_lab import build_policy, read_deck
+from black_lab import read_deck
 from engine.official_runtime import run_battle
 from scripts.run_official_smoke import oracle_bank_payload, summarize_decision_trace
 
@@ -106,9 +107,9 @@ def run_matchup(
     normalization_events = 0
     with patched_environment(environment):
         for game in range(n_games):
-            base = build_policy(candidate)
+            base = build_candidate_base_policy(candidate)
             base.set_deck(deck)
-            hybrid_base = build_policy(candidate)
+            hybrid_base = build_candidate_base_policy(candidate)
             hybrid = build_hybrid_policy(candidate, hybrid_base, root=ROOT)
             hybrid.set_deck(deck)
             hybrid.trace_path = trace_path
