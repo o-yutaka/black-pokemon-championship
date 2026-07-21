@@ -100,3 +100,90 @@ def test_articuno_blocks_basic_spread_but_not_spidops():
     mewtwo = pokemon(ROCKET_MEWTWO_EX, 21, 80, 280)
     assert policy._spread_target(spidops) > policy._spread_target(mewtwo)
     assert policy._spread_target(mewtwo) == -10000
+
+
+def test_prize_value_uses_official_card_rule_not_hp():
+    from black_engine.prize_truth import prize_value
+
+    assert prize_value(951) == 2
+    assert prize_value(264) == 1
+    assert prize_value(652) == 3
+
+
+def test_articuno_protected_basic_does_not_trigger_cinderace_handoff():
+    policy = DragapultWorldlinePolicy()
+    options = [
+        {"type": T_PLAY, "cardId": SWITCH},
+        {"type": T_PLAY, "cardId": CRISPIN},
+    ]
+    ctx = context(
+        select={"option": options},
+        opp_hp=300,
+        dragapult_ready=True,
+        ready_count=1,
+        ready_bench_dragapult_count=1,
+        ready_bench_dragapult_serials=(10,),
+        opponent_articuno_online=True,
+        theirs=[pokemon(ARTICUNO, 30, 120, 120), pokemon(400, 31, 50, 50)],
+    )
+    result = policy._plan_for_option(0, options[0], ctx)
+    assert result.illegal
+    assert policy.choose_single(options, ctx) == 1
+
+
+def test_switch_handoff_persists_exact_target_then_phantom_attack():
+    policy = DragapultWorldlinePolicy()
+    root_options = [
+        {"type": T_PLAY, "cardId": SWITCH},
+        {"type": T_PLAY, "cardId": CRISPIN},
+    ]
+    current = {
+        "turn": 5,
+        "players": [
+            {
+                "active": [pokemon(CINDERACE, 1, 170, 170)],
+                "bench": [pokemon(DRAGAPULT_EX, 10, 320, 320, (2, 5))],
+            },
+            {"active": [pokemon(999, 20, 180, 180)], "bench": []},
+        ],
+    }
+    ctx = context(
+        current=current,
+        select={"option": root_options},
+        active_id=CINDERACE,
+        opp_hp=180,
+        dragapult_ready=True,
+        ready_count=1,
+        ready_bench_dragapult_count=1,
+        ready_bench_dragapult_serials=(10,),
+        dragapult_lines=[pokemon(DRAGAPULT_EX, 10, 320, 320, (2, 5))],
+        turn=5,
+    )
+    assert policy.choose_single(root_options, ctx) == 0
+    pending = policy.pending.get()
+    assert pending is not None
+    assert pending.candidate.plan_id == "SWITCH_HANDOFF_PHANTOM"
+    assert len(pending.candidate.steps) == 2
+
+    target_options = [
+        {"type": 4, "playerIndex": 0, "inPlayArea": 5, "inPlayIndex": 0},
+    ]
+    target_ctx = dict(ctx)
+    target_ctx["select"] = {"option": target_options}
+    assert policy.choose_single(target_options, target_ctx) == 0
+
+    attack_options = [
+        {"type": 13, "attackId": 154, "playerIndex": 0, "inPlayArea": 4, "inPlayIndex": 0},
+        {"type": 14},
+    ]
+    attack_current = {
+        "turn": 5,
+        "players": [
+            {"active": [pokemon(DRAGAPULT_EX, 10, 320, 320, (2, 5))], "bench": []},
+            {"active": [pokemon(999, 20, 180, 180)], "bench": []},
+        ],
+    }
+    attack_ctx = dict(ctx)
+    attack_ctx.update({"current": attack_current, "select": {"option": attack_options}, "active_id": DRAGAPULT_EX})
+    assert policy.choose_single(attack_options, attack_ctx) == 0
+    assert policy.pending.get() is None
