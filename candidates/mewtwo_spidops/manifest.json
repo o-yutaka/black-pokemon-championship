@@ -1,28 +1,53 @@
 {
-  "candidate_id": "mewtwo_spidops_black_v1",
-  "title": "Team Rocket's Mewtwo ex / Spidops BLACK v1",
-  "status": "STATIC_READY_OFFICIAL_ENGINE_HOLD",
-  "policy_module": "candidates.mewtwo_spidops.policy",
+  "candidate_id": "mewtwo_spidops_black_v2",
+  "title": "Team Rocket's Mewtwo ex / Spidops BLACK Championship v2",
+  "status": "CHAMPIONSHIP_RUNTIME_WIRED_CI_PENDING_PERFORMANCE_HOLD",
+  "policy_module": "black_engine.mewtwo_policy",
   "deck_file": "deck.csv",
   "ace_spec_ids": [1159],
   "expected_total": 60,
-  "intent": "Establish four Team Rocket Pokemon, use Spidops as a renewable Benched Energy reservoir, and select the minimum Erasure Ball discard tier that secures the required Prize without breaking the next attack.",
+  "intent": "Establish exactly enough Team Rocket bodies to unlock Mewtwo, build a renewable Basic Energy reservoir through Spidops, and pay the minimum 160/220/280 Erasure Ball tier while preserving Team Rocket Energy and the next attack.",
   "primary_routes": [
-    "PROTON_OR_POKE_PAD_TO_FOUR_ROCKET",
-    "SPIDOPS_CHARGING_UP_RESERVOIR",
-    "MEWTWO_160_220_280_MINIMUM_KO_TIER",
-    "WOBBUFFET_DAMAGE_CONVERSION",
-    "GIOVANNI_SWITCH_GUST"
+    "PROTON_OR_SEARCH_TO_FOUR_ROCKET",
+    "SPIDOPS_CHARGING_UP_BASIC_ENERGY_LOOP",
+    "MEWTWO_MINIMUM_160_220_280_PRIZE_TIER",
+    "FACTORY_BEFORE_ROCKET_SUPPORTER_SEQUENCE",
+    "GIOVANNI_READY_MEWTWO_HANDOFF",
+    "WOBBUFFET_ONE_PRIZE_DAMAGE_CONVERSION"
+  ],
+  "secondary_routes": [
+    "SPIDOPS_ROCKET_RUSH_ONE_PRIZE_ATTACK",
+    "ARTICUNO_BASIC_ROCKET_EFFECT_SHIELD",
+    "MURKROW_DECEIT_SUPPORTER_ACCESS"
+  ],
+  "resource_laws": [
+    "TEAM_ROCKET_ENERGY_IS_NONRENEWABLE_BY_SPIDOPS",
+    "DISCARD_BASIC_ENERGY_BEFORE_TEAM_ROCKET_ENERGY",
+    "DISCARD_ONLY_THE_MINIMUM_ENERGY_REQUIRED_FOR_THE_PRIZE_ROUTE",
+    "PRESERVE_ONE_BENCH_SLOT_AFTER_FOUR_ROCKET_BODIES_WHEN_POSSIBLE",
+    "DO_NOT_ATTACH_TEAM_ROCKET_ENERGY_TO_NON_ROCKET_POKEMON"
   ],
   "forbidden": [
     "ATTACK_WITH_MEWTWO_BEFORE_FOUR_ROCKET",
+    "ATTACK_WITH_MEWTWO_BEFORE_ENERGY_CONTRACT_READY",
     "DISCARD_TWO_BENCH_ENERGY_WHEN_ZERO_OR_ONE_IS_ENOUGH",
-    "EMPTY_NEXT_ATTACK_RESERVOIR_WITHOUT_PRIZE_GAIN"
+    "DISCARD_TEAM_ROCKET_ENERGY_WHILE_RENEWABLE_BASIC_ALTERNATIVES_EXIST",
+    "EMPTY_NEXT_ATTACK_RESERVOIR_WITHOUT_PRIZE_GAIN",
+    "PLAY_ROCKET_SUPPORTER_BEFORE_AVAILABLE_FACTORY_WITHOUT_REASON"
   ],
-  "local_required": [
-    "official option attack-id/name capture",
-    "Spidops ability target capture",
-    "Erasure Ball discard multi-select capture",
-    "paired smoke and matchup evaluation"
+  "implemented": [
+    "official area/index and inPlayArea/inPlayIndex option resolution",
+    "Team Rocket resource ledger",
+    "exact attack-id deterministic prior",
+    "Mewtwo hard guards",
+    "Prize/Setup/Resource/Information planners",
+    "official hybrid runtime connection"
+  ],
+  "remaining_gates": [
+    "GitHub Actions",
+    "real official libcg smoke",
+    "Erasure Ball attached-energy owner capture",
+    "paired matchup screen versus Crustle, Dragapult, Grimmsnarl, Garchomp",
+    "belief bank and RL prior evidence training"
   ]
 }
