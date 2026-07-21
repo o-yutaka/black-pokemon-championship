@@ -47,8 +47,8 @@ def test_only_final_rocket_mewtwo_xerosic2_deck_is_present():
     assert report["ok"]
     assert len(deck) == 60
     assert counts == EXPECTED_DECK_COUNTS
-    assert sum(counts[cid] for cid in POKEMON_IDS) == 16
-    assert sum(counts[cid] for cid in TRAINER_IDS) == 30
+    assert sum(counts[cid] for cid in POKEMON_IDS) == 15
+    assert sum(counts[cid] for cid in TRAINER_IDS) == 31
     assert sum(counts[cid] for cid in ENERGY_IDS) == 14
     assert counts[1159] == 1
     assert counts[1197] == 2
