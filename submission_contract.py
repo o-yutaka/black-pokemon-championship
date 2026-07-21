@@ -16,6 +16,7 @@ ROOT_FILE_ORDER = (
 BLACK_ENGINE_FILE_ORDER = (
     "__init__.py",
     "policy.py",
+    "prize_truth.py",
     "dragapult_worldline.py",
     "dragapult_worldline_v2.py",
     "runtime.py",
