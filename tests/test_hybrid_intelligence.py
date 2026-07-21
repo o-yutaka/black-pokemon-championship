@@ -68,6 +68,41 @@ def test_truth_state_hides_opponent_hand_and_tracks_attachments():
     assert set(truth.me.active[0].attached_ids) == {15, 5, 1159}
 
 
+def test_truth_state_tracks_real_engine_tools_plural_field():
+    # Regression: the real cabt engine attaches Pokemon Tools under the
+    # plural key "tools" (a list of card dicts), e.g. Cynthia's Power
+    # Weight raising maxHp 70->140. The original attached-item lookup only
+    # checked singular "tool"/"pokemonTool"/etc, silently dropping every
+    # real attached tool from all_public_card_ids -- which fed straight
+    # into the belief model's hidden-zone accounting as a phantom missing
+    # card (deck count off by exactly 1 whenever an opponent had a tool
+    # attached). Captured verbatim from a real official-engine game.
+    active = {
+        "id": 379, "serial": 73, "playerIndex": 1, "hp": 140, "maxHp": 140,
+        "energies": [], "energyCards": [],
+        "tools": [{"id": 1173, "serial": 99, "playerIndex": 1}],
+        "preEvolution": [],
+    }
+    obs = {
+        "current": {
+            "yourIndex": 0, "turn": 2, "result": -1,
+            "players": [
+                {"active": [], "bench": [], "hand": [], "handCount": 0,
+                 "discard": [], "prize": [None] * 6, "deckCount": 46},
+                {"active": [active], "bench": [], "hand": None, "handCount": 0,
+                 "discard": [], "prize": [None] * 6, "deckCount": 43},
+            ],
+        },
+        "logs": [],
+        "select": {"type": 1, "context": 0, "minCount": 1, "maxCount": 1,
+                    "option": [{"type": 14}]},
+    }
+    truth = build_truth_state(obs)
+    pokemon = truth.opponent.active[0]
+    assert 1173 in pokemon.attached_ids
+    assert pokemon.all_public_card_ids == (379, 1173)
+
+
 def test_mewtwo_guard_rejects_attack_before_four_rocket():
     truth = build_truth_state(observation(rocket_count=3))
     vote = MewtwoFourRocketGuard().evaluate(truth, truth.options[0])

@@ -68,7 +68,33 @@ class BayesianBeliefModel:
         return tuple(
             [card for pokemon in opponent.in_play for card in pokemon.all_public_card_ids]
             + list(opponent.discard_ids)
+            + list(BayesianBeliefModel._stadium_cards(truth, 1 - truth.actor))
         )
+
+    @staticmethod
+    def _stadium_cards(truth: TruthState, player_index: int) -> tuple[int, ...]:
+        """A played Stadium is a shared, fully public board zone -- it is
+        neither in either player's in_play/discard lists, but it is a real,
+        known card that must be removed from whichever player's 60-card
+        template played it. Untracked (on either side), it produced a
+        consistent 1-card hidden-zone accounting deficit whenever a Stadium
+        (e.g. Team Rocket's Factory / Forest of Vitality) was in play.
+        """
+        raw = truth.raw_observation if isinstance(truth.raw_observation, dict) else {}
+        current = raw.get("current") if isinstance(raw.get("current"), dict) else {}
+        stadium = current.get("stadium")
+        if not isinstance(stadium, list):
+            return ()
+        cards: list[int] = []
+        for entry in stadium:
+            if not isinstance(entry, dict):
+                continue
+            if int(entry.get("playerIndex", -1)) != player_index:
+                continue
+            card_id = entry.get("id")
+            if type(card_id) is int:
+                cards.append(card_id)
+        return tuple(cards)
 
     @staticmethod
     def _opponent_opaque_slots(truth: TruthState) -> tuple[int, int]:
@@ -151,7 +177,13 @@ class BayesianBeliefModel:
             active_nulls + other_opaque_nulls,
             rng,
         )
-        opponent_active = tuple(opaque_cards[:active_nulls])
+        if active_nulls:
+            opponent_active = tuple(opaque_cards[:active_nulls])
+        else:
+            # Active already revealed -- cg.api.search_begin requires the
+            # real (known) active card id here, not an empty tuple, even
+            # when there is nothing left to guess.
+            opponent_active = tuple(p.card_id for p in truth.opponent.active)
         hand, opponent_remaining = self._sample_exact(opponent_remaining, truth.opponent.hand_count, rng)
         prize, opponent_remaining = self._sample_exact(opponent_remaining, len(truth.opponent.prize_ids), rng)
         if len(opponent_remaining) != truth.opponent.deck_count:
@@ -165,6 +197,7 @@ class BayesianBeliefModel:
             list(truth.me.hand_ids)
             + list(truth.me.discard_ids)
             + [card for pokemon in truth.me.in_play for card in pokemon.all_public_card_ids]
+            + list(self._stadium_cards(truth, truth.actor))
         )
         own_remaining = self._remaining_cards(your_full_deck, own_visible)
         known_prize = [value for value in truth.me.prize_ids if value is not None]

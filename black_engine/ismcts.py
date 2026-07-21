@@ -129,8 +129,14 @@ class InformationSetMCTS:
                     ),
                     reverse=True,
                 )
-                option = ranked[0] if self.rng.random() > 0.15 else self.rng.choice(list(truth.options))
-                current = self.adapter.step(current.search_id, [option.index])
+                # search_step requires min_count <= len(selection) <= max_count.
+                # A rollout may pass through non-single-select decisions
+                # (e.g. a 0-2 optional energy discard), so the selection size
+                # must respect the actual window here, not always be 1.
+                take = max(truth.min_count, min(truth.max_count, 1))
+                pool = ranked if self.rng.random() > 0.15 else list(truth.options)
+                selection = [option.index for option in pool[:take]]
+                current = self.adapter.step(current.search_id, selection)
                 allocated.append(current.search_id)
             return self._state_heuristic(build_truth_state(current.observation), root_actor)
         finally:

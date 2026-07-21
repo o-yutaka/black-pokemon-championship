@@ -168,7 +168,7 @@ class TruthState:
 def _attached_ids(pokemon: dict, energy_ids: tuple[int, ...]) -> tuple[int, ...]:
     values: list[int] = list(energy_ids)
     for key in (
-        "tool", "pokemonTool", "attachedTool", "toolCard",
+        "tools", "tool", "pokemonTool", "attachedTool", "toolCard",
         "evolutionCards", "cards", "stack", "under", "preEvolution",
     ):
         raw = pokemon.get(key)
