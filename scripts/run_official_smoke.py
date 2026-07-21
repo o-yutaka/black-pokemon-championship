@@ -17,7 +17,10 @@ if str(ROOT) not in sys.path:
 
 from black_engine.factory import build_hybrid_policy
 from black_engine.mewtwo_policy import MEWTWO_ERASURE_BALL, MEWTWO_EX
-from black_engine.official_observation import normalize_official_observation
+from black_engine.official_observation import (
+    BLACK_ATTACHED_ENERGY_MARKER,
+    normalize_official_observation,
+)
 from black_engine.rocket_ledger import BASIC_ENERGY_IDS, TEAM_ROCKET_ENERGY
 from black_engine.truth import TruthState, build_truth_state
 from black_lab import build_policy, read_deck
@@ -137,9 +140,17 @@ def effect_shape(obs: dict) -> dict | None:
 
 def option_shape(option) -> dict:
     raw = option.raw
+    synthetic_attached = bool(raw.get(BLACK_ATTACHED_ENERGY_MARKER))
+    official_raw_keys = sorted(
+        str(key)
+        for key in raw
+        if key != BLACK_ATTACHED_ENERGY_MARKER
+        and not (synthetic_attached and key in {"card", "target"})
+    )
     return {
         "index": option.index,
-        "raw_keys": sorted(str(key) for key in raw),
+        "raw_keys": official_raw_keys,
+        "normalized_keys": sorted(str(key) for key in raw),
         "type": raw.get("type"),
         "area": raw.get("area"),
         "raw_index": raw.get("index"),
