@@ -8,6 +8,26 @@ from typing import Iterable, Mapping
 
 from .truth import TruthState
 
+_POKEMON_CARD_IDS: set[int] | None = None
+
+
+def _pokemon_card_ids() -> set[int] | None:
+    """Card ids where cg.api.CardData.cardType == CardType.POKEMON (0).
+
+    Returns None (rather than an empty set) when cg.api isn't importable,
+    so callers can fall back to the untyped sampling behavior instead of
+    treating "no known Pokemon" as "zero Pokemon exist".
+    """
+    global _POKEMON_CARD_IDS
+    if _POKEMON_CARD_IDS is not None:
+        return _POKEMON_CARD_IDS
+    try:
+        import cg.api as api
+        _POKEMON_CARD_IDS = {card.cardId for card in api.all_card_data() if card.cardType == 0}
+    except Exception:
+        return None
+    return _POKEMON_CARD_IDS
+
 
 @dataclass(frozen=True)
 class ArchetypeTemplate:
@@ -65,11 +85,38 @@ class BayesianBeliefModel:
     @staticmethod
     def _visible_opponent_cards(truth: TruthState) -> tuple[int, ...]:
         opponent = truth.opponent
+        opponent_index = 1 - truth.actor
         return tuple(
             [card for pokemon in opponent.in_play for card in pokemon.all_public_card_ids]
             + list(opponent.discard_ids)
-            + list(BayesianBeliefModel._stadium_cards(truth, 1 - truth.actor))
+            + list(BayesianBeliefModel._stadium_cards(truth, opponent_index))
+            + list(BayesianBeliefModel._looking_cards(truth, opponent_index))
         )
+
+    @staticmethod
+    def _looking_cards(truth: TruthState, player_index: int) -> tuple[int, ...]:
+        """Cards temporarily pulled out to `current.looking` (e.g. a "look
+        at top N cards of your deck" effect) are real, known cards that the
+        engine has already excluded from deckCount, but they are not yet in
+        hand/discard/prize either. Untracked, they produced the same
+        1-card-per-card "own hidden-zone mismatch" pattern as an unaccounted
+        Stadium/Tool whenever a search effect was mid-resolution.
+        """
+        raw = truth.raw_observation if isinstance(truth.raw_observation, dict) else {}
+        current = raw.get("current") if isinstance(raw.get("current"), dict) else {}
+        looking = current.get("looking")
+        if not isinstance(looking, list):
+            return ()
+        cards: list[int] = []
+        for entry in looking:
+            if not isinstance(entry, dict):
+                continue
+            if int(entry.get("playerIndex", -1)) != player_index:
+                continue
+            card_id = entry.get("id")
+            if type(card_id) is int:
+                cards.append(card_id)
+        return tuple(cards)
 
     @staticmethod
     def _stadium_cards(truth: TruthState, player_index: int) -> tuple[int, ...]:
@@ -97,23 +144,26 @@ class BayesianBeliefModel:
         return tuple(cards)
 
     @staticmethod
-    def _opponent_opaque_slots(truth: TruthState) -> tuple[int, int]:
+    def _opaque_slots(truth: TruthState, player_index: int) -> tuple[int, int]:
         """Return (face-down active count, other face-down in-play count).
 
-        CABT represents an unrevealed setup Active as ``active: [null]``.  The
-        card physically exists but is intentionally absent from TruthState's
-        public Pokemon views.  It must still be removed from the 60-card
-        template before hand/prize/deck zones are sampled, and the sampled
+        CABT represents an unrevealed setup Active as ``active: [null]`` --
+        for *either* player, including the observing player's own side (the
+        engine does not reveal a just-placed face-down Active back to its
+        own owner in this field either). The card physically exists but is
+        intentionally absent from TruthState's public Pokemon views. It
+        must still be removed from the 60-card template before hand/prize/
+        deck zones are sampled, and on the opponent's side the sampled
         Active identity must be supplied to cg.api.search_begin().
         """
         raw = truth.raw_observation if isinstance(truth.raw_observation, dict) else {}
         current = raw.get("current") if isinstance(raw.get("current"), dict) else {}
         players = current.get("players") if isinstance(current.get("players"), list) else []
-        opponent = players[1 - truth.actor] if 0 <= 1 - truth.actor < len(players) else {}
-        if not isinstance(opponent, dict):
+        player = players[player_index] if 0 <= player_index < len(players) else {}
+        if not isinstance(player, dict):
             return (0, 0)
-        active = opponent.get("active") if isinstance(opponent.get("active"), list) else []
-        bench = opponent.get("bench") if isinstance(opponent.get("bench"), list) else []
+        active = player.get("active") if isinstance(player.get("active"), list) else []
+        bench = player.get("bench") if isinstance(player.get("bench"), list) else []
         active_nulls = sum(value is None for value in active)
         bench_nulls = sum(value is None for value in bench)
         return (active_nulls, bench_nulls)
@@ -171,18 +221,32 @@ class BayesianBeliefModel:
         template = next(t for t in self.templates if t.name == chosen_name)
 
         opponent_remaining = self._remaining_cards(template.deck, snapshot.visible_opponent_cards)
-        active_nulls, other_opaque_nulls = self._opponent_opaque_slots(truth)
-        opaque_cards, opponent_remaining = self._sample_exact(
-            opponent_remaining,
-            active_nulls + other_opaque_nulls,
-            rng,
-        )
-        if active_nulls:
+        active_nulls, other_opaque_nulls = self._opaque_slots(truth, 1 - truth.actor)
+        pokemon_ids = _pokemon_card_ids() if active_nulls else None
+        pokemon_pool = [c for c in opponent_remaining if pokemon_ids and c in pokemon_ids]
+        if active_nulls and pokemon_ids and len(pokemon_pool) >= active_nulls:
+            # cg.api.search_begin requires opponent_active to be a real
+            # Pokemon card id -- the generic "any remaining card" sample
+            # could otherwise pick a Trainer/Energy id by chance and get
+            # rejected ("Active card must be the ID of a Pokemon card").
+            active_cards, _ = self._sample_exact(pokemon_pool, active_nulls, rng)
+            remaining_after_active = list(opponent_remaining)
+            for card in active_cards:
+                remaining_after_active.remove(card)
+            other_opaque_cards, opponent_remaining = self._sample_exact(
+                remaining_after_active, other_opaque_nulls, rng
+            )
+            opponent_active = tuple(active_cards)
+        elif active_nulls:
+            opaque_cards, opponent_remaining = self._sample_exact(
+                opponent_remaining, active_nulls + other_opaque_nulls, rng
+            )
             opponent_active = tuple(opaque_cards[:active_nulls])
         else:
             # Active already revealed -- cg.api.search_begin requires the
             # real (known) active card id here, not an empty tuple, even
             # when there is nothing left to guess.
+            opaque_cards, opponent_remaining = self._sample_exact(opponent_remaining, other_opaque_nulls, rng)
             opponent_active = tuple(p.card_id for p in truth.opponent.active)
         hand, opponent_remaining = self._sample_exact(opponent_remaining, truth.opponent.hand_count, rng)
         prize, opponent_remaining = self._sample_exact(opponent_remaining, len(truth.opponent.prize_ids), rng)
@@ -198,8 +262,16 @@ class BayesianBeliefModel:
             + list(truth.me.discard_ids)
             + [card for pokemon in truth.me.in_play for card in pokemon.all_public_card_ids]
             + list(self._stadium_cards(truth, truth.actor))
+            + list(self._looking_cards(truth, truth.actor))
         )
         own_remaining = self._remaining_cards(your_full_deck, own_visible)
+        # My own face-down Active/Bench slots (e.g. the pre-reveal setup
+        # window) are real cards too, but unlike the opponent's face-down
+        # Active there is no `your_active` parameter to search_begin -- they
+        # just need to be reserved out of the remaining-deck pool so the
+        # own-side hidden-zone invariant balances against deck_count.
+        own_active_nulls, own_other_opaque_nulls = self._opaque_slots(truth, truth.actor)
+        _, own_remaining = self._sample_exact(own_remaining, own_active_nulls + own_other_opaque_nulls, rng)
         known_prize = [value for value in truth.me.prize_ids if value is not None]
         own_remaining = self._remaining_cards(own_remaining, known_prize)
         sampled_prize, own_remaining = self._sample_exact(

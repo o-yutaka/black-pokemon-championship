@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import random
 
+import black_engine.belief as belief_module
 from black_engine.belief import ArchetypeTemplate, BayesianBeliefModel
 from black_engine.truth import build_truth_state
 
@@ -92,3 +93,38 @@ def test_own_stadium_is_not_double_counted_as_opponent_visible():
 
     assert len(sample.opponent_active) + len(sample.opponent_hand) + len(sample.opponent_prize) + len(sample.opponent_deck) == 60
     assert 1257 not in sample.your_deck
+
+
+def test_own_face_down_active_is_reserved_from_own_deck():
+    # Symmetric with the opponent case: the engine represents *either*
+    # player's just-placed, not-yet-revealed Active as active:[null] --
+    # including the observing player's own side. There is no `your_active`
+    # parameter to search_begin, so unlike the opponent case this only
+    # needs to be reserved out of the remaining-deck pool, not reported
+    # anywhere -- but it does need to be reserved, or own-side accounting
+    # comes up exactly 1 card short against the real engine's deckCount.
+    obs = _setup_observation([None], my_deck_count=46)
+    obs["current"]["players"][0]["active"] = [None]  # my own face-down Active
+    truth = build_truth_state(obs)
+    belief = BayesianBeliefModel((ArchetypeTemplate("oracle", tuple([10] * 60)),))
+
+    sample = belief.sample_hidden(truth, your_full_deck=[1] * 60, rng=random.Random(7))
+
+    assert len(sample.your_deck) == 46
+    assert len(sample.your_deck) + len(sample.your_prize) + 1 + 7 == 60  # +1 face-down active, +7 hand
+
+
+def test_face_down_active_sample_is_restricted_to_pokemon_cards(monkeypatch):
+    # cg.api.search_begin requires opponent_active to be a real Pokemon
+    # card id -- sampling from the full remaining pool (Pokemon + Trainer +
+    # Energy alike) could pick a non-Pokemon id by chance and get rejected.
+    # Force the "known Pokemon ids" set so this is deterministic without a
+    # real cg install.
+    monkeypatch.setattr(belief_module, "_POKEMON_CARD_IDS", {10})
+    truth = build_truth_state(_setup_observation([None]))
+    template = tuple([10] * 3 + [999] * 57)  # 999 stands in for a non-Pokemon card
+    belief = BayesianBeliefModel((ArchetypeTemplate("oracle", template),))
+
+    for seed in range(20):
+        sample = belief.sample_hidden(truth, your_full_deck=[1] * 60, rng=random.Random(seed))
+        assert sample.opponent_active == (10,)
