@@ -1,4 +1,4 @@
-from .dragapult_worldline import DragapultWorldlinePolicy
+from .dragapult_worldline_v2 import DragapultWorldlinePolicy
 from .policy import DragapultPolicy
 from .runtime import SubmissionRuntime
 from .support import read_deck, validate_deck
