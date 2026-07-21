@@ -9,39 +9,19 @@ from .belief import ArchetypeTemplate, BayesianBeliefModel
 from .hybrid import HybridPolicy
 from .rl_prior import TabularQPrior
 
-SUPPORTED_CANDIDATES = (
-    "mewtwo_spidops",
-    "garchomp_spiritomb",
-    "dragapult_cinderace",
-    "crustle_redteam",
-    "grimmsnarl_redteam",
-)
+CANDIDATE = "dragapult_cinderace"
+SUPPORTED_CANDIDATES = (CANDIDATE,)
 
 
 def build_candidate_base_policy(candidate: str):
-    """Build the exact base policy used by a candidate production entrypoint.
+    """Build the only production policy allowed on this branch."""
+    if candidate != CANDIDATE:
+        raise ValueError(
+            f"single-deck branch locked to {CANDIDATE}; requested={candidate}"
+        )
+    from .dragapult_championship_policy import DragapultChampionshipPolicy
 
-    Candidate policies do not share one implementation family. Mewtwo has its
-    championship policy, Dragapult has the complete engine-source policy layer,
-    and Garchomp/Red-Team candidates use the legacy black_lab dispatcher. All
-    runners and candidate entrypoints call this function so no candidate can
-    silently fall through to the wrong policy family.
-    """
-    if candidate == "mewtwo_spidops":
-        from .mewtwo_policy import build_mewtwo_policy
-
-        return build_mewtwo_policy()
-    if candidate == "dragapult_cinderace":
-        from .dragapult_championship_policy import DragapultChampionshipPolicy
-
-        return DragapultChampionshipPolicy()
-    if candidate in ("garchomp_spiritomb", "crustle_redteam", "grimmsnarl_redteam"):
-        from black_lab import build_policy
-
-        return build_policy(candidate)
-    raise ValueError(
-        f"unknown candidate: {candidate}; supported={','.join(SUPPORTED_CANDIDATES)}"
-    )
+    return DragapultChampionshipPolicy()
 
 
 def _load_templates(path: str | Path | None) -> tuple[ArchetypeTemplate, ...]:
@@ -87,15 +67,19 @@ def build_hybrid_policy(
     root: str | Path | None = None,
     ismcts=None,
 ) -> HybridPolicy:
+    if candidate != CANDIDATE:
+        raise ValueError(
+            f"single-deck branch locked to {CANDIDATE}; requested={candidate}"
+        )
     project_root = Path(root) if root else Path(__file__).resolve().parents[1]
     belief_path = os.environ.get("BLACK_BELIEF_BANK")
     if not belief_path:
         default = project_root / "models" / "opponent_belief_bank.json"
         belief_path = str(default) if default.is_file() else None
     belief = BayesianBeliefModel(_load_templates(belief_path))
-    rl_path = project_root / "models" / f"rl_prior_{candidate}.json"
+    rl_path = project_root / "models" / "rl_prior_dragapult_cinderace.json"
     return HybridPolicy(
-        candidate,
+        CANDIDATE,
         base_policy,
         belief=belief,
         rl_prior=TabularQPrior.load(rl_path),
