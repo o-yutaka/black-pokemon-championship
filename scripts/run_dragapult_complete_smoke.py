@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import importlib.util
 import json
+import os
 import sys
 import time
 from collections import Counter
@@ -14,13 +17,17 @@ if str(ROOT) not in sys.path:
 
 from black_engine.official_observation import normalize_official_observation
 from black_engine.truth import TruthState, build_truth_state
+from black_lab import read_deck
 from engine.official_runtime import run_battle
+from scripts.build_official_hybrid_submission import stage_submission
 from scripts.run_official_smoke import (
     CANDIDATES,
     build_agent,
     candidate_deck,
+    oracle_bank_payload,
     patched_environment,
 )
+from submission_contract import validate_runtime_layout
 
 DRAGAPULT = "dragapult_cinderace"
 DRAKLOAK, DRAGAPULT_EX, DUSCLOPS, DUSKNOIR, CINDERACE = 120, 121, 132, 133, 666
@@ -38,6 +45,14 @@ REQUIRED_GROUPS = {
 }
 
 
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _effect_id(obs: dict) -> int:
     select = obs.get("select") if isinstance(obs.get("select"), dict) else {}
     effect = select.get("effect")
@@ -49,7 +64,6 @@ def _effect_id(obs: dict) -> int:
 
 def classify_dragapult_transition(truth: TruthState, obs: dict) -> tuple[str, ...]:
     tags: list[str] = []
-    select = obs.get("select") if isinstance(obs.get("select"), dict) else {}
     context = truth.select_context
     effect = _effect_id(obs)
     if any(option.attack_id == PHANTOM_DIVE for option in truth.options):
@@ -116,8 +130,59 @@ def _capture_record(
     }
 
 
+def _load_packaged_dragapult_agent(
+    package_root: Path,
+    *,
+    opponent_name: str,
+    opponent_deck: list[int],
+    belief_mode: str,
+    output_dir: Path,
+    trace_path: Path,
+    module_token: str,
+):
+    bank_path = None
+    if belief_mode == "oracle":
+        bank_path = output_dir / f"oracle_packaged_dragapult_vs_{opponent_name}.json"
+        bank_path.write_text(
+            json.dumps(oracle_bank_payload(opponent_name, opponent_deck), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    environment = {
+        "CABT_CG_DIR": str((package_root / "cg").resolve()),
+        "BLACK_BELIEF_BANK": str(bank_path) if bank_path else None,
+        "BLACK_ISMCTS": "1",
+    }
+    with patched_environment(environment):
+        package_text = str(package_root)
+        inserted = package_text not in sys.path
+        if inserted:
+            sys.path.insert(0, package_text)
+        try:
+            spec = importlib.util.spec_from_file_location(
+                f"black_submission_main_{module_token}",
+                package_root / "main.py",
+            )
+            if spec is None or spec.loader is None:
+                raise RuntimeError("unable to load staged submission/main.py")
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+        finally:
+            if inserted and sys.path and sys.path[0] == package_text:
+                sys.path.pop(0)
+    if Path(module.ROOT).resolve() != package_root.resolve():
+        raise RuntimeError(f"packaged main resolved wrong root: {module.ROOT}")
+    if module.CANDIDATE != DRAGAPULT:
+        raise RuntimeError(f"packaged candidate mismatch: {module.CANDIDATE}")
+    if module.DECK != read_deck(package_root / "deck.csv"):
+        raise RuntimeError("packaged main deck differs from staged deck.csv")
+    module.HYBRID_POLICY.trace_path = trace_path
+    return module.agent
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Official CABT Dragapult complete-route capture and smoke gate.")
+    parser = argparse.ArgumentParser(
+        description="Official CABT packaged-submission Dragapult route capture and smoke gate."
+    )
     parser.add_argument("--cg-dir", default="/home/user/HROS/submission/cg")
     parser.add_argument("--opponent", action="append", choices=tuple(name for name in CANDIDATES if name != DRAGAPULT))
     parser.add_argument("--games", type=int, default=40, help="games per opponent; seats alternate")
@@ -131,12 +196,18 @@ def main() -> int:
         raise SystemExit("--games must be positive")
 
     opponents = tuple(dict.fromkeys(args.opponent or ("mewtwo_spidops", "garchomp_spiritomb")))
-    dragapult_deck = candidate_deck(DRAGAPULT)
-    opponent_decks = {name: candidate_deck(name) for name in opponents}
-    output = Path(args.out)
-    capture_output = Path(args.capture_out)
+    output = Path(args.out).resolve()
+    capture_output = Path(args.capture_out).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     capture_output.parent.mkdir(parents=True, exist_ok=True)
+
+    package_root = output.parent / f".{output.stem}_submission"
+    stage_submission(Path(args.cg_dir), package_root)
+    package_report = validate_runtime_layout(package_root)
+    dragapult_deck = read_deck(package_root / "deck.csv")
+    if dragapult_deck != read_deck(ROOT / "deck.csv"):
+        raise SystemExit("packaged deck drifted from canonical repository-root deck.csv")
+    opponent_decks = {name: candidate_deck(name) for name in opponents}
 
     records: list[dict] = []
     games: list[dict] = []
@@ -145,8 +216,9 @@ def main() -> int:
     wins = Counter()
     provenance = None
     started = time.time()
+    trace_path = output.parent / "dragapult_complete_hybrid_decisions.jsonl"
 
-    with patched_environment({"CABT_CG_DIR": str(Path(args.cg_dir).resolve())}):
+    with patched_environment({"CABT_CG_DIR": str((package_root / "cg").resolve())}):
         for opponent in opponents:
             opponent_deck = opponent_decks[opponent]
             for pair_game in range(args.games):
@@ -157,26 +229,49 @@ def main() -> int:
                 else:
                     name0, deck0 = opponent, opponent_deck
                     name1, deck1 = DRAGAPULT, dragapult_deck
-                agent0 = build_agent(
-                    name0,
-                    opponent_name=name1,
-                    opponent_deck=deck1,
-                    own_deck=deck0,
-                    belief_mode=args.belief_mode,
-                    cg_dir=args.cg_dir,
-                    output_dir=output.parent,
-                    trace_path=output.parent / "dragapult_complete_hybrid_decisions.jsonl",
-                )
-                agent1 = build_agent(
-                    name1,
-                    opponent_name=name0,
-                    opponent_deck=deck0,
-                    own_deck=deck1,
-                    belief_mode=args.belief_mode,
-                    cg_dir=args.cg_dir,
-                    output_dir=output.parent,
-                    trace_path=output.parent / "dragapult_complete_hybrid_decisions.jsonl",
-                )
+
+                if name0 == DRAGAPULT:
+                    agent0 = _load_packaged_dragapult_agent(
+                        package_root,
+                        opponent_name=name1,
+                        opponent_deck=deck1,
+                        belief_mode=args.belief_mode,
+                        output_dir=output.parent,
+                        trace_path=trace_path,
+                        module_token=f"{len(games)}_seat0",
+                    )
+                else:
+                    agent0 = build_agent(
+                        name0,
+                        opponent_name=name1,
+                        opponent_deck=deck1,
+                        own_deck=deck0,
+                        belief_mode=args.belief_mode,
+                        cg_dir=str(package_root / "cg"),
+                        output_dir=output.parent,
+                        trace_path=trace_path,
+                    )
+                if name1 == DRAGAPULT:
+                    agent1 = _load_packaged_dragapult_agent(
+                        package_root,
+                        opponent_name=name0,
+                        opponent_deck=deck0,
+                        belief_mode=args.belief_mode,
+                        output_dir=output.parent,
+                        trace_path=trace_path,
+                        module_token=f"{len(games)}_seat1",
+                    )
+                else:
+                    agent1 = build_agent(
+                        name1,
+                        opponent_name=name0,
+                        opponent_deck=deck0,
+                        own_deck=deck1,
+                        belief_mode=args.belief_mode,
+                        cg_dir=str(package_root / "cg"),
+                        output_dir=output.parent,
+                        trace_path=trace_path,
+                    )
                 local_step = 0
 
                 def observe(obs, actor, raw_action, action, decision_ms):
@@ -186,7 +281,7 @@ def main() -> int:
                         truth = build_truth_state(normalize_official_observation(obs))
                         found = classify_dragapult_transition(truth, obs)
                         if found:
-                            record = _capture_record(
+                            records.append(_capture_record(
                                 game=len(games),
                                 step=local_step,
                                 opponent=opponent,
@@ -197,8 +292,7 @@ def main() -> int:
                                 action=action,
                                 decision_ms=decision_ms,
                                 tags=found,
-                            )
-                            records.append(record)
+                            ))
                             tags.update(found)
                     local_step += 1
 
@@ -207,7 +301,7 @@ def main() -> int:
                     agent0,
                     deck1,
                     agent1,
-                    cg_dir=args.cg_dir,
+                    cg_dir=package_root / "cg",
                     max_steps=args.max_steps,
                     trace_path=output.parent / "dragapult_complete_traces" / f"game_{len(games):04d}.jsonl",
                     decision_observer=observe,
@@ -243,11 +337,22 @@ def main() -> int:
         for group, required in REQUIRED_GROUPS.items()
     }
     requirements = {
+        "submission_runtime_layout": package_report.get("runtime") == "PASS",
+        "canonical_main_byte_identity": (ROOT / "main.py").read_bytes() == (package_root / "main.py").read_bytes(),
+        "canonical_deck_byte_identity": (ROOT / "deck.csv").read_bytes() == (package_root / "deck.csv").read_bytes(),
         "runtime_errors_zero": errors == 0,
         "all_routes_captured": (not args.require_all_routes) or all(row["complete"] for row in route_groups.values()),
     }
     summary = {
         "verdict": "DRAGAPULT_COMPLETE_SMOKE_PASS" if all(requirements.values()) else "DRAGAPULT_COMPLETE_SMOKE_FAIL",
+        "execution_surface": "STAGED_EXACT_SUBMISSION_MAIN",
+        "submission_package": {
+            **package_report,
+            "path": str(package_root),
+            "main_sha256": _sha256(package_root / "main.py"),
+            "deck_sha256": _sha256(package_root / "deck.csv"),
+            "libcg_sha256": _sha256(package_root / "cg" / "libcg.so"),
+        },
         "belief_mode": args.belief_mode,
         "production_evidence": False if args.belief_mode == "oracle" else None,
         "games_per_opponent": args.games,
