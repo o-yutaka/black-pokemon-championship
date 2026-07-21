@@ -129,6 +129,7 @@ def run_matchup(
                     cg_dir=cg_dir,
                     max_steps=max_steps,
                     decision_observer=observe,
+                    game_index=game,
                 )
             else:
                 report = run_battle(
@@ -139,6 +140,7 @@ def run_matchup(
                     cg_dir=cg_dir,
                     max_steps=max_steps,
                     decision_observer=observe,
+                    game_index=game,
                 )
 
             result = report.get("result", -1)

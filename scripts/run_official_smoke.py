@@ -359,6 +359,7 @@ def main() -> int:
                     max_steps=args.max_steps,
                     trace_path=trace_dir / f"game_{len(games):04d}.jsonl",
                     decision_observer=observe,
+                    game_index=len(games),
                 )
                 provenance = provenance or report.get("provenance")
                 winner = None

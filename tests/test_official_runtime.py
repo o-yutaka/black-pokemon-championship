@@ -110,12 +110,7 @@ def test_is_impossible_select_matches_exact_captured_signature():
 
 
 def test_capture_impossible_select_evidence_writes_full_bundle(tmp_path):
-    import engine.official_runtime as runtime_module
     from engine.official_runtime import _capture_impossible_select_evidence
-
-    # Reset the module-level once-only guard so this test is independent of
-    # test execution order / prior captures within the same process.
-    runtime_module._IMPOSSIBLE_SELECT_CAPTURED = False
 
     observation = {
         "current": {"yourIndex": 1, "turn": 20, "result": -1, "players": [{}, {
@@ -126,26 +121,50 @@ def test_capture_impossible_select_evidence_writes_full_bundle(tmp_path):
                    "effect": None, "contextCard": None, "deck": None},
         "logs": [],
     }
-    prev_observation = {"current": {"yourIndex": 1, "turn": 20}, "select": {"type": 1, "context": 4}}
+    prev_observation = {"current": {"yourIndex": 1, "turn": 19, "result": -1}, "select": {"type": 1, "context": 4}}
+    prev_action = [0]
+    current_action: list[int] = []
 
-    _capture_impossible_select_evidence(
-        observation, [], prev_observation, [0], output_dir=tmp_path
+    capture_dir = _capture_impossible_select_evidence(
+        observation, current_action, prev_observation, prev_action,
+        output_dir=tmp_path, game_index=7, step=42,
     )
 
+    # Evidence lives under a unique captures/<capture_id>/ directory -- the
+    # base output_dir itself must stay untouched except for the manifest, so
+    # a rare second occurrence can never overwrite a prior one.
+    assert capture_dir.parent.parent == tmp_path
+    assert capture_dir.parent.name == "captures"
     for name in (
-        "raw_observation.json", "raw_select.json", "previous_action.json",
-        "effect_context.json", "converted_select.json", "conversion_diff.json",
+        "raw_observation.json", "raw_select.json", "previous_observation.json",
+        "previous_action.json", "current_action.json", "effect_context.json",
+        "converted_select.json", "conversion_diff.json",
     ):
-        assert (tmp_path / name).is_file(), f"missing {name}"
+        assert (capture_dir / name).is_file(), f"missing {name}"
 
-    diff = json.loads((tmp_path / "conversion_diff.json").read_text())
+    assert json.loads((capture_dir / "previous_observation.json").read_text()) == prev_observation
+    assert json.loads((capture_dir / "previous_action.json").read_text()) == prev_action
+    assert json.loads((capture_dir / "current_action.json").read_text()) == current_action
+
+    diff = json.loads((capture_dir / "conversion_diff.json").read_text())
     assert diff["raw.type"] == 0
     assert diff["raw.context"] == 7
     assert diff["raw.option_count"] == 0
 
-    # The once-only guard must prevent a second call in the same process
-    # from silently overwriting first-occurrence evidence.
-    (tmp_path / "raw_select.json").write_text("SENTINEL")
-    _capture_impossible_select_evidence(observation, [], prev_observation, [0], output_dir=tmp_path)
-    assert (tmp_path / "raw_select.json").read_text() == "SENTINEL"
-    runtime_module._IMPOSSIBLE_SELECT_CAPTURED = False
+    manifest = json.loads((tmp_path / "capture_manifest.json").read_text())
+    assert manifest["latest"] == capture_dir.name
+    assert manifest["captures"][-1]["game_index"] == 7
+    assert manifest["captures"][-1]["step"] == 42
+
+    # A second occurrence must get its own directory and must not remove or
+    # overwrite the first capture's evidence or manifest history.
+    second_capture_dir = _capture_impossible_select_evidence(
+        observation, current_action, prev_observation, prev_action,
+        output_dir=tmp_path, game_index=8, step=1,
+    )
+    assert second_capture_dir != capture_dir
+    assert capture_dir.is_dir()
+    assert (capture_dir / "raw_observation.json").is_file()
+    manifest = json.loads((tmp_path / "capture_manifest.json").read_text())
+    assert len(manifest["captures"]) == 2
+    assert manifest["latest"] == second_capture_dir.name

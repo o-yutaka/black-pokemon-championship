@@ -135,7 +135,17 @@ def _is_impossible_select(select: dict) -> bool:
     )
 
 
-_IMPOSSIBLE_SELECT_CAPTURED = False
+def _capture_id(observation: dict, game_index: int | None, step: int) -> str:
+    """timestamp + pid + game_index + step + raw_observation_sha256 --
+    unique per occurrence so concurrent/parallel runs (or a second
+    occurrence later in the same run) can never collide or overwrite a
+    prior capture. The hash covers the *raw* observation bytes so an
+    identical id also implies byte-identical evidence, not just a name
+    collision.
+    """
+    import hashlib
+    digest = hashlib.sha256(json.dumps(observation, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:16]
+    return f"{int(time.time() * 1000)}_{os.getpid()}_{game_index if game_index is not None else 'na'}_{step}_{digest}"
 
 
 def _capture_impossible_select_evidence(
@@ -145,32 +155,45 @@ def _capture_impossible_select_evidence(
     prev_action: list[int] | None,
     *,
     output_dir: Path | None = None,
+    game_index: int | None = None,
+    step: int | None = None,
 ) -> None:
-    """Fired automatically the first time _is_impossible_select() matches in
-    any process. Writes the full raw/converted/diff bundle the runtime
-    contract audit requires, then tries the real battle_select(action) and
-    records whatever happens (success or full traceback) -- this call is
-    the only thing that can determine ADAPTER_BUG vs
-    ENGINE_INVALID_OBSERVATION vs ENGINE_TARGET_ENUMERATION_BUG, and it must
-    not be skipped or short-circuited by a try/except upstream swallowing it.
-    """
-    global _IMPOSSIBLE_SELECT_CAPTURED
-    if _IMPOSSIBLE_SELECT_CAPTURED:
-        return
-    _IMPOSSIBLE_SELECT_CAPTURED = True
-    import dataclasses
-    import traceback as _tb
+    """Fired automatically every time _is_impossible_select() matches --
+    NOT once-per-process. Each occurrence gets its own immutable
+    captures/<capture_id>/ directory (see _capture_id) so a rare second
+    occurrence is never lost or silently overwritten; only a small
+    capture_manifest.json at the stable base path is ever rewritten, and it
+    only ever appends new entries or updates "latest", never removes
+    history.
 
-    out = output_dir or (Path(__file__).resolve().parents[1] / "artifacts" / "runtime_contract" / "impossible_select")
+    Writes the full raw/converted/diff bundle the runtime contract audit
+    requires, per occurrence. Does NOT call battle_select itself -- the
+    caller (run_battle's main loop) makes the one real call and records the
+    outcome (success or full traceback) via its own try/except, so this
+    function only captures *pre*-call state (plus the action about to be
+    submitted, saved verbatim as current_action.json).
+    """
+    import dataclasses
+
+    base = output_dir or (Path(__file__).resolve().parents[1] / "artifacts" / "runtime_contract" / "impossible_select")
+    base.mkdir(parents=True, exist_ok=True)
+    capture_id = _capture_id(observation, game_index, step or 0)
+    out = base / "captures" / capture_id
     out.mkdir(parents=True, exist_ok=True)
     select = observation.get("select") or {}
 
     (out / "raw_observation.json").write_text(json.dumps(observation, indent=2, ensure_ascii=False, default=str))
     (out / "raw_select.json").write_text(json.dumps(select, indent=2, ensure_ascii=False, default=str))
-    (out / "previous_action.json").write_text(json.dumps({
-        "previous_action": prev_action,
-        "previous_observation_select": (prev_observation.get("select") if prev_observation else None),
-    }, indent=2, ensure_ascii=False, default=str))
+    # Full previous observation (not just its select) -- required to
+    # reconstruct the parent state's hand/deck/discard/board, not just what
+    # was being selected a moment before.
+    (out / "previous_observation.json").write_text(
+        json.dumps(prev_observation, indent=2, ensure_ascii=False, default=str)
+    )
+    (out / "previous_action.json").write_text(json.dumps(prev_action, indent=2, ensure_ascii=False, default=str))
+    # The actual action this decision resolved to, saved standalone so the
+    # evidence bundle is self-contained without needing the trace file too.
+    (out / "current_action.json").write_text(json.dumps(action, indent=2, ensure_ascii=False, default=str))
     (out / "effect_context.json").write_text(json.dumps({
         "effect": select.get("effect"),
         "contextCard": select.get("contextCard"),
@@ -215,9 +238,19 @@ def _capture_impossible_select_evidence(
         "official.deck": (official_select or {}).get("deck") if isinstance(official_select, dict) else None,
     }, indent=2, ensure_ascii=False, default=str))
 
-    # NOTE: does not call battle_select itself -- the caller (run_battle's
-    # main loop) makes the one real call and records the outcome via its
-    # own try/except, so this function only captures the *pre*-call state.
+    manifest_path = base / "capture_manifest.json"
+    try:
+        manifest = json.loads(manifest_path.read_text()) if manifest_path.is_file() else {"captures": []}
+    except Exception:
+        manifest = {"captures": []}
+    manifest.setdefault("captures", []).append({
+        "capture_id": capture_id, "game_index": game_index, "step": step, "pid": os.getpid(),
+        "captured_at_epoch_ms": int(time.time() * 1000),
+    })
+    manifest["latest"] = capture_id
+    manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False))
+
+    return out
 
 
 def _legal_action(obs: dict, action: Any) -> list[int]:
@@ -252,6 +285,7 @@ def run_battle(
     trace_path: str | Path | None = None,
     game_module: ModuleType | None = None,
     decision_observer: Callable[[dict, int, Any, list[int], float], None] | None = None,
+    game_index: int | None = None,
 ) -> dict:
     """Run one sequential official-engine battle.
 
@@ -310,14 +344,16 @@ def run_battle(
                 }
             )
             if _is_impossible_select(select):
-                _capture_impossible_select_evidence(observation, action, prev_observation, prev_action)
-                out = Path(__file__).resolve().parents[1] / "artifacts" / "runtime_contract" / "impossible_select"
+                capture_dir = _capture_impossible_select_evidence(
+                    observation, action, prev_observation, prev_action,
+                    game_index=game_index, step=steps,
+                )
                 try:
                     next_observation = game.battle_select(action)
-                    (out / "traceback.txt").write_text(f"battle_select({action!r}) SUCCEEDED -- no exception")
+                    (capture_dir / "traceback.txt").write_text(f"battle_select({action!r}) SUCCEEDED -- no exception")
                 except Exception:
                     import traceback as _tb2
-                    (out / "traceback.txt").write_text(_tb2.format_exc())
+                    (capture_dir / "traceback.txt").write_text(_tb2.format_exc())
                     raise
             else:
                 next_observation = game.battle_select(action)
