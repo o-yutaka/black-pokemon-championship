@@ -17,6 +17,7 @@ BLACK_ENGINE_FILE_ORDER = (
     "__init__.py",
     "runtime.py",
     "support.py",
+    "prize_truth.py",
     "mewtwo_truth.py",
     "rocket_mewtwo_worldline.py",
     "rocket_mewtwo_worldline_v2.py",
@@ -24,6 +25,7 @@ BLACK_ENGINE_FILE_ORDER = (
     "worldline/model.py",
     "worldline/judge.py",
     "worldline/vision.py",
+    "worldline/pending.py",
 )
 REQUIRED_CG_FILES = (
     "__init__.py",
