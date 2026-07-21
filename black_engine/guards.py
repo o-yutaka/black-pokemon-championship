@@ -11,6 +11,11 @@ ROCKET_POKEMON = {400, 401, 414, 431, 432, 463}
 GARCHOMP_EX, SPIRITOMB, ROSERADE = 381, 387, 342
 CYNTHIA_POKEMON = {341, 342, 379, 380, 381, 387}
 
+DREEPY, DRAKLOAK, DRAGAPULT_EX = 119, 120, 121
+DUSKULL, DUSCLOPS, DUSKNOIR, AZELF, CINDERACE = 131, 132, 133, 217, 666
+FIRE_ENERGY, PSYCHIC_ENERGY = 2, 5
+CINDERACE_TURBO_FLARE = 965
+
 
 @dataclass(frozen=True)
 class GuardVote:
@@ -122,6 +127,46 @@ class SpiritombTerminalGuard:
         return GuardVote("spiritomb_terminal", penalty=120, reason="action delays available Spiritomb lethal")
 
 
+class DragapultEnergyColorGuard:
+    def evaluate(self, truth: TruthState, option: LegalOption) -> GuardVote:
+        if option.action_type != T_ENERGY:
+            return GuardVote("dragapult_energy_color")
+        if option.target_id in {AZELF, DUSKULL, DUSCLOPS, DUSKNOIR} and option.card_id == FIRE_ENERGY:
+            return GuardVote(
+                "dragapult_energy_color",
+                True,
+                reason="Fire cannot advance the Psychic-only secondary route",
+            )
+        if option.target_id in {DREEPY, DRAKLOAK, DRAGAPULT_EX} and option.card_id in {FIRE_ENERGY, PSYCHIC_ENERGY}:
+            return GuardVote("dragapult_energy_color", bonus=55, reason="colored Phantom Dive requirement")
+        return GuardVote("dragapult_energy_color")
+
+
+class CinderaceTurboRouteGuard:
+    def evaluate(self, truth: TruthState, option: LegalOption) -> GuardVote:
+        if option.action_type != T_ATTACK or _active_id(truth) != CINDERACE or option.attack_id != CINDERACE_TURBO_FLARE:
+            return GuardVote("cinderace_turbo_route")
+        targets = [p for p in truth.me.bench if p.card_id in {DREEPY, DRAKLOAK, DRAGAPULT_EX, AZELF}]
+        if not targets:
+            return GuardVote("cinderace_turbo_route", penalty=180, reason="Turbo Flare has no strategic Bench recipient")
+        missing_capacity = sum(max(0, 2 - p.energy_count) for p in targets)
+        return GuardVote(
+            "cinderace_turbo_route",
+            bonus=170 if missing_capacity >= 2 else 70,
+            reason=f"bench_energy_capacity={missing_capacity}",
+        )
+
+
+class DuskBlastTerminalGuard:
+    def evaluate(self, truth: TruthState, option: LegalOption) -> GuardVote:
+        if option.action_type != T_ABILITY or option.card_id not in {DUSCLOPS, DUSKNOIR}:
+            return GuardVote("dusk_blast_terminal")
+        blast = 50 if option.card_id == DUSCLOPS else 130
+        if any(0 < p.remaining_hp <= blast for p in truth.opponent.in_play):
+            return GuardVote("dusk_blast_terminal", bonus=220, reason=f"Cursed Blast exact KO band <= {blast}")
+        return GuardVote("dusk_blast_terminal", penalty=35, reason="nonterminal self-KO requires planner confirmation")
+
+
 class EndTurnValueGuard:
     def evaluate(self, truth: TruthState, option: LegalOption) -> GuardVote:
         if option.action_type != T_END:
@@ -137,4 +182,6 @@ def guards_for(candidate: str) -> tuple[Guard, ...]:
         return common + (MewtwoFourRocketGuard(), MewtwoEnergyFutureGuard())
     if candidate == "garchomp_spiritomb":
         return common + (GarchompHeavyAttackGuard(), SpiritombTerminalGuard())
+    if candidate == "dragapult_cinderace":
+        return common + (DragapultEnergyColorGuard(), CinderaceTurboRouteGuard(), DuskBlastTerminalGuard())
     raise ValueError(f"unknown candidate: {candidate}")
