@@ -1,0 +1,28 @@
+{
+  "candidate_id": "mewtwo_spidops_black_v1",
+  "title": "Team Rocket's Mewtwo ex / Spidops BLACK v1",
+  "status": "STATIC_READY_OFFICIAL_ENGINE_HOLD",
+  "policy_module": "candidates.mewtwo_spidops.policy",
+  "deck_file": "deck.csv",
+  "ace_spec_ids": [1159],
+  "expected_total": 60,
+  "intent": "Establish four Team Rocket Pokemon, use Spidops as a renewable Benched Energy reservoir, and select the minimum Erasure Ball discard tier that secures the required Prize without breaking the next attack.",
+  "primary_routes": [
+    "PROTON_OR_POKE_PAD_TO_FOUR_ROCKET",
+    "SPIDOPS_CHARGING_UP_RESERVOIR",
+    "MEWTWO_160_220_280_MINIMUM_KO_TIER",
+    "WOBBUFFET_DAMAGE_CONVERSION",
+    "GIOVANNI_SWITCH_GUST"
+  ],
+  "forbidden": [
+    "ATTACK_WITH_MEWTWO_BEFORE_FOUR_ROCKET",
+    "DISCARD_TWO_BENCH_ENERGY_WHEN_ZERO_OR_ONE_IS_ENOUGH",
+    "EMPTY_NEXT_ATTACK_RESERVOIR_WITHOUT_PRIZE_GAIN"
+  ],
+  "local_required": [
+    "official option attack-id/name capture",
+    "Spidops ability target capture",
+    "Erasure Ball discard multi-select capture",
+    "paired smoke and matchup evaluation"
+  ]
+}
