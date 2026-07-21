@@ -229,7 +229,15 @@ class ScoredPolicy(ABC):
         select = obs.get("select") or {}
         options = select.get("option") if isinstance(select.get("option"), list) else []
         if not options:
-            return [] if int(select.get("minCount", 0) or 0) == 0 else list(self.deck)
+            # No legal options exist -- there is nothing to select regardless
+            # of minCount. Returning list(self.deck) here (60 card IDs, not
+            # option indices) was a copy-paste of the *initial deck
+            # registration* fallback (obs is None, above) onto a genuine
+            # mid-game empty-option-list case; battle_select() has no way to
+            # interpret 60 out-of-range indices against 0 options and raises
+            # IndexError. Confirmed against a real captured crash: step 192,
+            # select_context=7 (TO_HAND), minCount=1, option_count=0.
+            return []
         context = self.build_context(obs)
         minimum, maximum = max(0, int(select.get("minCount", 1) or 0)), max(0, int(select.get("maxCount", 1) or 0))
         raw = self.choose_single(options, context) if minimum == maximum == 1 else self.choose_multi(options, context, minimum, maximum)

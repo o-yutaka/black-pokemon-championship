@@ -76,7 +76,13 @@ class HybridPolicy:
             return list(self.deck)
         truth = build_truth_state(normalize_official_observation(obs))
         if not truth.options:
-            return [] if truth.min_count == 0 else list(self.deck)
+            # See the matching fix/comment in black_lab.ScoredPolicy.agent():
+            # with 0 real options there is nothing to select regardless of
+            # min_count, and list(self.deck) (card IDs, not option indices)
+            # is not a valid action here -- confirmed via a real captured
+            # crash (IndexError in battle_select, select_context=7 TO_HAND,
+            # minCount=1, option_count=0).
+            return []
         # Multi-select windows are delegated to the deck-specific deterministic
         # prior. For Mewtwo this includes minimum Erasure Ball discard selection
         # and preservation of nonrenewable Team Rocket Energy.

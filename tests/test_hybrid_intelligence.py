@@ -195,3 +195,28 @@ def test_ismcts_prefers_winning_root_action():
     assert result.enabled is True
     assert result.value_for(0).mean_value > result.value_for(1).mean_value
     assert result.value_for(0).visits > result.value_for(1).visits
+
+
+def test_empty_options_returns_empty_selection_not_deck_as_indices():
+    # Regression: a real captured crash (300-game production round robin,
+    # mewtwo_spidops vs dragapult_cinderace, game 94) hit select_type=0,
+    # select_context=7 (TO_HAND), minCount=1, maxCount=1, option_count=0.
+    # Both black_lab.ScoredPolicy.agent() and HybridPolicy.agent() returned
+    # list(self.deck) here -- 60 card IDs, not option indices -- copy-pasted
+    # from the *initial deck registration* fallback (obs is None) onto a
+    # genuine mid-game empty-option-list case. battle_select() then raised
+    # IndexError trying to interpret 60 out-of-range indices against 0
+    # options. With 0 real options there is nothing to select regardless of
+    # minCount; the only valid action is [].
+    obs = {
+        "current": {"yourIndex": 0, "turn": 20, "result": -1, "players": [{}, {}]},
+        "select": {"type": 0, "context": 7, "minCount": 1, "maxCount": 1, "option": []},
+        "logs": [],
+    }
+    base = build_policy("mewtwo_spidops")
+    base.set_deck(list(range(60)))
+    assert base.agent(obs) == []
+
+    hybrid = HybridPolicy("mewtwo_spidops", build_policy("mewtwo_spidops"))
+    hybrid.set_deck(list(range(60)))
+    assert hybrid.agent(obs) == []
