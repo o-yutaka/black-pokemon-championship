@@ -1,0 +1,10 @@
+{
+  "candidate": "dragapult_cinderace",
+  "deck_name": "BLACK Championship Dragapult / Cinderace / Dusknoir / Azelf",
+  "ace_spec_ids": [1088],
+  "core_card_ids": [666, 119, 120, 121, 131, 132, 133, 217],
+  "energy_ids": [2, 5],
+  "status": "HOLD_FOR_OFFICIAL_PAIRED_EVALUATION",
+  "card_truth_source": "competition EN_Card_Data(4).csv and official cg AllCard/AllAttack",
+  "engine_truth": "official CABT libcg.so"
+}
