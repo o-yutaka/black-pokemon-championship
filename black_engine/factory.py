@@ -9,6 +9,38 @@ from .belief import ArchetypeTemplate, BayesianBeliefModel
 from .hybrid import HybridPolicy
 from .rl_prior import TabularQPrior
 
+SUPPORTED_CANDIDATES = (
+    "mewtwo_spidops",
+    "garchomp_spiritomb",
+    "dragapult_cinderace",
+)
+
+
+def build_candidate_base_policy(candidate: str):
+    """Build the exact base policy used by a candidate production entrypoint.
+
+    Candidate policies do not share one implementation family.  Mewtwo has its
+    championship policy, Dragapult has ``DragapultCinderacePolicy``, and only
+    Garchomp currently uses the legacy ``black_lab.build_policy`` dispatcher.
+    All runners and candidate entrypoints must call this function so a new
+    candidate cannot silently fall through to the wrong policy family.
+    """
+    if candidate == "mewtwo_spidops":
+        from .mewtwo_policy import build_mewtwo_policy
+
+        return build_mewtwo_policy()
+    if candidate == "dragapult_cinderace":
+        from .dragapult_policy import DragapultCinderacePolicy
+
+        return DragapultCinderacePolicy()
+    if candidate == "garchomp_spiritomb":
+        from black_lab import build_policy
+
+        return build_policy(candidate)
+    raise ValueError(
+        f"unknown candidate: {candidate}; supported={','.join(SUPPORTED_CANDIDATES)}"
+    )
+
 
 def _load_templates(path: str | Path | None) -> tuple[ArchetypeTemplate, ...]:
     if path is None or not Path(path).is_file():
