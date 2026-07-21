@@ -18,9 +18,11 @@ def test_dragapult_championship_deck_is_legal_and_exact():
     report = validate_deck(deck, {1088})
     counts = Counter(deck)
     assert report["ok"], report
+    assert len(deck) == 60
+    assert counts[151] == 1
     assert counts[666] == 4
-    assert counts[121] == 4
-    assert counts[133] == 2
+    assert (counts[119], counts[120], counts[121]) == (4, 3, 4)
+    assert (counts[131], counts[132], counts[133]) == (3, 2, 2)
     assert counts[217] == 2
     assert counts[1088] == 1
     assert counts[2] == 6
@@ -91,6 +93,94 @@ def test_fire_energy_preserves_azelf_colorless_route_but_rejects_dusclops():
     assert not azelf_vote.hard_reject
     assert azelf_vote.penalty > 0
     assert dusclops_vote.hard_reject
+
+
+def _base_obs(*, select: dict, my_bench=None, opponent_active=None, opponent_bench=None, hand=None):
+    return {
+        "current": {
+            "yourIndex": 0,
+            "turn": 3,
+            "result": -1,
+            "players": [
+                {
+                    "active": [{"id": 666, "serial": 10, "hp": 140, "maxHp": 140, "energyCards": []}],
+                    "bench": my_bench or [],
+                    "hand": hand or [],
+                    "discard": [],
+                },
+                {
+                    "active": opponent_active or [{"id": 431, "serial": 20, "hp": 280, "maxHp": 280, "energyCards": []}],
+                    "bench": opponent_bench or [],
+                    "hand": [],
+                    "discard": [],
+                },
+            ],
+        },
+        "select": select,
+        "logs": [],
+    }
+
+
+def test_energy_scoring_is_per_individual_dragapult_not_active_colors():
+    policy = DragapultCinderacePolicy()
+    bench_values = [
+        {"id": 121, "serial": 101, "hp": 320, "maxHp": 320, "energyCards": [{"id": 5}]},
+        {"id": 121, "serial": 102, "hp": 320, "maxHp": 320, "energyCards": [{"id": 2}]},
+    ]
+    select = {
+        "type": 8,
+        "context": 0,
+        "minCount": 1,
+        "maxCount": 1,
+        "option": [
+            {"type": 8, "area": 2, "index": 0, "inPlayArea": 5, "inPlayIndex": 0, "playerIndex": 0},
+            {"type": 8, "area": 2, "index": 0, "inPlayArea": 5, "inPlayIndex": 1, "playerIndex": 0},
+        ],
+    }
+    obs = _base_obs(select=select, my_bench=bench_values, hand=[{"id": 2}])
+    ctx = policy.build_context(obs)
+    assert policy.score_option(select["option"][0], ctx) > policy.score_option(select["option"][1], ctx)
+
+
+def test_drakloak_effect_resolves_select_deck_and_prefers_dragapult():
+    policy = DragapultCinderacePolicy()
+    select = {
+        "type": 0,
+        "context": 0,
+        "effect": {"id": 120, "serial": 77, "playerIndex": 0},
+        "deck": [{"id": 1097}, {"id": 121}],
+        "minCount": 1,
+        "maxCount": 1,
+        "option": [
+            {"type": 0, "area": 1, "index": 0, "playerIndex": 0},
+            {"type": 0, "area": 1, "index": 1, "playerIndex": 0},
+        ],
+    }
+    obs = _base_obs(select=select)
+    ctx = policy.build_context(obs)
+    assert policy.choose_single(select["option"], ctx) == 1
+
+
+def test_dusknoir_target_window_prefers_immediate_ko():
+    policy = DragapultCinderacePolicy()
+    select = {
+        "type": 0,
+        "context": 0,
+        "effect": {"id": 133, "serial": 88, "playerIndex": 0},
+        "minCount": 1,
+        "maxCount": 1,
+        "option": [
+            {"type": 0, "area": 4, "index": 0, "playerIndex": 1},
+            {"type": 0, "area": 5, "index": 0, "playerIndex": 1},
+        ],
+    }
+    obs = _base_obs(
+        select=select,
+        opponent_active=[{"id": 431, "serial": 201, "hp": 250, "maxHp": 280, "energyCards": []}],
+        opponent_bench=[{"id": 121, "serial": 202, "hp": 120, "maxHp": 320, "energyCards": []}],
+    )
+    ctx = policy.build_context(obs)
+    assert policy.choose_single(select["option"], ctx) == 1
 
 
 def test_dragapult_candidate_wires_all_hybrid_layers():
