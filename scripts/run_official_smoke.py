@@ -143,6 +143,7 @@ def option_shape(option) -> dict:
         "type": raw.get("type"),
         "area": raw.get("area"),
         "raw_index": raw.get("index"),
+        "energyIndex": raw.get("energyIndex"),
         "inPlayArea": raw.get("inPlayArea"),
         "inPlayIndex": raw.get("inPlayIndex"),
         "playerIndex": raw.get("playerIndex"),
@@ -158,12 +159,19 @@ def classify_mewtwo_shape(candidate: str, truth: TruthState, obs: dict) -> str |
         return None
     if any(option.attack_id == MEWTWO_ERASURE_BALL for option in truth.options):
         return "ERASURE_ATTACK_OPTION"
-    active_id = truth.me.active[0].card_id if truth.me.active else -1
     energy_ids = set(BASIC_ENERGY_IDS) | {TEAM_ROCKET_ENERGY}
     energy_options = [option for option in truth.options if option.card_id in energy_ids]
-    if active_id == MEWTWO_EX and truth.select_context == 8 and truth.max_count <= 2 and energy_options:
-        return "ERASURE_DISCARD_WINDOW"
     effect = effect_shape(obs)
+    if (
+        truth.select_type == 2
+        and truth.select_context == 26
+        and truth.min_count == 0
+        and truth.max_count == 2
+        and effect
+        and _card_id(effect) == MEWTWO_EX
+        and energy_options
+    ):
+        return "ERASURE_DISCARD_WINDOW"
     if effect and _card_id(effect) == MEWTWO_EX:
         return "MEWTWO_SELECT_EFFECT"
     return None
