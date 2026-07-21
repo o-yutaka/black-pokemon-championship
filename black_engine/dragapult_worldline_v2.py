@@ -51,6 +51,23 @@ class DragapultWorldlinePolicy(_BaseDragapultWorldlinePolicy):
         self._latest_context = ctx
         return ctx
 
+    def _immediate_prize_pressure(self, ctx: dict) -> bool:
+        hp = int(ctx.get("opp_hp", 0) or 0)
+        if 0 < hp <= 200:
+            return True
+        articuno = bool(ctx.get("opponent_articuno_online"))
+        for value in ctx.get("theirs", ()):
+            if not isinstance(value, dict):
+                continue
+            target_hp = remaining_hp(value)
+            if not 0 < target_hp <= 60:
+                continue
+            cid = card_id(value)
+            protected_basic = articuno and cid in ROCKET_POKEMON and cid != SPIDOPS
+            if not protected_basic:
+                return True
+        return False
+
     def _plan_for_option(self, index: int, option: dict, ctx: dict):
         result = super()._plan_for_option(index, option, ctx)
         kind = option.get("type")
