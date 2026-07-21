@@ -195,3 +195,38 @@ def test_articuno_protected_basics_preserve_power_saver_after_phantom():
     assert ctx["rocket_count"] == 5
     assert ctx["rocket_count_after_phantom"] == 4
     assert ctx["four_rocket_spread_resilient"]
+
+
+def test_prize_value_uses_official_card_rule_not_hp():
+    from black_engine.prize_truth import prize_value
+
+    assert prize_value(951) == 2
+    assert prize_value(264) == 1
+    assert prize_value(652) == 3
+
+
+def test_xerosic_plan_is_stored_as_real_plan_step():
+    active = pokemon(MEWTWO_EX, 10, 280, 280, (TEAM_ROCKET_ENERGY, 5))
+    obs = observation(
+        active=active,
+        bench=rocket_board(),
+        opponent_hand=8,
+        options=(
+            {"type": 7, "cardId": XEROSIC},
+            {
+                "type": 13,
+                "attackId": MEWTWO_ERASURE_BALL,
+                "playerIndex": 0,
+                "inPlayArea": 4,
+                "inPlayIndex": 0,
+            },
+        ),
+    )
+    policy = RocketMewtwoWorldlinePolicy()
+    ctx = policy.build_context(obs)
+    assert policy.choose_single(obs["select"]["option"], ctx) == 0
+    pending = policy.pending.get()
+    assert pending is not None
+    assert pending.candidate.plan_id == "XEROSIC_THEN_ERASURE"
+    assert len(pending.candidate.steps) == 1
+    assert pending.candidate.steps[0].attack_id == MEWTWO_ERASURE_BALL
