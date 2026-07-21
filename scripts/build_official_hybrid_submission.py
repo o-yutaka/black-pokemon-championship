@@ -7,7 +7,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-CANDIDATES = {"mewtwo_spidops", "garchomp_spiritomb"}
+CANDIDATES = {"mewtwo_spidops", "garchomp_spiritomb", "dragapult_cinderace"}
 
 MAIN_TEMPLATE = '''from __future__ import annotations
 
@@ -25,7 +25,11 @@ from black_lab import build_policy, read_deck
 
 CANDIDATE = {candidate!r}
 DECK = read_deck(ROOT / "deck.csv")
-BASE_POLICY = build_policy(CANDIDATE)
+if CANDIDATE == "dragapult_cinderace":
+    from black_engine.dragapult_policy import DragapultCinderacePolicy
+    BASE_POLICY = DragapultCinderacePolicy()
+else:
+    BASE_POLICY = build_policy(CANDIDATE)
 HYBRID_POLICY = build_hybrid_policy(CANDIDATE, BASE_POLICY, root=ROOT)
 RUNTIME = OfficialHybridRuntime(
     HYBRID_POLICY,
