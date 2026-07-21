@@ -18,13 +18,17 @@ def test_dragapult_championship_deck_is_legal_and_exact():
     report = validate_deck(deck, {1088})
     counts = Counter(deck)
     assert report["ok"], report
+    assert len(deck) == 60
+    assert counts[151] == 1
     assert counts[666] == 4
-    assert counts[121] == 4
-    assert counts[133] == 2
+    assert (counts[119], counts[120], counts[121]) == (4, 4, 3)
+    assert (counts[131], counts[132], counts[133]) == (3, 2, 2)
     assert counts[217] == 2
     assert counts[1088] == 1
     assert counts[2] == 6
-    assert counts[5] == 8
+    assert counts[5] == 7
+    assert counts[1231] == 3
+    assert counts[1097] == 2
 
 
 def test_official_hp_is_converted_to_damage_non_destructively():
