@@ -67,7 +67,7 @@ def test_rocket_ledger_recognizes_ready_mewtwo_and_minimum_tier():
     truth = build_truth_state(normalize_official_observation(observation({
         "minCount": 1,
         "maxCount": 1,
-        "option": [{"type": 13, "attackId": 608, "playerIndex": 0, "inPlayArea": 4, "inPlayIndex": 0}],
+        "option": [{"type": 13, "attackId": 608}],
     })))
     ledger = build_rocket_ledger(truth)
     assert ledger.rocket_count == 4
@@ -98,20 +98,52 @@ def test_opening_active_prefers_murkrow_over_exposure_of_mewtwo():
     assert result == [1]
 
 
-def test_erasure_ball_discards_minimum_basic_not_team_rocket_energy():
+def test_erasure_ball_real_shape_discards_minimum_renewable_basic_energy():
     players = base_players()
-    players[0]["energy"] = [{"id": 15}, {"id": 1}]
+    players[0]["bench"] = [
+        pokemon(401, hp=130, energy=(1, 15)),
+        pokemon(400, hp=50),
+        pokemon(463, hp=80, energy=(5,)),
+    ]
     policy = build_mewtwo_policy()
-    result = policy.agent(observation({
-        "context": 8,
+    obs = observation({
+        "type": 2,
+        "context": 26,
         "minCount": 0,
         "maxCount": 2,
+        "effect": {"id": 431, "serial": 9, "playerIndex": 0},
         "option": [
-            {"type": 4, "area": 8, "index": 0, "playerIndex": 0},
-            {"type": 4, "area": 8, "index": 1, "playerIndex": 0},
+            {"type": 5, "area": 5, "index": 0, "energyIndex": 0, "playerIndex": 0},
+            {"type": 5, "area": 5, "index": 0, "energyIndex": 1, "playerIndex": 0},
+            {"type": 5, "area": 5, "index": 2, "energyIndex": 0, "playerIndex": 0},
+        ],
+    }, players=players)
+
+    normalized = normalize_official_observation(obs)
+    truth = build_truth_state(normalized)
+    assert [(option.card_id, option.target_id) for option in truth.options] == [
+        (1, 401),
+        (15, 401),
+        (5, 463),
+    ]
+    assert policy.agent(obs) == [0]
+
+
+def test_erasure_ball_selects_zero_energy_inside_160_band():
+    players = base_players()
+    players[1]["active"] = [pokemon(700, hp=160)]
+    policy = build_mewtwo_policy()
+    result = policy.agent(observation({
+        "type": 2,
+        "context": 26,
+        "minCount": 0,
+        "maxCount": 2,
+        "effect": {"id": 431, "serial": 9, "playerIndex": 0},
+        "option": [
+            {"type": 5, "area": 5, "index": 0, "energyIndex": 0, "playerIndex": 0},
         ],
     }, players=players))
-    assert result == [1]
+    assert result == []
 
 
 def test_optional_setup_bench_stops_at_four_rocket_bodies():
