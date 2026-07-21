@@ -1,0 +1,1 @@
+Shared BLACK worldline-runner kernel. Deck-specific policies live on standalone branches and import this package.
