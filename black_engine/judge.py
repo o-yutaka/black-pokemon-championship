@@ -53,9 +53,16 @@ class HybridJudge:
         values = tuple(scores)
         legal = [value for value in values if not value.hard_rejected]
         if legal:
-            selected = max(legal, key=lambda value: (value.total, -value.option.index))
+            # Tie-break must match ScoredPolicy.choose_single (black_lab.py):
+            # max() over (score, index) maximizes index on ties. A prior
+            # version negated the index here, silently reversing tie-break
+            # direction versus the base policy -- with the coarse, heavily
+            # bucketed scores these heuristics return, ties are common, and
+            # that mismatch alone produced a spurious ~10-20pt "hybrid edge"
+            # in evaluation even with every hybrid subsystem neutralized.
+            selected = max(legal, key=lambda value: (value.total, value.option.index))
             return JudgeVerdict(selected.option.index, values, False, "hybrid_max_total")
         if not values:
             return JudgeVerdict(0, (), True, "no_options")
-        selected = max(values, key=lambda value: (value.heuristic, -value.option.index))
+        selected = max(values, key=lambda value: (value.heuristic, value.option.index))
         return JudgeVerdict(selected.option.index, values, True, "all_guard_rejected_fallback")

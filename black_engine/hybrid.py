@@ -32,7 +32,19 @@ class HybridPolicy:
         self.belief = belief or BayesianBeliefModel()
         self.rl_prior = rl_prior or TabularQPrior()
         self.ismcts = ismcts
-        self.guards = guards_for(candidate)
+        # Ablation switches (evaluation-only; default leaves every component
+        # ON, matching production wiring). Guards are the only subsystem with
+        # evidence-backed logic today -- belief/RL/ISMCTS are fail-closed
+        # neutral until trained data exists, so BLACK_ABLATE_BAYES/RL/ISMCTS
+        # are provided for completeness/regression-checking, not because they
+        # are expected to change behavior yet.
+        self.guards = () if os.environ.get("BLACK_ABLATE_GUARDS") in {"1", "true", "True"} else guards_for(candidate)
+        if os.environ.get("BLACK_ABLATE_BAYES") in {"1", "true", "True"}:
+            self.belief = BayesianBeliefModel()
+        if os.environ.get("BLACK_ABLATE_RL") in {"1", "true", "True"}:
+            self.rl_prior = TabularQPrior()
+        if os.environ.get("BLACK_ABLATE_ISMCTS") in {"1", "true", "True"}:
+            self.ismcts = None
         self.planners = planners_for(candidate)
         self.judge = HybridJudge()
         self.deck: list[int] = []
