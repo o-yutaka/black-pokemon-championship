@@ -2,9 +2,6 @@ from __future__ import annotations
 
 from .planners import PlannerVote
 from .rocket_ledger import (
-    ARIANA if False else MEWTWO_EX,
-)
-from .rocket_ledger import (
     BASIC_ENERGY_IDS,
     MEWTWO_EX,
     MURKROW,
@@ -103,7 +100,6 @@ class RocketSetupSequencePlanner:
                 reason="Factory before Rocket Supporter enables draw-two sequence",
             )
         if option.card_id in ROCKET_SUPPORTERS:
-            stadium_present = False
             raw = truth.raw_observation
             current = raw.get("current") if isinstance(raw, dict) and isinstance(raw.get("current"), dict) else {}
             stadium = current.get("stadium") if isinstance(current.get("stadium"), list) else []
