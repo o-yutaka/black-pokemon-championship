@@ -43,6 +43,10 @@ class HybridPolicy:
                 from .mewtwo_guards import championship_mewtwo_guards
 
                 self.guards = self.guards + championship_mewtwo_guards()
+            if candidate == "dragapult_cinderace":
+                from .dragapult_complete_guards import championship_dragapult_guards
+
+                self.guards = self.guards + championship_dragapult_guards()
         if os.environ.get("BLACK_ABLATE_BAYES") in {"1", "true", "True"}:
             self.belief = BayesianBeliefModel()
         if os.environ.get("BLACK_ABLATE_RL") in {"1", "true", "True"}:
@@ -76,16 +80,12 @@ class HybridPolicy:
             return list(self.deck)
         truth = build_truth_state(normalize_official_observation(obs))
         if not truth.options:
-            # See the matching fix/comment in black_lab.ScoredPolicy.agent():
-            # with 0 real options there is nothing to select regardless of
-            # min_count, and list(self.deck) (card IDs, not option indices)
-            # is not a valid action here -- confirmed via a real captured
-            # crash (IndexError in battle_select, select_context=7 TO_HAND,
-            # minCount=1, option_count=0).
+            # With zero real options there is nothing to select regardless of
+            # min_count. Card IDs are never valid option indices mid-game.
             return []
         # Multi-select windows are delegated to the deck-specific deterministic
-        # prior. For Mewtwo this includes minimum Erasure Ball discard selection
-        # and preservation of nonrenewable Team Rocket Energy.
+        # prior. This is where effect state machines enforce exact count/target
+        # contracts such as Erasure Ball, Poffin, Crispin and Turbo Flare.
         if truth.min_count != 1 or truth.max_count != 1:
             return normalize_selection(obs, self.base_policy.agent(obs, configuration))
 
