@@ -1,0 +1,89 @@
+{
+  "version": "BLACK_MEWTWO_SPIDOPS_CHAMPIONSHIP_V2",
+  "candidate": "mewtwo_spidops",
+  "status": "DECK_FIXED_FOR_PAIRED_EVALUATION",
+  "total_cards": 60,
+  "counts": {
+    "1": 7,
+    "3": 1,
+    "5": 2,
+    "15": 4,
+    "400": 4,
+    "401": 4,
+    "414": 2,
+    "431": 2,
+    "432": 1,
+    "463": 2,
+    "1094": 3,
+    "1097": 1,
+    "1119": 1,
+    "1134": 4,
+    "1152": 4,
+    "1159": 1,
+    "1175": 1,
+    "1216": 4,
+    "1217": 1,
+    "1218": 3,
+    "1220": 3,
+    "1227": 2,
+    "1257": 3
+  },
+  "core": {
+    "primary_attacker": "Team Rocket's Mewtwo ex",
+    "energy_engine": "Team Rocket's Spidops",
+    "required_board_condition": "four Team Rocket Pokemon in play",
+    "ace_spec": "Hero's Cape"
+  },
+  "turn_plan": {
+    "opening": [
+      "Prefer Murkrow or Articuno Active over exposing Mewtwo",
+      "Use Proton and Pokemon search to reach four Team Rocket bodies",
+      "Establish Tarountula and Mewtwo while preserving a future Bench slot"
+    ],
+    "middle": [
+      "Evolve Spidops and recycle Basic Energy from discard",
+      "Attach Team Rocket Energy to Mewtwo before generic Energy when it completes the attack contract",
+      "Play Team Rocket's Factory before a Rocket Supporter when both are available",
+      "Use Giovanni to hand off from the setup Active to a ready Mewtwo"
+    ],
+    "endgame": [
+      "Compute the minimum Erasure Ball discard tier for the current Prize target",
+      "Prefer renewable Basic Energy and preserve Team Rocket Energy",
+      "Use Spidops or Wobbuffet for one-Prize routes when they shorten the Prize map"
+    ]
+  },
+  "attack_contracts": {
+    "Erasure Ball": {
+      "attack_id": 608,
+      "base_damage": 160,
+      "per_discard_bonus": 60,
+      "maximum_discards": 2,
+      "damage_bands": [160, 220, 280]
+    },
+    "Rocket Rush": {
+      "attack_id": 560,
+      "formula": "30 * Team Rocket Pokemon in play"
+    },
+    "Rocket Mirror": {
+      "attack_id": 609,
+      "formula": "move all damage counters from one Benched Team Rocket Pokemon to opponent Active"
+    }
+  },
+  "energy_philosophy": {
+    "basic_grass": "Spidops attack and renewable Erasure Ball reservoir",
+    "basic_psychic": "recoverable Mewtwo payment",
+    "basic_water": "Articuno secondary attack access",
+    "team_rocket_energy": "nonrenewable two-unit Mewtwo payment; never casually discard"
+  },
+  "evaluation_freeze": {
+    "deck_changes_during_first_screen": false,
+    "single_submission_single_deck": true,
+    "promotion_requires": [
+      "illegal=0",
+      "runtime_error=0",
+      "official_engine_smoke_pass",
+      "paired_seat_evaluation",
+      "no statistically meaningful worst-matchup regression"
+    ]
+  }
+}
