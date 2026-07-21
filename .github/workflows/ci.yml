@@ -29,3 +29,16 @@ jobs:
           name: pytest-log
           path: pytest.log
           if-no-files-found: warn
+      - name: Upload tested source snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tested-source
+          path: |
+            main.py
+            deck.csv
+            submission_contract.py
+            black_engine
+            scripts
+            tests
+          if-no-files-found: error
