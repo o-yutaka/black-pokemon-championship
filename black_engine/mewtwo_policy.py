@@ -25,7 +25,7 @@ from .rocket_ledger import (
 from .truth import LegalOption, PokemonView, TruthState, build_truth_state
 
 
-T_PLAY, T_ENERGY, T_EVOLVE, T_ABILITY, T_RETREAT, T_ATTACK, T_END = 7, 8, 9, 10, 12, 13, 14
+T_ATTACHED_CARD, T_PLAY, T_ENERGY, T_EVOLVE, T_ABILITY, T_RETREAT, T_ATTACK, T_END = 5, 7, 8, 9, 10, 12, 13, 14
 
 CTX_SETUP_ACTIVE = 1
 CTX_SETUP_BENCH = 2
@@ -39,6 +39,7 @@ CTX_DAMAGE = 15
 CTX_REMOVE_DAMAGE = 16
 CTX_EVOLVES_FROM = 18
 CTX_EVOLVES_TO = 19
+CTX_DISCARD_ENERGY_CARD = 26
 
 BUG_CATCHING_SET = 1094
 NIGHT_STRETCHER = 1097
@@ -82,6 +83,12 @@ def _current_stadium_id(truth: TruthState) -> int:
     current = raw.get("current") if isinstance(raw, dict) and isinstance(raw.get("current"), dict) else {}
     stadium = current.get("stadium") if isinstance(current.get("stadium"), list) else []
     return _card_id(stadium[0]) if stadium else -1
+
+
+def _effect_card_id(truth: TruthState) -> int:
+    raw = truth.raw_observation if isinstance(truth.raw_observation, dict) else {}
+    select = raw.get("select") if isinstance(raw.get("select"), dict) else {}
+    return _card_id(select.get("effect"))
 
 
 def _find_pokemon(truth: TruthState, card_id: int) -> PokemonView | None:
@@ -151,7 +158,7 @@ class MewtwoChampionshipPolicy(ScoredPolicy):
         if context == CTX_TO_HAND:
             return self._search_value(card, truth, ledger)
 
-        if context == CTX_DISCARD:
+        if context in {CTX_DISCARD, CTX_DISCARD_ENERGY_CARD}:
             score = 0.0
             if card in BASIC_ENERGY_IDS:
                 score += 300
@@ -367,9 +374,16 @@ class MewtwoChampionshipPolicy(ScoredPolicy):
             option for option in legal_options
             if option.card_id in BASIC_ENERGY_IDS or option.card_id == TEAM_ROCKET_ENERGY
         ]
-        if (
+        real_erasure_window = (
+            truth.select_context == CTX_DISCARD_ENERGY_CARD
+            and _effect_card_id(truth) == MEWTWO_EX
+        )
+        legacy_erasure_window = (
             ledger.active_id == MEWTWO_EX
             and truth.select_context == CTX_DISCARD
+        )
+        if (
+            (real_erasure_window or legacy_erasure_window)
             and maximum <= 2
             and energy_options
         ):
