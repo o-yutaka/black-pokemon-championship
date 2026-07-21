@@ -11,6 +11,7 @@ from .belief import BayesianBeliefModel
 from .guards import guards_for
 from .ismcts import ISMCTSResult, InformationSetMCTS
 from .judge import CandidateScore, HybridJudge
+from .official_observation import normalize_official_observation
 from .planners import planners_for
 from .rl_prior import TabularQPrior
 from .truth import build_truth_state
@@ -66,7 +67,7 @@ class HybridPolicy:
     def agent(self, obs: dict | None, configuration=None):
         if obs is None or not isinstance(obs, dict) or obs.get("select") is None:
             return list(self.deck)
-        truth = build_truth_state(obs)
+        truth = build_truth_state(normalize_official_observation(obs))
         if not truth.options:
             return [] if truth.min_count == 0 else list(self.deck)
         if truth.min_count != 1 or truth.max_count != 1:
