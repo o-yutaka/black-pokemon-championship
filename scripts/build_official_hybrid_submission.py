@@ -15,21 +15,30 @@ import os
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+
+def _resolve_root() -> Path:
+    candidates = []
+    raw_file = globals().get("__file__")
+    if isinstance(raw_file, str) and raw_file:
+        candidates.append(Path(raw_file).resolve().parent)
+    candidates.extend((Path.cwd(), Path("/kaggle_simulations/agent")))
+    for candidate in candidates:
+        if (candidate / "deck.csv").is_file() and (candidate / "black_engine").is_dir():
+            return candidate
+    return Path.cwd()
+
+
+ROOT = _resolve_root()
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from black_engine.factory import build_hybrid_policy
+from black_engine.factory import build_candidate_base_policy, build_hybrid_policy
 from black_engine.submission_runtime import OfficialHybridRuntime
-from black_lab import build_policy, read_deck
+from black_lab import read_deck
 
 CANDIDATE = {candidate!r}
 DECK = read_deck(ROOT / "deck.csv")
-if CANDIDATE == "dragapult_cinderace":
-    from black_engine.dragapult_policy import DragapultCinderacePolicy
-    BASE_POLICY = DragapultCinderacePolicy()
-else:
-    BASE_POLICY = build_policy(CANDIDATE)
+BASE_POLICY = build_candidate_base_policy(CANDIDATE)
 HYBRID_POLICY = build_hybrid_policy(CANDIDATE, BASE_POLICY, root=ROOT)
 RUNTIME = OfficialHybridRuntime(
     HYBRID_POLICY,
