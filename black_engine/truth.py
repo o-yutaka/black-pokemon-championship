@@ -50,7 +50,16 @@ def _remaining_hp(pokemon: dict, max_hp: int) -> int:
 
 
 def _damage_points(pokemon: dict, max_hp: int) -> int:
-    return max(0, max_hp - _remaining_hp(pokemon, max_hp))
+    hp = pokemon.get("hp")
+    if type(hp) in (int, float) and max_hp:
+        return max(0, max_hp - int(hp))
+    # Non-official / legacy fixture compatibility only -- the real cabt
+    # engine never sends these fields.
+    for key in ("damage", "damagePoints", "damageAmount"):
+        value = pokemon.get(key)
+        if type(value) in (int, float):
+            return max(0, int(value))
+    return 0
 
 
 @dataclass(frozen=True)
