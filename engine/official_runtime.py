@@ -5,6 +5,7 @@ import importlib
 import json
 import os
 import sys
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from types import ModuleType
@@ -149,12 +150,18 @@ def run_battle(
     max_steps: int = 20000,
     trace_path: str | Path | None = None,
     game_module: ModuleType | None = None,
+    decision_observer: Callable[[dict, int, Any, list[int], float], None] | None = None,
 ) -> dict:
     """Run one sequential official-engine battle.
 
     The native engine is process-global, so this runner is intentionally sequential.
     It never claims deterministic seeding because battle_start(deck0, deck1) exposes
     no seed parameter in the official Python contract.
+
+    ``decision_observer`` is an additive evidence hook.  It receives the unmodified
+    public observation, acting seat, raw policy return, normalized legal action, and
+    elapsed decision milliseconds before ``battle_select``.  The hook cannot alter
+    the selected action or the official engine state.
     """
     if len(deck0) != 60 or len(deck1) != 60:
         raise ValueError("both decks must contain exactly 60 card IDs")
@@ -179,8 +186,12 @@ def run_battle(
                 break
             actor = _actor_index(observation)
             selected_agent = agent0 if actor == 0 else agent1
+            decision_started = time.perf_counter()
             raw_action = selected_agent(observation, None)
+            decision_ms = (time.perf_counter() - decision_started) * 1000.0
             action = _legal_action(observation, raw_action)
+            if decision_observer is not None:
+                decision_observer(observation, actor, raw_action, action, decision_ms)
             select = observation.get("select") or {}
             traces.append(
                 {
@@ -192,6 +203,7 @@ def run_battle(
                     "max_count": select.get("maxCount"),
                     "option_count": len(select.get("option") or []),
                     "action": action,
+                    "decision_ms": round(decision_ms, 6),
                 }
             )
             observation = game.battle_select(action)
@@ -212,6 +224,7 @@ def run_battle(
             error = f"{error}; battle_finish={finish_error}" if error else finish_error
 
     result = _battle_result(observation)
+    decision_times = [float(row["decision_ms"]) for row in traces]
     report = {
         "result": result,
         "steps": steps,
@@ -220,6 +233,8 @@ def run_battle(
         "start_data": repr(start_data),
         "provenance": asdict(provenance) if provenance else {"mode": "injected_test_double"},
         "trace_count": len(traces),
+        "decision_ms_total": round(sum(decision_times), 6),
+        "decision_ms_max": round(max(decision_times, default=0.0), 6),
     }
     if trace_path:
         destination = Path(trace_path)
