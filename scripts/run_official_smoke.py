@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from black_engine import build_candidate_base_policy
 from black_engine.factory import build_hybrid_policy
 from black_engine.mewtwo_policy import MEWTWO_ERASURE_BALL, MEWTWO_EX
 from black_engine.official_observation import (
@@ -23,7 +24,7 @@ from black_engine.official_observation import (
 )
 from black_engine.rocket_ledger import BASIC_ENERGY_IDS, TEAM_ROCKET_ENERGY
 from black_engine.truth import TruthState, build_truth_state
-from black_lab import build_policy, read_deck
+from black_lab import read_deck
 from engine.official_runtime import run_battle
 
 CANDIDATES = (
@@ -108,7 +109,7 @@ def build_agent(
         "BLACK_ISMCTS": "1",
     }
     with patched_environment(environment):
-        base = build_policy(name)
+        base = build_candidate_base_policy(name)
         policy = build_hybrid_policy(name, base, root=ROOT)
     policy.set_deck(own_deck)
     policy.trace_path = trace_path

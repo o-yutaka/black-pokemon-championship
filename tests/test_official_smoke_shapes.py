@@ -1,6 +1,10 @@
 from black_engine.official_observation import normalize_official_observation
 from black_engine.truth import build_truth_state
+from black_lab import read_deck
 from scripts.run_official_smoke import (
+    CANDIDATES,
+    ROOT,
+    build_agent,
     classify_mewtwo_shape,
     effect_shape,
     option_shape,
@@ -151,3 +155,28 @@ def test_non_mewtwo_candidate_is_never_tagged():
     )
     truth = build_truth_state(normalize_official_observation(obs))
     assert classify_mewtwo_shape("dragapult_cinderace", truth, obs) is None
+
+
+def test_build_agent_dispatches_all_three_candidates(tmp_path):
+    # Regression: build_agent() called black_lab.build_policy(name)
+    # directly and crashed on dragapult_cinderace
+    # (`ValueError: unknown candidate`) twice in this same session -- once
+    # before the black_engine.build_candidate_base_policy factory existed,
+    # and once again after a git stash/checkout mistake silently reverted
+    # this file's import back to the broken one even though the factory
+    # itself and its own unit test were unaffected. Exercise build_agent()
+    # itself, not just the factory in isolation, so this can't recur silently.
+    decks = {name: read_deck(ROOT / "candidates" / name / "deck.csv") for name in CANDIDATES}
+    for name in CANDIDATES:
+        opponent = next(other for other in CANDIDATES if other != name)
+        agent = build_agent(
+            name,
+            opponent_name=opponent,
+            opponent_deck=decks[opponent],
+            own_deck=decks[name],
+            belief_mode="default",
+            cg_dir=str(ROOT),  # not used for construction, only by ISMCTS at decision time
+            output_dir=tmp_path,
+            trace_path=tmp_path / f"{name}.trace.jsonl",
+        )
+        assert callable(agent)
