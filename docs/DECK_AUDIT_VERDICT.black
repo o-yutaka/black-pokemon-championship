@@ -1,0 +1,27 @@
+VERDICT DRAGAPULT_DECK_STATIC_AUDIT
+
+IDENTITY
+  variant CLEANROOM_4_4_3
+  total 60
+  pokemon 25
+  trainers 22
+  energy 13
+  ace_spec PRIME_CATCHER_1
+  status PASS
+END
+
+POLICY_ALIGNMENT
+  card_ids PASS
+  search_targets PASS
+  energy_types PASS
+  status PASS
+END
+
+PERFORMANCE
+  status HOLD
+  reason official_paired_bundle_evidence_required
+END
+
+MUTATION
+  deck_changed no
+END
