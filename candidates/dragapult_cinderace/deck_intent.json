@@ -1,71 +1,74 @@
 {
-  "version": 2,
+  "version": 3,
   "candidate": "dragapult_cinderace",
-  "name": "BLACK Phantom Turbo Final",
+  "name": "BLACK Phantom Turbo Complete",
   "verdict": "COMPLETE_IMPLEMENTATION_HOLD_FOR_OFFICIAL_ENGINE_EVAL",
   "source_of_truth": "ptcg_engine source + CABT official wrapper contracts",
   "core": {
     "primary_attacker": "Dragapult ex 121",
-    "persistent_draw_and_lineage_engine": "Drakloak 120",
-    "setup_accelerator": "Cinderace 666",
-    "spread_converter": "Dusclops 132 / Dusknoir 133",
-    "one_prize_finisher": "Azelf 217",
+    "persistent_draw_and_lineage_engine": "Drakloak 120 / Recon Directive",
+    "setup_accelerator": "Cinderace 666 / Turbo Flare",
+    "spread_converter": "Dusclops 132 / Dusknoir 133 / Cursed Blast",
+    "one_prize_finisher": "Azelf 217 / Neurokinesis",
     "ace_spec": "Prime Catcher 1088"
   },
   "counts": {
     "pokemon": 25,
-    "trainers": 21,
-    "energy": 14,
+    "trainers": 22,
+    "energy": 13,
     "lines": {
       "Scorbunny-Cinderace": "1-4",
-      "Dreepy-Drakloak-Dragapult": "4-3-4",
+      "Dreepy-Drakloak-Dragapult": "4-4-3",
       "Duskull-Dusclops-Dusknoir": "3-2-2",
       "Azelf": 2
     },
     "basic_fire": 6,
-    "basic_psychic": 8
+    "basic_psychic": 7
   },
   "count_decisions": [
-    "Drakloak is raised from two to three because its Ability is the persistent hand-quality engine and the non-Candy path to the second Dragapult.",
-    "Duskull is reduced from four to three because the bomb line is a converter, not the main attacker, and four copies overfill the Bench while competing for Rare Candy.",
-    "Dragapult remains 4-3-4 to survive Prize loss and sustain two attackers.",
-    "Dusclops and Dusknoir remain 2-2 because 50 and 130 are different Prize-routing tools; Dusclops must not always be skipped.",
-    "Energy remains Fire 6 / Psychic 8: Phantom Dive requires both colours, Psychic also activates Azelf and is the safer surplus colour."
+    "Drakloak is raised to four because Recon Directive is the repeatable hand-quality engine, each copy activates independently, and it is the stable non-Candy path to the next attacker.",
+    "Dragapult ex is set to three because Dawn and Tera Orb already provide direct Stage 2 access; the fourth Drakloak improves more turns than the fourth terminal evolution card.",
+    "Duskull remains three because the bomb line is a converter, not the main attacker, and four copies overfill the five-slot Bench while competing for Rare Candy.",
+    "Dusclops and Dusknoir remain 2-2 because 50 and 130 are distinct Prize-routing tools; Dusclops must not always be skipped.",
+    "Energy is Fire 6 / Psychic 7. Thirteen total remains dense with four Cinderace, two Crispin and repeatable Drakloak filtering; the freed slot becomes a third Dawn.",
+    "Night Stretcher is raised to two because both Cursed Blast stages self-KO and the same card can recover a missing Basic Energy colour."
   ],
   "opening_plan": [
-    "Prefer going second when Cinderace is available during setup.",
-    "Use Turbo Flare only when it accelerates a concrete Dragapult or Azelf route.",
-    "Buddy-Buddy Poffin establishes Dreepy plus Duskull or Azelf without filling the Bench blindly.",
-    "Do not spend Rare Candy on the bomb line while the first Dragapult attack route is incomplete."
+    "Prefer Cinderace as the setup Active when offered.",
+    "Buddy-Buddy Poffin takes Dreepy plus Duskull first, then a second Dreepy; Azelf enters only after the damage reservoir matters.",
+    "Turbo Flare selects only Energy that completes real Fire-Psychic Dragapult routes and may select fewer than three rather than overattach.",
+    "Do not spend Rare Candy on Dusknoir while the first Dragapult attack route is incomplete unless Cursed Blast immediately converts a Prize."
   ],
   "midgame_plan": [
-    "Use Drakloak every legal turn before irreversible hand commitments when its selection can improve the route.",
-    "Complete the first Dragapult with one Fire and one Psychic, then reserve surplus Energy for the second attacker.",
-    "Phantom Dive allocates six counters one at a time toward KO, 50, 130 and future 200-damage breakpoints.",
-    "Dusclops 50 is retained for exact Prize conversion; Dusknoir 130 is used only when self-KO advances the Prize map or prevents a terminal loss.",
-    "Azelf receives Psychic Energy only when accumulated opposing damage creates a concrete one-Prize finisher route."
+    "Use every legal Drakloak before irreversible hand commitments when Recon Directive can improve the route; select one of the top two and bottom the lower-value card.",
+    "Complete the first Dragapult with one Fire and one Psychic, then reserve all surplus Energy for the second attacker or a proven Azelf finish.",
+    "Phantom Dive allocates six counters one at a time toward immediate KO, high-Prize targets, 130 and 50 Cursed Blast bands, then the lowest remaining HP.",
+    "Dusclops and Dusknoir are not activated merely because legal. Their self-KO must take a Prize, enable the active Dragapult KO, or create an energy-ready Azelf terminal.",
+    "Rare Candy priority is attack-ready Dragapult, positive-Prize Dusknoir, backup Dragapult, then Cinderace recovery."
   ],
   "endgame_plan": [
     "Prime Catcher is the preferred Cinderace-to-Dragapult handoff plus gust action.",
-    "Azelf converts the opposing damage reservoir into a one-Prize lethal route.",
+    "Azelf converts the opposing damage reservoir into a one-Prize lethal route only when Psychic plus Colorless is already funded.",
     "Boss's Orders is reserved for confirmed Prize conversion.",
     "Do not attach duplicate colours to a ready Dragapult unless Search proves immediate retreat or attack value."
   ],
   "effect_contracts": {
-    "Drakloak": "effect.id=120 card selection is scored by live route value, not raw card order.",
-    "Phantom Dive": "effect.id=121 chooses an opposing Bench target six times; each choice is evaluated against KO and 50/130/200 breakpoints.",
-    "Dusclops": "effect.id=132 selects one opposing Pokemon for five counters after self-KO.",
-    "Dusknoir": "effect.id=133 selects one opposing Pokemon for thirteen counters after self-KO.",
-    "Crispin": "effect.id=1198 selects different Basic Energy and attaches to the exact individual line missing that colour.",
-    "Rare Candy": "Evolve options are resolved from evolution card plus inPlay target; Dragapult attack readiness outranks nonterminal Dusknoir development."
+    "Drakloak": "effect.id=120 resolves current.looking area 12, keeps the highest live-route card and bottoms the other.",
+    "Phantom Dive": "effect.id=121 and context=14 choose an opposing Bench target six times; each ten-damage-counter choice is evaluated against KO and 50/130/200 breakpoints.",
+    "Dusclops": "effect.id=132 and context=13 select one opposing Pokemon for five counters after self-KO; activation fails closed without an immediate conversion.",
+    "Dusknoir": "effect.id=133 and context=13 select one opposing Pokemon for thirteen counters after self-KO; activation fails closed without an immediate conversion.",
+    "Crispin": "effect.id=1198 selects different Basic Energy and attaches the remaining Energy to the exact individual line missing that colour.",
+    "Rare Candy": "effect.id=1079 and context=37 resolve Stage 2 plus exact Basic target; attack-ready Dragapult outranks nonterminal Dusknoir development.",
+    "Turbo Flare": "effect.id=666 selects only the required Fire/Psychic cards and attaches each to an incomplete Bench route."
   },
   "search_package": {
     "Buddy-Buddy Poffin": 4,
     "Rare Candy": 3,
     "Tera Orb": 2,
     "Poke Pad": 1,
-    "Dawn": 2,
-    "reason": "Role-specific search supports two Stage 2 lines while Drakloak supplies repeatable hand quality without discard-heavy generic search."
+    "Dawn": 3,
+    "Night Stretcher": 2,
+    "reason": "Role-specific search supports two Stage 2 lines while four Drakloak provide repeatable hand quality without discard-heavy generic search."
   },
   "promotion_gate": {
     "official_engine_required": true,
@@ -75,9 +78,10 @@
     "crashes": 0,
     "invalid_actions": 0,
     "required_transition_captures": [
-      "Drakloak selection",
+      "Drakloak ACTIVATE, LOOKING to hand, and deck-bottom selection",
       "Crispin two-energy sequence",
       "Rare Candy exact target",
+      "Turbo Flare selective energy and exact Bench targets",
       "Phantom Dive six counter choices",
       "Dusclops 50 target",
       "Dusknoir 130 target"
