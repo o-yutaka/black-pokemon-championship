@@ -131,11 +131,21 @@ class DragapultEnergyColorGuard:
     def evaluate(self, truth: TruthState, option: LegalOption) -> GuardVote:
         if option.action_type != T_ENERGY:
             return GuardVote("dragapult_energy_color")
-        if option.target_id in {AZELF, DUSKULL, DUSCLOPS, DUSKNOIR} and option.card_id == FIRE_ENERGY:
+        # Duskull and Dusclops have Psychic-only costs, so Fire makes no
+        # progress. Azelf and Dusknoir also contain Colorless requirements;
+        # Fire can legally and strategically pay those slots and must not be
+        # hard-rejected.
+        if option.target_id in {DUSKULL, DUSCLOPS} and option.card_id == FIRE_ENERGY:
             return GuardVote(
                 "dragapult_energy_color",
                 True,
-                reason="Fire cannot advance the Psychic-only secondary route",
+                reason="Fire cannot satisfy Duskull/Dusclops Psychic-only costs",
+            )
+        if option.target_id in {AZELF, DUSKNOIR} and option.card_id == FIRE_ENERGY:
+            return GuardVote(
+                "dragapult_energy_color",
+                penalty=35,
+                reason="Fire pays only the Colorless slot; preserve Psychic access",
             )
         if option.target_id in {DREEPY, DRAKLOAK, DRAGAPULT_EX} and option.card_id in {FIRE_ENERGY, PSYCHIC_ENERGY}:
             return GuardVote("dragapult_energy_color", bonus=55, reason="colored Phantom Dive requirement")
