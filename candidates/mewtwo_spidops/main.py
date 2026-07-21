@@ -8,9 +8,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from black_engine import build_hybrid_policy
-from black_lab import build_policy, read_deck
+from black_engine.mewtwo_policy import build_mewtwo_policy
+from black_lab import read_deck
 
-BASE_POLICY = build_policy("mewtwo_spidops")
+BASE_POLICY = build_mewtwo_policy()
 POLICY = build_hybrid_policy("mewtwo_spidops", BASE_POLICY, root=ROOT)
 DECK = read_deck(Path(__file__).with_name("deck.csv"))
 POLICY.set_deck(DECK)
