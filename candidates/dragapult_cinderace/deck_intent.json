@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "candidate": "dragapult_cinderace",
+  "verdict": "CHAMPIONSHIP_CANDIDATE_HOLD_FOR_PAIRED_EVAL",
+  "core": {
+    "primary_attacker": "Dragapult ex 121",
+    "setup_accelerator": "Cinderace 666",
+    "spread_converter": "Dusknoir 133 / Dusclops 132",
+    "one_prize_finisher": "Azelf 217",
+    "ace_spec": "Prime Catcher 1088"
+  },
+  "counts": {
+    "pokemon": 25,
+    "trainers": 21,
+    "energy": 14,
+    "basic_fire": 6,
+    "basic_psychic": 8
+  },
+  "opening_plan": [
+    "Prefer going second when Cinderace is available during setup.",
+    "Use Turbo Flare to fund Dragapult/Azelf Bench routes, never as an isolated 50-damage attack.",
+    "Buddy-Buddy Poffin establishes Dreepy plus Duskull/Azelf before committing evolution resources."
+  ],
+  "midgame_plan": [
+    "Establish Dragapult through Drakloak or Rare Candy without consuming every Candy on one line.",
+    "Phantom Dive creates active pressure and a distributed counter reservoir.",
+    "Use Dusknoir/Dusclops only when the self-KO advances Prize mapping or creates a terminal sequence."
+  ],
+  "endgame_plan": [
+    "Prime Catcher is the preferred Cinderace-to-Dragapult handoff plus gust action.",
+    "Azelf converts total opposing damage counters into a one-Prize lethal route.",
+    "Boss's Orders is reserved for a confirmed Prize conversion rather than generic disruption."
+  ],
+  "search_package": {
+    "Buddy-Buddy Poffin": 4,
+    "Rare Candy": 3,
+    "Tera Orb": 2,
+    "Poke Pad": 1,
+    "Dawn": 2,
+    "reason": "Replace discard-heavy generic search with role-specific tutors for two Stage 2 lines."
+  },
+  "rejected_from_baseline": [
+    "Three Ultra Ball package: too much hand destruction for a deck carrying setup-only Cinderace copies.",
+    "Two Rare Candy package: insufficient shared transition capacity for Dragapult and Dusknoir.",
+    "Judge/Xerosic main-deck slots before consistency is proven.",
+    "Special Energy that cannot pay both colored Phantom Dive requirements."
+  ],
+  "promotion_gate": {
+    "official_engine_required": true,
+    "paired_seats": true,
+    "minimum_games_per_live_cell": 500,
+    "crashes": 0,
+    "invalid_actions": 0,
+    "wilson_ci_lower_bound_above_baseline": true
+  }
+}
