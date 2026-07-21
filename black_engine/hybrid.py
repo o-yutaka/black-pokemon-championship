@@ -33,13 +33,16 @@ class HybridPolicy:
         self.belief = belief or BayesianBeliefModel()
         self.rl_prior = rl_prior or TabularQPrior()
         self.ismcts = ismcts
-        # Ablation switches (evaluation-only; default leaves every component
-        # ON, matching production wiring). Guards are the only subsystem with
-        # evidence-backed logic today -- belief/RL/ISMCTS are fail-closed
-        # neutral until trained data exists, so BLACK_ABLATE_BAYES/RL/ISMCTS
-        # are provided for completeness/regression-checking, not because they
-        # are expected to change behavior yet.
-        self.guards = () if os.environ.get("BLACK_ABLATE_GUARDS") in {"1", "true", "True"} else guards_for(candidate)
+        # Ablation switches are evaluation-only. Belief/RL/Search remain
+        # fail-closed neutral until evidence-backed artifacts are supplied.
+        if os.environ.get("BLACK_ABLATE_GUARDS") in {"1", "true", "True"}:
+            self.guards = ()
+        else:
+            self.guards = guards_for(candidate)
+            if candidate == "mewtwo_spidops":
+                from .mewtwo_guards import championship_mewtwo_guards
+
+                self.guards = self.guards + championship_mewtwo_guards()
         if os.environ.get("BLACK_ABLATE_BAYES") in {"1", "true", "True"}:
             self.belief = BayesianBeliefModel()
         if os.environ.get("BLACK_ABLATE_RL") in {"1", "true", "True"}:
@@ -47,6 +50,10 @@ class HybridPolicy:
         if os.environ.get("BLACK_ABLATE_ISMCTS") in {"1", "true", "True"}:
             self.ismcts = None
         self.planners = planners_for(candidate)
+        if candidate == "mewtwo_spidops":
+            from .mewtwo_planners import championship_mewtwo_planners
+
+            self.planners = self.planners + championship_mewtwo_planners()
         self.judge = HybridJudge()
         self.deck: list[int] = []
         configured = trace_path or os.environ.get("BLACK_DECISION_TRACE")
@@ -70,6 +77,9 @@ class HybridPolicy:
         truth = build_truth_state(normalize_official_observation(obs))
         if not truth.options:
             return [] if truth.min_count == 0 else list(self.deck)
+        # Multi-select windows are delegated to the deck-specific deterministic
+        # prior. For Mewtwo this includes minimum Erasure Ball discard selection
+        # and preservation of nonrenewable Team Rocket Energy.
         if truth.min_count != 1 or truth.max_count != 1:
             return normalize_selection(obs, self.base_policy.agent(obs, configuration))
 
