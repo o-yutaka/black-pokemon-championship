@@ -1,10 +1,20 @@
 {
   "candidate": "dragapult_cinderace",
-  "deck_name": "BLACK Championship Dragapult / Cinderace / Dusknoir / Azelf",
+  "candidate_version": "BLACK_DRAGAPULT_COMPLETE_V2",
+  "deck_name": "BLACK Phantom Turbo / Drakloak / Cinderace / Dusknoir / Azelf",
   "ace_spec_ids": [1088],
   "core_card_ids": [666, 119, 120, 121, 131, 132, 133, 217],
   "energy_ids": [2, 5],
-  "status": "HOLD_FOR_OFFICIAL_PAIRED_EVALUATION",
-  "card_truth_source": "competition EN_Card_Data(4).csv and official cg AllCard/AllAttack",
-  "engine_truth": "official CABT libcg.so"
+  "expected_total": 60,
+  "status": "IMPLEMENTED_OFFICIAL_ENGINE_EVALUATION_REQUIRED",
+  "card_truth_source": {
+    "EN_Card_Data_sha256": "a0ea63cf7adcb65d35436ce0eb390de6e2e35654a7c67c065a45f4abaa00f373",
+    "card_id_list_sha256": "d5648eaa76b0139ddc21b28e101bc82f270cea4183da8412c4b22ff564dcd485",
+    "attack_id_mapping_sha256": "2b7c8757ce14ad1cfeddc3100b3d5752fe42ea8b39510245c997bedb10cab94c"
+  },
+  "engine_truth_source": {
+    "ptcg_engine_source_zip_sha256": "d1a824b2740e9447acb988cc54f9d5de70af77f2be4f54b891cfa2d74e2a3802",
+    "uploaded_libcg_sha256": "feafd4046b2f688bdb33a4972c139b78e13e243ab5707ece52c43cf39a34b887",
+    "note": "Source is used as the behavioral specification and is not redistributed. Runtime equivalence to the competition libcg remains a required promotion gate."
+  }
 }
