@@ -1,4 +1,4 @@
-from black_engine.dragapult_complete_policy import DragapultCompletePolicy
+from black_engine.dragapult_championship_policy import DragapultChampionshipPolicy
 
 
 def _players(*, my_active=None, my_bench=None, my_hand=None, opp_active=None, opp_bench=None):
@@ -23,7 +23,7 @@ def _players(*, my_active=None, my_bench=None, my_hand=None, opp_active=None, op
 
 
 def test_recon_directive_resolves_real_looking_area_and_keeps_drakloak():
-    policy = DragapultCompletePolicy()
+    policy = DragapultChampionshipPolicy()
     obs = {
         "current": {
             "yourIndex": 0,
@@ -50,7 +50,7 @@ def test_recon_directive_resolves_real_looking_area_and_keeps_drakloak():
 
 
 def test_recon_directive_bottoms_lower_route_value_card():
-    policy = DragapultCompletePolicy()
+    policy = DragapultChampionshipPolicy()
     obs = {
         "current": {
             "yourIndex": 0,
@@ -73,7 +73,7 @@ def test_recon_directive_bottoms_lower_route_value_card():
 
 
 def test_rare_candy_prefers_attack_ready_dragapult_over_nonterminal_dusknoir():
-    policy = DragapultCompletePolicy()
+    policy = DragapultChampionshipPolicy()
     obs = {
         "current": {
             "yourIndex": 0,
@@ -102,7 +102,7 @@ def test_rare_candy_prefers_attack_ready_dragapult_over_nonterminal_dusknoir():
 
 
 def test_poffin_multi_select_is_diversity_aware():
-    policy = DragapultCompletePolicy()
+    policy = DragapultChampionshipPolicy()
     obs = {
         "current": {
             "yourIndex": 0,
@@ -129,7 +129,7 @@ def test_poffin_multi_select_is_diversity_aware():
 
 
 def test_turbo_flare_selects_only_missing_colour_and_may_take_fewer_than_three():
-    policy = DragapultCompletePolicy()
+    policy = DragapultChampionshipPolicy()
     obs = {
         "current": {
             "yourIndex": 0,
@@ -158,7 +158,7 @@ def test_turbo_flare_selects_only_missing_colour_and_may_take_fewer_than_three()
 
 
 def test_nonterminal_cursed_blast_is_skipped_by_base_policy():
-    policy = DragapultCompletePolicy()
+    policy = DragapultChampionshipPolicy()
     obs = {
         "current": {
             "yourIndex": 0,
