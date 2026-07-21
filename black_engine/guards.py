@@ -194,4 +194,9 @@ def guards_for(candidate: str) -> tuple[Guard, ...]:
         return common + (GarchompHeavyAttackGuard(), SpiritombTerminalGuard())
     if candidate == "dragapult_cinderace":
         return common + (DragapultEnergyColorGuard(), CinderaceTurboRouteGuard(), DuskBlastTerminalGuard())
+    if candidate in ("crustle_redteam", "grimmsnarl_redteam"):
+        # Red Team adversaries: common guards only, no archetype-specific
+        # ones -- these decks are opponents to beat, not promotion
+        # candidates, so there is no dedicated tuning to encode here.
+        return common
     raise ValueError(f"unknown candidate: {candidate}")

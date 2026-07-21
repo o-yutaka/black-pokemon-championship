@@ -3,18 +3,24 @@ import pytest
 from black_engine.dragapult_policy import DragapultCinderacePolicy
 from black_engine.factory import SUPPORTED_CANDIDATES, build_candidate_base_policy
 from black_engine.mewtwo_policy import MewtwoChampionshipPolicy
-from black_lab import GarchompSpiritombPolicy
+from black_lab import GarchompSpiritombPolicy, GenericHeuristicPolicy
 
 
-def test_candidate_policy_factory_dispatches_all_three_production_families():
+def test_candidate_policy_factory_dispatches_all_production_families():
     assert SUPPORTED_CANDIDATES == (
         "mewtwo_spidops",
         "garchomp_spiritomb",
         "dragapult_cinderace",
+        "crustle_redteam",
+        "grimmsnarl_redteam",
     )
     assert isinstance(build_candidate_base_policy("mewtwo_spidops"), MewtwoChampionshipPolicy)
     assert isinstance(build_candidate_base_policy("garchomp_spiritomb"), GarchompSpiritombPolicy)
     assert isinstance(build_candidate_base_policy("dragapult_cinderace"), DragapultCinderacePolicy)
+    # Red Team adversary decks use the generic, archetype-agnostic policy --
+    # they exist to be beaten, not to be tuned as promotion candidates.
+    assert isinstance(build_candidate_base_policy("crustle_redteam"), GenericHeuristicPolicy)
+    assert isinstance(build_candidate_base_policy("grimmsnarl_redteam"), GenericHeuristicPolicy)
 
 
 def test_candidate_policy_factory_fails_closed_for_unknown_candidate():

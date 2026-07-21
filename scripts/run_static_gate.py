@@ -5,7 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path: sys.path.insert(0, str(ROOT))
 from black_lab import read_deck, validate_deck
 reports=[]
-for name in ("mewtwo_spidops","garchomp_spiritomb","dragapult_cinderace"):
+for name in ("mewtwo_spidops","garchomp_spiritomb","dragapult_cinderace","crustle_redteam","grimmsnarl_redteam"):
     directory=ROOT/'candidates'/name
     manifest=json.loads((directory/'manifest.json').read_text())
     deck=read_deck(directory/'deck.csv')

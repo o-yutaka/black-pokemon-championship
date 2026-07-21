@@ -13,6 +13,8 @@ SUPPORTED_CANDIDATES = (
     "mewtwo_spidops",
     "garchomp_spiritomb",
     "dragapult_cinderace",
+    "crustle_redteam",
+    "grimmsnarl_redteam",
 )
 
 
@@ -20,10 +22,13 @@ def build_candidate_base_policy(candidate: str):
     """Build the exact base policy used by a candidate production entrypoint.
 
     Candidate policies do not share one implementation family.  Mewtwo has its
-    championship policy, Dragapult has ``DragapultCinderacePolicy``, and only
-    Garchomp currently uses the legacy ``black_lab.build_policy`` dispatcher.
-    All runners and candidate entrypoints must call this function so a new
-    candidate cannot silently fall through to the wrong policy family.
+    championship policy, Dragapult has ``DragapultCinderacePolicy``, and
+    Garchomp/crustle_redteam/grimmsnarl_redteam use the legacy
+    ``black_lab.build_policy`` dispatcher (the Red Team decks use a generic,
+    archetype-agnostic heuristic since they are adversaries to beat, not
+    promotion candidates). All runners and candidate entrypoints must call
+    this function so a new candidate cannot silently fall through to the
+    wrong policy family.
     """
     if candidate == "mewtwo_spidops":
         from .mewtwo_policy import build_mewtwo_policy
@@ -33,7 +38,7 @@ def build_candidate_base_policy(candidate: str):
         from .dragapult_policy import DragapultCinderacePolicy
 
         return DragapultCinderacePolicy()
-    if candidate == "garchomp_spiritomb":
+    if candidate in ("garchomp_spiritomb", "crustle_redteam", "grimmsnarl_redteam"):
         from black_lab import build_policy
 
         return build_policy(candidate)

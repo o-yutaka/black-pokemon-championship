@@ -1,0 +1,11 @@
+{
+  "candidate_id": "crustle_redteam_black_v1",
+  "title": "Crustle Red Team BLACK v1",
+  "status": "RED_TEAM_ADVERSARY_NOT_A_PROMOTION_CANDIDATE",
+  "policy_module": "black_lab.GenericHeuristicPolicy",
+  "deck_file": "deck.csv",
+  "ace_spec_ids": [13],
+  "expected_total": 60,
+  "intent": "Real-ladder-derived Crustle (Dwebble/Crustle, cards 344/345) stall deck. Crustle's ability 'Mysterious Rock Inn' blocks all damage from opponent's ex Pokemon attacks, making it a structural counter to ex-based attackers like Team Rocket's Mewtwo ex. Sourced from prior championship exploration (crustle_championship/finalists/CRUSTLE_FINALIST.deck.csv), reused here as a Red Team adversary to screen candidates against, not to promote itself.",
+  "policy_note": "Uses a generic, archetype-agnostic heuristic policy (attack > evolve > ability > energy > play > retreat > end by option kind only) -- no dedicated championship-level tuning, since this deck's role is to be a credible opponent, not a submission candidate."
+}

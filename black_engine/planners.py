@@ -159,7 +159,10 @@ class SpreadPlanner:
 
 
 def planners_for(candidate: str) -> tuple[Planner, ...]:
-    if candidate not in {"mewtwo_spidops", "garchomp_spiritomb", "dragapult_cinderace"}:
+    if candidate not in {
+        "mewtwo_spidops", "garchomp_spiritomb", "dragapult_cinderace",
+        "crustle_redteam", "grimmsnarl_redteam",
+    }:
         raise ValueError(f"unknown candidate: {candidate}")
     common: tuple[Planner, ...] = (TerminalPlanner(candidate), SetupPlanner(candidate), ResourcePlanner(candidate))
     return common + ((SpreadPlanner(),) if candidate == "dragapult_cinderace" else ())

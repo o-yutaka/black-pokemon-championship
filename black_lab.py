@@ -6,7 +6,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable
 
-T_PLAY, T_ENERGY, T_EVOLVE, T_ABILITY, T_RETREAT, T_ATTACK, T_END = 7, 8, 9, 10, 12, 13, 14
+T_PLAY, T_ENERGY, T_EVOLVE, T_ABILITY, T_DISCARD, T_RETREAT, T_ATTACK, T_END = 7, 8, 9, 10, 11, 12, 13, 14
 
 
 def read_deck(path: str | Path) -> list[int]:
@@ -393,7 +393,34 @@ class GarchompSpiritombPolicy(ScoredPolicy):
         return 0
 
 
+# Generic archetype-agnostic policy for Red Team decks (opponents we need to
+# beat but do not have dedicated championship-level tuning for). Deliberately
+# card-id-free -- it works from option `kind` alone, so it plays any deck
+# reasonably (attack when legal, evolve, keep energy flowing, use trainers)
+# without archetype-specific knowledge. Not meant to compete for promotion.
+class GenericHeuristicPolicy(ScoredPolicy):
+    def build_context(self, obs: dict) -> dict:
+        me = my_index(obs)
+        my_active = active(obs, me)
+        return {
+            "active_id": card_id(my_active),
+            "active_energy": energy_count(my_active),
+        }
+
+    def score_option(self, option: dict, ctx: dict) -> float:
+        kind = option.get("type")
+        if kind == T_ATTACK: return 950
+        if kind == T_EVOLVE: return 900
+        if kind == T_ABILITY: return 820
+        if kind == T_ENERGY: return 760 if ctx["active_energy"] < 2 else 500
+        if kind == T_PLAY: return 700
+        if kind == T_RETREAT: return 150
+        if kind == T_DISCARD: return 300
+        return 50
+
+
 def build_policy(candidate: str) -> ScoredPolicy:
     if candidate == "mewtwo_spidops": return MewtwoSpidopsPolicy()
     if candidate == "garchomp_spiritomb": return GarchompSpiritombPolicy()
+    if candidate in ("crustle_redteam", "grimmsnarl_redteam"): return GenericHeuristicPolicy()
     raise ValueError(f"unknown candidate: {candidate}")

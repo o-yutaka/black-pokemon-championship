@@ -1,0 +1,11 @@
+{
+  "candidate_id": "grimmsnarl_redteam_black_v1",
+  "title": "Marnie's Grimmsnarl Red Team BLACK v1",
+  "status": "RED_TEAM_ADVERSARY_NOT_A_PROMOTION_CANDIDATE",
+  "policy_module": "black_lab.GenericHeuristicPolicy",
+  "deck_file": "deck.csv",
+  "ace_spec_ids": [1080],
+  "expected_total": 60,
+  "intent": "Real ladder-grounded Marnie's Grimmsnarl ex (card 648) Darkness deck, sourced from flm_diff/opp_grimmsnarl.csv -- the canonical Grimmsnarl opponent benchmark used throughout the project's Dragapult-era evaluation. Reused here as a Red Team adversary to screen candidates against, not to promote itself.",
+  "policy_note": "Uses a generic, archetype-agnostic heuristic policy (attack > evolve > ability > energy > play > retreat > end by option kind only) -- no dedicated championship-level tuning, since this deck's role is to be a credible opponent, not a submission candidate."
+}

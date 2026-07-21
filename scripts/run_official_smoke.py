@@ -31,6 +31,8 @@ CANDIDATES = (
     "mewtwo_spidops",
     "garchomp_spiritomb",
     "dragapult_cinderace",
+    "crustle_redteam",
+    "grimmsnarl_redteam",
 )
 
 
