@@ -1,4 +1,4 @@
-from .rocket_mewtwo_worldline import RocketMewtwoWorldlinePolicy
+from .rocket_mewtwo_worldline_v2 import RocketMewtwoWorldlinePolicy
 from .runtime import SubmissionRuntime
 from .support import read_deck, validate_deck
 
