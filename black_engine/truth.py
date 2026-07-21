@@ -31,27 +31,26 @@ def _energy_ids(pokemon: dict) -> tuple[int, ...]:
     return ()
 
 
-def _damage_points(pokemon: dict) -> int:
-    for key in ("damage", "damagePoints", "damageAmount"):
-        value = pokemon.get(key)
-        if type(value) in (int, float):
-            return max(0, int(value))
-    for key in ("damageCounter", "damageCounters"):
-        value = pokemon.get(key)
-        if type(value) in (int, float):
-            numeric = max(0, int(value))
-            return numeric * 10 if numeric < 100 else numeric
-        if isinstance(value, list):
-            return len(value) * 10
-    return 0
-
-
 def _max_hp(pokemon: dict) -> int:
-    for key in ("maxHp", "maxHP", "hp", "HP"):
+    # The real cabt engine exposes `maxHp` as the ceiling and `hp` as
+    # *current remaining* HP -- there is no separate damage/damageCounter
+    # field. `hp` must not be treated as a max_hp fallback (see _remaining_hp).
+    for key in ("maxHp", "maxHP", "HP"):
         value = pokemon.get(key)
         if type(value) in (int, float):
             return max(0, int(value))
     return 0
+
+
+def _remaining_hp(pokemon: dict, max_hp: int) -> int:
+    value = pokemon.get("hp")
+    if type(value) in (int, float):
+        return max(0, int(value))
+    return max_hp
+
+
+def _damage_points(pokemon: dict, max_hp: int) -> int:
+    return max(0, max_hp - _remaining_hp(pokemon, max_hp))
 
 
 @dataclass(frozen=True)
@@ -181,10 +180,11 @@ def _pokemon_view(value: Any) -> PokemonView | None:
     status_names = ("poisoned", "burned", "asleep", "paralyzed", "confused")
     status = tuple(name for name in status_names if bool(value.get(name)))
     energy_ids = _energy_ids(value)
+    max_hp = _max_hp(value)
     return PokemonView(
         card_id=card,
-        damage=_damage_points(value),
-        max_hp=_max_hp(value),
+        damage=_damage_points(value, max_hp),
+        max_hp=max_hp,
         energy_ids=energy_ids,
         attached_ids=_attached_ids(value, energy_ids),
         status=status,
