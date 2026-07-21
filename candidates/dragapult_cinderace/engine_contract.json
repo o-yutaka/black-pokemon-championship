@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "candidate": "dragapult_cinderace",
+  "source_archive_sha256": "d1a824b2740e9447acb988cc54f9d5de70af77f2be4f54b891cfa2d74e2a3802",
+  "contracts": {
+    "drakloak_recon_directive": {
+      "card_id": 120,
+      "ability_id": 46,
+      "source": "CardImpl.h CreateCard(120); CreateCard.h effectLookAndToHandReverseRestDeckBottom",
+      "sequence": ["LOOK_DECK_2", "TO_HAND_ONE_FROM_LOOKING", "TO_DECK_BOTTOM_REMAINING"],
+      "policy": "Select the highest route-value card from current.looking; bottom the lowest route-value remainder. Each Drakloak is activated independently once per turn."
+    },
+    "dragapult_phantom_dive": {
+      "card_id": 121,
+      "attack_id": 154,
+      "source": "CardImpl.h CreateCard(121); EffectInstant.h SelectDamageCounterAny/SelectedDamageCounterAny",
+      "sequence": ["ATTACK_200_ACTIVE", "DAMAGE_COUNTER_ANY_REPEAT_6"],
+      "policy": "Resolve six separate ten-damage-counter target decisions; prioritize immediate KO and future Cursed Blast Prize bands without overdamage."
+    },
+    "dusclops_cursed_blast": {
+      "card_id": 132,
+      "ability_id": 51,
+      "damage_counters": 5,
+      "self_ko": true,
+      "target": "ONE_OPPONENT_POKEMON"
+    },
+    "dusknoir_cursed_blast": {
+      "card_id": 133,
+      "ability_id": 52,
+      "damage_counters": 13,
+      "self_ko": true,
+      "target": "ONE_OPPONENT_POKEMON"
+    },
+    "rare_candy": {
+      "card_id": 1079,
+      "source": "CardImpl.h CreateCard(1079); EffectProc.h EffectSelectType::Evolve2",
+      "option_contract": "EVOLVE option contains Stage 2 area/index and Basic inPlayArea/inPlayIndex",
+      "policy": "Prefer an attack-ready Dragapult; permit Dusknoir only for a positive Prize route."
+    },
+    "crispin": {
+      "card_id": 1198,
+      "source": "CardImpl.h CreateCard(1198)",
+      "sequence": ["SELECT_DIFFERENT_BASIC_ENERGY_TO_HAND", "SELECT_OTHER_BASIC_ENERGY", "ATTACH_TO_POKEMON", "SHUFFLE"],
+      "policy": "Leave the most urgent missing color available for immediate attachment and put the other color into hand."
+    },
+    "cinderace_turbo_flare": {
+      "card_id": 666,
+      "attack_id": 965,
+      "source": "CardImpl.h CreateCard(666); CreateCard.h effectDeckAttachEnergyBenchAndShuffle",
+      "sequence": ["SELECT_UP_TO_3_BASIC_ENERGY_FROM_DECK", "ATTACH_EACH_TO_BENCH", "SHUFFLE"],
+      "policy": "Select only Energy that completes colored Dragapult routes; never dump redundant Energy on a ready body."
+    }
+  }
+}
