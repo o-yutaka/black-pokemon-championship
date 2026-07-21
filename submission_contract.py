@@ -19,6 +19,7 @@ BLACK_ENGINE_FILE_ORDER = (
     "support.py",
     "mewtwo_truth.py",
     "rocket_mewtwo_worldline.py",
+    "rocket_mewtwo_worldline_v2.py",
     "worldline/__init__.py",
     "worldline/model.py",
     "worldline/judge.py",
