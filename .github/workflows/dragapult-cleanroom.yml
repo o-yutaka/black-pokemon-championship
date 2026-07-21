@@ -1,8 +1,10 @@
-name: static-candidate-gate
+name: dragapult-cleanroom-gate
 
 on:
-  push:
   pull_request:
+  push:
+    branches:
+      - black/dragapult-cleanroom-v1
 
 jobs:
   test:
@@ -11,7 +13,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.11'
       - run: python -m pip install --upgrade pip pytest
       - run: python scripts/run_static_gate.py
       - run: python -m pytest -q

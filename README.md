@@ -1,65 +1,39 @@
-# BLACK Pokémon Championship Lab
+# BLACK Dragapult Championship Submission
 
-Isolated two-candidate laboratory for the Kaggle Pokémon TCG AI Battle.
+Cleanroom single-deck repository for the Kaggle Pokémon TCG AI Battle.
 
-This repository contains **only**:
+## Fixed submission
 
-1. Team Rocket's Mewtwo ex / Team Rocket's Spidops BLACK v1
-2. Cynthia's Garchomp ex / Cynthia's Spiritomb BLACK v1
+- Scorbunny / Cinderace: 1 / 4
+- Dreepy / Drakloak / Dragapult ex: 4 / 4 / 3
+- Duskull / Dusclops / Dusknoir: 3 / 2 / 2
+- Azelf: 2
+- Fire Energy: 6
+- Psychic Energy: 7
+- Total: 60
 
-It includes the deck-specific policies, legal-action boundary, official cabt battle adapter, documented Search lifecycle adapter, static gates, materializer, and paired smoke runner.
+This branch contains no Mewtwo, Garchomp, Crustle, or Grimmsnarl production candidate. One submission equals one fixed deck.
 
-The official `libcg.so` binary is deliberately not redistributed. WSL2 resolves the local reference engine from `/home/user/HROS/submission/cg` and records its SHA-256. Kaggle `cabt 1.32.0` remains the competition authority; its exact server binary hash is unverified.
-
-## Current verdict
+## Canonical submission files
 
 ```text
-STATIC_CANDIDATE_BUILD = PASS target
-ENGINE_ADAPTER         = IMPLEMENTED
-OFFICIAL_ENGINE_SMOKE  = LOCAL_REQUIRED
-WIN_RATE               = UNVERIFIED
-SUBMISSION_PROMOTION   = HOLD
+main.py
+deck.csv
+submission_contract.py
+black_lab.py
+black_engine/
 ```
 
-## Static gate
+The official local `cg/` directory is injected only while staging the package. The builder copies `main.py` and `deck.csv` byte-for-byte and rejects drift.
+
+## Gates
 
 ```bash
 python scripts/run_static_gate.py
 python -m pytest -q
-```
-
-## Direct official-engine smoke
-
-```bash
-python scripts/run_official_smoke.py \
+python scripts/build_official_hybrid_submission.py \
   --cg-dir /home/user/HROS/submission/cg \
-  --games 20 \
-  --out artifacts/official_smoke_20.json
+  --out artifacts/dragapult_submission.zip
 ```
 
-The runner executes:
-
-```text
-cg.game.battle_start(deck0, deck1)
-→ current.yourIndex dispatch
-→ agent selection normalized to list[int]
-→ cg.game.battle_select(action)
-→ current.result
-→ cg.game.battle_finish()
-```
-
-It alternates seats, records action traces and exact local engine provenance, and does not claim native seed control.
-
-## Materialize for local HROS
-
-```bash
-python scripts/materialize_candidate.py \
-  --candidate mewtwo_spidops \
-  --output /home/user/HROS/artifacts/championship_candidates/mewtwo_spidops
-
-python scripts/materialize_candidate.py \
-  --candidate garchomp_spiritomb \
-  --output /home/user/HROS/artifacts/championship_candidates/garchomp_spiritomb
-```
-
-See [`docs/OFFICIAL_ENGINE_CONTRACT.md`](docs/OFFICIAL_ENGINE_CONTRACT.md) and [`docs/LOCAL_HROS_GATE.md`](docs/LOCAL_HROS_GATE.md).
+Performance remains unverified until official-engine smoke is run on the exact commit.

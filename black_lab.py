@@ -6,7 +6,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable
 
-T_PLAY, T_ENERGY, T_EVOLVE, T_ABILITY, T_RETREAT, T_ATTACK, T_END = 7, 8, 9, 10, 12, 13, 14
+T_PLAY, T_ENERGY, T_EVOLVE, T_ABILITY, T_DISCARD, T_RETREAT, T_ATTACK, T_END = 7, 8, 9, 10, 11, 12, 13, 14
 
 
 def read_deck(path: str | Path) -> list[int]:
@@ -99,6 +99,30 @@ def in_play(obs: dict, index: int) -> list[dict]:
     return ([current] if current else []) + bench(obs, index)
 
 
+# cabt engine wire contract (verified empirically against the real official
+# engine, not documented in the public API reference): option dicts never
+# carry a card id, name, or damage field directly. They only carry a board
+# reference -- area/index (or inPlayArea/inPlayIndex for a target) -- that
+# must be resolved against `current.players[playerIndex][zone]`. AreaType:
+# 2=hand, 3=discard, 4=active, 5=bench, 6=prize. Likewise in-play Pokemon
+# dicts expose `hp` as *current remaining* HP and `maxHp` as the ceiling --
+# there is no separate damage/damageCounter field; damage taken = maxHp - hp.
+AREA_HAND, AREA_DISCARD, AREA_ACTIVE, AREA_BENCH, AREA_PRIZE = 2, 3, 4, 5, 6
+
+
+def zone_cards(current: dict | None, player_index: int, area: int | None) -> list:
+    if not isinstance(current, dict):
+        return []
+    players = current.get("players") or []
+    p = players[player_index] if 0 <= player_index < len(players) else {}
+    if not isinstance(p, dict):
+        return []
+    key = {AREA_HAND: "hand", AREA_DISCARD: "discard", AREA_ACTIVE: "active",
+           AREA_BENCH: "bench", AREA_PRIZE: "prize"}.get(area)
+    value = p.get(key) if key else None
+    return value if isinstance(value, list) else []
+
+
 def card_id(value: Any) -> int:
     if isinstance(value, dict):
         for key in ("id", "card", "cardId", "pokemonId"):
@@ -108,29 +132,48 @@ def card_id(value: Any) -> int:
     return value if type(value) is int else -1
 
 
-def option_card_id(option: dict) -> int:
+def option_card_id(option: dict, current: dict | None = None, default_player_index: int = 0) -> int:
+    if not isinstance(option, dict):
+        return -1
     for key in ("card", "cardId", "id"):
-        value = option.get(key)
-        resolved = card_id(value)
+        resolved = card_id(option.get(key))
         if resolved >= 0:
             return resolved
+    area = option.get("area")
+    if area is None and option.get("type") == T_PLAY:
+        area = AREA_HAND  # normal Play-from-hand windows omit `area`
+    index = option.get("index")
+    player_index = int(option.get("playerIndex", default_player_index))
+    if isinstance(area, int) and isinstance(index, int):
+        cards = zone_cards(current, player_index, area)
+        if 0 <= index < len(cards) and isinstance(cards[index], dict):
+            resolved = card_id(cards[index])
+            if resolved >= 0:
+                return resolved
     return -1
 
 
-def option_target_id(option: dict) -> int:
+def option_target_id(option: dict, current: dict | None = None, default_player_index: int = 0) -> int:
+    if not isinstance(option, dict):
+        return -1
     for key in ("target", "pokemon", "to", "selectPokemon"):
         resolved = card_id(option.get(key))
         if resolved >= 0:
             return resolved
+    area, index = option.get("inPlayArea"), option.get("inPlayIndex")
+    player_index = int(option.get("playerIndex", default_player_index))
+    if isinstance(area, int) and isinstance(index, int):
+        cards = zone_cards(current, player_index, area)
+        if 0 <= index < len(cards) and isinstance(cards[index], dict):
+            resolved = card_id(cards[index])
+            if resolved >= 0:
+                return resolved
     return -1
 
 
-def option_label(option: dict) -> str:
-    values = [str(option[key]) for key in ("name", "text", "label", "attackName", "moveName") if isinstance(option.get(key), str)]
-    attack = option.get("attack")
-    if isinstance(attack, dict):
-        values.extend(str(attack[key]) for key in ("name", "text") if isinstance(attack.get(key), str))
-    return " ".join(values).lower()
+def option_attack_id(option: dict) -> int:
+    value = option.get("attackId")
+    return value if type(value) is int else -1
 
 
 def energy_count(pokemon: dict) -> int:
@@ -141,23 +184,8 @@ def energy_count(pokemon: dict) -> int:
     return 0
 
 
-def damage_points(pokemon: dict) -> int:
-    for key in ("damage", "damagePoints", "damageAmount"):
-        value = pokemon.get(key)
-        if type(value) in (int, float):
-            return max(0, int(value))
-    for key in ("damageCounter", "damageCounters"):
-        value = pokemon.get(key)
-        if type(value) in (int, float):
-            numeric = max(0, int(value))
-            return numeric * 10 if numeric < 100 else numeric
-        if isinstance(value, list):
-            return len(value) * 10
-    return 0
-
-
 def max_hp(pokemon: dict) -> int:
-    for key in ("maxHp", "maxHP", "hp", "HP"):
+    for key in ("maxHp", "maxHP", "HP"):
         value = pokemon.get(key)
         if type(value) in (int, float):
             return max(0, int(value))
@@ -165,8 +193,14 @@ def max_hp(pokemon: dict) -> int:
 
 
 def remaining_hp(pokemon: dict) -> int:
-    maximum = max_hp(pokemon)
-    return max(0, maximum - damage_points(pokemon)) if maximum else 0
+    value = pokemon.get("hp")
+    if type(value) in (int, float):
+        return max(0, int(value))
+    return max_hp(pokemon)
+
+
+def damage_points(pokemon: dict) -> int:
+    return max(0, max_hp(pokemon) - remaining_hp(pokemon))
 
 
 class ScoredPolicy(ABC):
@@ -195,7 +229,15 @@ class ScoredPolicy(ABC):
         select = obs.get("select") or {}
         options = select.get("option") if isinstance(select.get("option"), list) else []
         if not options:
-            return [] if int(select.get("minCount", 0) or 0) == 0 else list(self.deck)
+            # No legal options exist -- there is nothing to select regardless
+            # of minCount. Returning list(self.deck) here (60 card IDs, not
+            # option indices) was a copy-paste of the *initial deck
+            # registration* fallback (obs is None, above) onto a genuine
+            # mid-game empty-option-list case; battle_select() has no way to
+            # interpret 60 out-of-range indices against 0 options and raises
+            # IndexError. Confirmed against a real captured crash: step 192,
+            # select_context=7 (TO_HAND), minCount=1, option_count=0.
+            return []
         context = self.build_context(obs)
         minimum, maximum = max(0, int(select.get("minCount", 1) or 0)), max(0, int(select.get("maxCount", 1) or 0))
         raw = self.choose_single(options, context) if minimum == maximum == 1 else self.choose_multi(options, context, minimum, maximum)
@@ -205,6 +247,7 @@ class ScoredPolicy(ABC):
 # Team Rocket Mewtwo / Spidops
 TAROUNTULA, SPIDOPS, ARTICUNO, MEWTWO_EX, WOBBUFFET, MURKROW = 400, 401, 414, 431, 432, 463
 ROCKET_POKEMON = {TAROUNTULA, SPIDOPS, ARTICUNO, MEWTWO_EX, WOBBUFFET, MURKROW}
+MURKROW_DECEIT, MURKROW_TORMENT = 652, 653  # AllAttack.json attackId, verified against card 463
 BUG_CATCHING_SET, NIGHT_STRETCHER, ENERGY_SEARCH, ROCKET_TRANSCEIVER, POKE_PAD = 1094, 1097, 1119, 1134, 1152
 HEROES_CAPE, BRAVE_BANGLE, ARIANA, ARCHER, GIOVANNI, PROTON, LILLIE, ROCKET_FACTORY, TEAM_ROCKET_ENERGY = 1159, 1175, 1216, 1217, 1218, 1220, 1227, 1257, 15
 
@@ -229,10 +272,15 @@ class MewtwoSpidopsPolicy(ScoredPolicy):
             "damaged_rocket": max((damage_points(value) for value in bench(obs, me) if card_id(value) in ROCKET_POKEMON), default=0),
             "spidops_in_play": any(card_id(value) == SPIDOPS for value in mine),
             "mewtwo_in_play": any(card_id(value) == MEWTWO_EX for value in mine),
+            "_current": obs.get("current"), "_my_idx": me,
         }
 
     def score_option(self, option: dict, ctx: dict) -> float:
-        kind, card, target, label = option.get("type"), option_card_id(option), option_target_id(option), option_label(option)
+        current, my_idx = ctx.get("_current"), ctx.get("_my_idx", 0)
+        kind = option.get("type")
+        card = option_card_id(option, current, my_idx)
+        target = option_target_id(option, current, my_idx)
+        attack_id = option_attack_id(option)
         if kind == T_ATTACK:
             if ctx["active_id"] == MEWTWO_EX:
                 if not ctx["four_rocket"]: return -10000
@@ -242,10 +290,10 @@ class MewtwoSpidopsPolicy(ScoredPolicy):
                 return 1260 if ctx["opp_remaining_hp"] and ctx["damaged_rocket"] >= ctx["opp_remaining_hp"] else 760 + min(300, ctx["damaged_rocket"])
             if ctx["active_id"] == SPIDOPS: return 780 + 30 * ctx["rocket_count"]
             if ctx["active_id"] == ARTICUNO: return 850
-            if ctx["active_id"] == MURKROW and "deceit" in label: return 720 if ctx["rocket_count"] < 4 else 380
+            if ctx["active_id"] == MURKROW and attack_id == MURKROW_DECEIT: return 720 if ctx["rocket_count"] < 4 else 380
             return 100
         if kind == T_EVOLVE: return 1020 if card == SPIDOPS else 300
-        if kind == T_ABILITY: return 1080 if ctx["spidops_in_play"] or card == SPIDOPS or "charging up" in label else 500
+        if kind == T_ABILITY: return 1080 if ctx["spidops_in_play"] or card == SPIDOPS else 500
         if kind == T_ENERGY:
             if target == MEWTWO_EX: return 1100 if card == TEAM_ROCKET_ENERGY else (990 if ctx["active_energy"] < 3 else 620)
             if target == SPIDOPS: return 760 if ctx["reservoir_energy"] < 2 else 420
@@ -277,6 +325,7 @@ class MewtwoSpidopsPolicy(ScoredPolicy):
 # Cynthia Garchomp / Spiritomb
 ROSELIA, ROSERADE, GIBLE, GABITE, GARCHOMP_EX, SPIRITOMB = 341, 342, 379, 380, 381, 387
 CYNTHIA_POKEMON = {ROSELIA, ROSERADE, GIBLE, GABITE, GARCHOMP_EX, SPIRITOMB}
+GARCHOMP_CORKSCREW_DIVE, GARCHOMP_DRACONIC_BUSTER = 531, 532  # AllAttack.json attackId, verified against card 381
 UNFAIR_STAMP, POFFIN, NIGHT_STRETCHER, FIGHTING_GONG, POKE_PAD, POWER_WEIGHT, BOSS, XEROSIC, SURFER, HILDA, LILLIE, FOREST = 1080, 1086, 1097, 1142, 1152, 1173, 1182, 1197, 1203, 1225, 1227, 1261
 
 
@@ -301,20 +350,25 @@ class GarchompSpiritombPolicy(ScoredPolicy):
             "garchomp_in_play": any(card_id(value) == GARCHOMP_EX for value in mine),
             "spiritomb_in_play": any(card_id(value) == SPIRITOMB for value in mine),
             "gabite_in_play": any(card_id(value) == GABITE for value in mine),
+            "_current": obs.get("current"), "_my_idx": me,
         }
 
     def score_option(self, option: dict, ctx: dict) -> float:
-        kind, card, target, label = option.get("type"), option_card_id(option), option_target_id(option), option_label(option)
+        current, my_idx = ctx.get("_current"), ctx.get("_my_idx", 0)
+        kind = option.get("type")
+        card = option_card_id(option, current, my_idx)
+        target = option_target_id(option, current, my_idx)
+        attack_id = option_attack_id(option)
         if kind == T_ATTACK:
             if ctx["active_id"] == SPIRITOMB: return 1450 if ctx["opp_remaining_hp"] and ctx["spiritomb_damage"] >= ctx["opp_remaining_hp"] else 850 + min(400, ctx["spiritomb_damage"])
             if ctx["active_id"] == GARCHOMP_EX:
-                heavy = any(token in label for token in ("draconic", "buster", "260"))
-                light = any(token in label for token in ("corkscrew", "dive", "100"))
+                heavy = attack_id == GARCHOMP_DRACONIC_BUSTER
+                light = attack_id == GARCHOMP_CORKSCREW_DIVE
                 if heavy: return 1400 if ctx["opp_remaining_hp"] and garchomp_damage(True, ctx["roserade_count"]) >= ctx["opp_remaining_hp"] else 760
                 if light: return 1350 if ctx["opp_remaining_hp"] and garchomp_damage(False, ctx["roserade_count"]) >= ctx["opp_remaining_hp"] else 1050
                 return 1000
             return 520 if ctx["active_id"] == GABITE else 120
-        if kind == T_ABILITY: return 1180 if card == GABITE or ctx["gabite_in_play"] or "champion" in label else 520
+        if kind == T_ABILITY: return 1180 if card == GABITE or ctx["gabite_in_play"] else 520
         if kind == T_EVOLVE: return 1160 if card == GARCHOMP_EX else 1080 if card == GABITE else 1020 if card == ROSERADE else 400
         if kind == T_ENERGY:
             if target == GARCHOMP_EX: return 1100 if ctx["active_energy"] < 2 else 690
@@ -339,7 +393,34 @@ class GarchompSpiritombPolicy(ScoredPolicy):
         return 0
 
 
+# Generic archetype-agnostic policy for Red Team decks (opponents we need to
+# beat but do not have dedicated championship-level tuning for). Deliberately
+# card-id-free -- it works from option `kind` alone, so it plays any deck
+# reasonably (attack when legal, evolve, keep energy flowing, use trainers)
+# without archetype-specific knowledge. Not meant to compete for promotion.
+class GenericHeuristicPolicy(ScoredPolicy):
+    def build_context(self, obs: dict) -> dict:
+        me = my_index(obs)
+        my_active = active(obs, me)
+        return {
+            "active_id": card_id(my_active),
+            "active_energy": energy_count(my_active),
+        }
+
+    def score_option(self, option: dict, ctx: dict) -> float:
+        kind = option.get("type")
+        if kind == T_ATTACK: return 950
+        if kind == T_EVOLVE: return 900
+        if kind == T_ABILITY: return 820
+        if kind == T_ENERGY: return 760 if ctx["active_energy"] < 2 else 500
+        if kind == T_PLAY: return 700
+        if kind == T_RETREAT: return 150
+        if kind == T_DISCARD: return 300
+        return 50
+
+
 def build_policy(candidate: str) -> ScoredPolicy:
     if candidate == "mewtwo_spidops": return MewtwoSpidopsPolicy()
     if candidate == "garchomp_spiritomb": return GarchompSpiritombPolicy()
+    if candidate in ("crustle_redteam", "grimmsnarl_redteam"): return GenericHeuristicPolicy()
     raise ValueError(f"unknown candidate: {candidate}")
