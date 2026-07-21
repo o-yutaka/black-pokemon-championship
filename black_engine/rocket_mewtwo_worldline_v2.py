@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from .mewtwo_truth import AREA_BENCH, MewtwoOption, MewtwoTruth, PokemonInstance
+from .prize_truth import prize_value
+from .worldline.model import CandidatePlan, PendingPlan, PlanStep
+from .worldline.pending import PendingPlanStore
 from .rocket_mewtwo_worldline import (
     ARTICUNO,
     CTX_DISCARD,
@@ -20,7 +23,6 @@ from .rocket_mewtwo_worldline import (
     T_PLAY,
     XEROSIC,
     RocketMewtwoWorldlinePolicy as _BaseRocketMewtwoWorldlinePolicy,
-    _prize_value,
     minimum_erasure_discards,
     mewtwo_ready,
 )
@@ -66,14 +68,22 @@ class RocketMewtwoWorldlinePolicy(_BaseRocketMewtwoWorldlinePolicy):
 
     def __init__(self) -> None:
         super().__init__()
-        self.attack_reserved = False
+        self.pending = PendingPlanStore()
         self.last_turn: int | None = None
+
+    @property
+    def attack_reserved(self) -> bool:
+        pending = self.pending.get()
+        step = pending.step if pending is not None else None
+        return bool(step and step.attack_id == MEWTWO_ERASURE_BALL)
 
     def build_context(self, obs: dict) -> dict:
         ctx = super().build_context(obs)
         truth: MewtwoTruth = ctx["truth"]
-        if self.last_turn is None or truth.turn != self.last_turn:
-            self.attack_reserved = False
+        if self.last_turn is None:
+            self.last_turn = truth.turn
+        elif truth.turn != self.last_turn:
+            self.pending.invalidate("turn_changed")
             self.last_turn = truth.turn
 
         opponent_hp = ctx["opponent_hp"]
@@ -154,7 +164,7 @@ class RocketMewtwoWorldlinePolicy(_BaseRocketMewtwoWorldlinePolicy):
                     value.current_hp,
                     planned_erasure_discards(value.current_hp, ctx["bench_energy_cards"]),
                 ),
-                _prize_value(value),
+                prize_value(value.card_id),
                 value.damage,
                 -value.current_hp,
                 -value.serial,
@@ -229,28 +239,54 @@ class RocketMewtwoWorldlinePolicy(_BaseRocketMewtwoWorldlinePolicy):
 
     def choose_single(self, options: list, context: dict) -> int:
         truth: MewtwoTruth = context["truth"]
-        if self.attack_reserved:
-            reserved = next(
-                (
-                    option.action_index
-                    for option in truth.options
-                    if option.action_type == T_ATTACK
-                    and option.attack_id == MEWTWO_ERASURE_BALL
-                    and self._can_erasure_attack(context)
-                ),
-                None,
-            )
-            if reserved is not None:
-                self.last_runner_id = "RESERVED_ERASURE_ATTACK"
-                self.attack_reserved = False
-                return reserved
+        pending = self.pending.get()
+        if pending is not None:
+            bound_turn = pending.bindings.get("turn")
+            if type(bound_turn) is int and bound_turn != truth.turn:
+                self.pending.invalidate("turn_changed")
+            else:
+                step = pending.step
+                if step is not None:
+                    reserved = next(
+                        (
+                            option.action_index
+                            for option in truth.options
+                            if (step.expected_type is None or option.action_type == step.expected_type)
+                            and (step.card_id is None or option.card_id == step.card_id)
+                            and (step.attack_id is None or option.attack_id == step.attack_id)
+                            and self._can_erasure_attack(context)
+                        ),
+                        None,
+                    )
+                    if reserved is not None:
+                        pending.advance()
+                        self.last_runner_id = "RESERVED_ERASURE_ATTACK"
+                        if pending.status == "COMPLETE":
+                            self.pending.clear()
+                        return reserved
 
         selected = super().choose_single(options, context)
         chosen = truth.options[selected]
         if chosen.action_type == T_PLAY and chosen.card_id == XEROSIC and self._can_erasure_attack(context):
-            self.attack_reserved = True
+            candidate = CandidatePlan(
+                plan_id="XEROSIC_THEN_ERASURE",
+                goal="reduce the opponent hand and complete Erasure Ball in the same turn",
+                root_action_index=selected,
+                steps=(
+                    PlanStep(
+                        name="attack_erasure_ball",
+                        expected_type=T_ATTACK,
+                        card_id=MEWTWO_EX,
+                        attack_id=MEWTWO_ERASURE_BALL,
+                    ),
+                ),
+                reserved_card_ids=(XEROSIC, MEWTWO_EX),
+                abort_conditions=("turn_changed", "power_saver_broken", "attack_unavailable"),
+                evidence=(f"opponent_hand={truth.opponent_hand_count}",),
+            )
+            self.pending.set(PendingPlan(candidate=candidate, bindings={"turn": truth.turn}))
         if chosen.action_type == T_ATTACK:
-            self.attack_reserved = False
+            self.pending.clear()
         return selected
 
     def choose_multi(self, options: list, context: dict, minimum: int, maximum: int) -> list[int]:
