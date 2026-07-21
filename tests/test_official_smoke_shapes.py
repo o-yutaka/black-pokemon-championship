@@ -103,6 +103,7 @@ def test_erasure_attack_option_shape_is_exactly_two_keys():
     assert set(raw_option) == {"type", "attackId"}
     assert truth.options[0].attack_id == 608
     assert classify_mewtwo_shape("mewtwo_spidops", truth, obs) == "ERASURE_ATTACK_OPTION"
+    assert option_shape(truth.options[0])["raw_keys"] == ["attackId", "type"]
 
 
 def test_erasure_discard_window_matches_real_attached_card_contract():
@@ -130,6 +131,7 @@ def test_erasure_discard_window_matches_real_attached_card_contract():
     assert truth.options[0].target_id == 401
     assert classify_mewtwo_shape("mewtwo_spidops", truth, obs) == "ERASURE_DISCARD_WINDOW"
     shape = option_shape(truth.options[0])
+    assert shape["raw_keys"] == ["area", "energyIndex", "index", "playerIndex", "type"]
     assert shape["area"] == 5
     assert shape["raw_index"] == 0
     assert shape["energyIndex"] == 1
