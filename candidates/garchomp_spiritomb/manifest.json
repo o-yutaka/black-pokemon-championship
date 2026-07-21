@@ -1,0 +1,30 @@
+{
+  "candidate_id": "garchomp_spiritomb_black_v1",
+  "title": "Cynthia's Garchomp ex / Spiritomb BLACK v1",
+  "status": "STATIC_READY_OFFICIAL_ENGINE_HOLD",
+  "policy_module": "candidates.garchomp_spiritomb.policy",
+  "deck_file": "deck.csv",
+  "ace_spec_ids": [1080],
+  "expected_total": 60,
+  "intent": "Use Gabite to complete the Cynthia board, choose Corkscrew Dive for sustainable draw-pressure, reserve Draconic Buster for meaningful KOs, and hand off to one-Prize Spiritomb when accumulated Benched Cynthia damage reaches a superior Prize route.",
+  "primary_routes": [
+    "GABITE_CHAMPIONS_CALL_SETUP",
+    "GARCHOMP_100_DRAW_PRESSURE",
+    "GARCHOMP_260_MINIMUM_FINISH",
+    "SPIRITOMB_DAMAGE_RESERVOIR_FINISH",
+    "ROSERADE_STACKED_DAMAGE",
+    "POWER_WEIGHT_SURVIVAL_RESERVOIR"
+  ],
+  "forbidden": [
+    "DRACONIC_BUSTER_WITHOUT_KO_OR_TEMPO_JUSTIFICATION",
+    "MISS_SPIRITOMB_LETHAL",
+    "OVERBENCH_NON_CYNTHIA_TARGETS",
+    "FAIL_TO_RESERVE_POST_260_ENERGY"
+  ],
+  "local_required": [
+    "official option attack-id/name capture",
+    "damage-counter field capture",
+    "Roserade stacking confirmation",
+    "paired smoke and matchup evaluation"
+  ]
+}
