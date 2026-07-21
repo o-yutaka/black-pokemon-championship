@@ -32,9 +32,9 @@ def build_candidate_base_policy(candidate: str):
 
         return build_mewtwo_policy()
     if candidate == "dragapult_cinderace":
-        from .dragapult_complete_policy import DragapultCompletePolicy
+        from .dragapult_championship_policy import DragapultChampionshipPolicy
 
-        return DragapultCompletePolicy()
+        return DragapultChampionshipPolicy()
     if candidate in ("garchomp_spiritomb", "crustle_redteam", "grimmsnarl_redteam"):
         from black_lab import build_policy
 
