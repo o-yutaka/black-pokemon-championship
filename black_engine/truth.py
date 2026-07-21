@@ -60,6 +60,7 @@ class PokemonView:
     damage: int
     max_hp: int
     energy_ids: tuple[int, ...]
+    attached_ids: tuple[int, ...] = ()
     status: tuple[str, ...] = ()
     raw_public: dict = field(default_factory=dict, compare=False, repr=False)
 
@@ -70,6 +71,10 @@ class PokemonView:
     @property
     def energy_count(self) -> int:
         return len(self.energy_ids)
+
+    @property
+    def all_public_card_ids(self) -> tuple[int, ...]:
+        return (self.card_id,) + self.attached_ids
 
 
 @dataclass(frozen=True)
@@ -152,6 +157,21 @@ class TruthState:
         )
 
 
+def _attached_ids(pokemon: dict, energy_ids: tuple[int, ...]) -> tuple[int, ...]:
+    values: list[int] = list(energy_ids)
+    for key in (
+        "tool", "pokemonTool", "attachedTool", "toolCard",
+        "evolutionCards", "cards", "stack", "under", "preEvolution",
+    ):
+        raw = pokemon.get(key)
+        items = raw if isinstance(raw, list) else [raw] if raw is not None else []
+        for item in items:
+            card = _card_id(item)
+            if card >= 0 and card != _card_id(pokemon) and card not in values:
+                values.append(card)
+    return tuple(values)
+
+
 def _pokemon_view(value: Any) -> PokemonView | None:
     if not isinstance(value, dict):
         return None
@@ -160,11 +180,13 @@ def _pokemon_view(value: Any) -> PokemonView | None:
         return None
     status_names = ("poisoned", "burned", "asleep", "paralyzed", "confused")
     status = tuple(name for name in status_names if bool(value.get(name)))
+    energy_ids = _energy_ids(value)
     return PokemonView(
         card_id=card,
         damage=_damage_points(value),
         max_hp=_max_hp(value),
-        energy_ids=_energy_ids(value),
+        energy_ids=energy_ids,
+        attached_ids=_attached_ids(value, energy_ids),
         status=status,
         raw_public=dict(value),
     )
