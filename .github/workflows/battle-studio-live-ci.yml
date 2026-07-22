@@ -1,0 +1,100 @@
+name: battle-studio-live-ci
+
+on:
+  pull_request:
+    paths:
+      - "tools/battle_studio/**"
+      - ".github/workflows/battle-studio-live-ci.yml"
+  push:
+    branches:
+      - "feature/black-battle-studio-live-bridge-v1"
+    paths:
+      - "tools/battle_studio/**"
+      - ".github/workflows/battle-studio-live-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  live-connection:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+
+      - name: Build PWA
+        working-directory: tools/battle_studio/frontend
+        run: |
+          npm install --no-audit --no-fund
+          npm run check
+          npm test
+          npm run build
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install bridge dependencies
+        working-directory: tools/battle_studio/backend
+        run: pip install -r requirements-live.txt
+
+      - name: Compile bridge
+        working-directory: tools/battle_studio/backend
+        run: python -m py_compile emulator_engine.py live_server.py run_connection_smoke.py
+
+      - name: Real TCP and WebSocket smoke
+        working-directory: tools/battle_studio/backend
+        env:
+          EXPECT_FRONTEND_DIST: "1"
+        run: python run_connection_smoke.py
+
+      - name: Validate smoke evidence
+        working-directory: tools/battle_studio/backend
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path("connection_smoke_result.json").read_text())
+          assert result["verdict"] == "PASS"
+          required = {
+              "http_health_pass",
+              "built_pwa_static_serve_pass",
+              "session_create_pass",
+              "websocket_initial_snapshot_pass",
+              "websocket_ping_pong_pass",
+              "three_live_steps_pass",
+              "card_instance_identity_stable",
+              "illegal_selection_fail_closed_pass",
+              "clean_close_pass",
+              "reconnect_latest_snapshot_pass",
+          }
+          assert required.issubset(set(result["checks"]))
+          print(json.dumps(result, indent=2))
+          PY
+
+      - name: Protected path guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main --quiet
+          changed="$(git diff --name-only origin/main...HEAD)"
+          printf '%s\n' "$changed"
+          if printf '%s\n' "$changed" | grep -Eq '^(submission/|deck\.csv$)'; then
+            echo "Protected submission or deck path changed"
+            exit 1
+          fi
+
+      - name: Upload connection evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: black-battle-studio-live-connection-evidence
+          path: tools/battle_studio/backend/connection_smoke_result.json
+          if-no-files-found: error
+          retention-days: 14
