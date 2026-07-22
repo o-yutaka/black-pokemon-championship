@@ -1,0 +1,135 @@
+name: battle-studio-ci
+
+on:
+  pull_request:
+    paths:
+      - "tools/battle_studio/**"
+      - ".github/workflows/battle-studio-ci.yml"
+  push:
+    branches:
+      - "feature/black-battle-studio-v1"
+    paths:
+      - "tools/battle_studio/**"
+      - ".github/workflows/battle-studio-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+
+      - name: Prepare diagnostics
+        run: mkdir -p artifacts/battle_studio_ci
+
+      - name: Install frontend dependencies
+        working-directory: tools/battle_studio/frontend
+        run: npm install --no-audit --no-fund
+
+      - name: Type check
+        id: typecheck
+        continue-on-error: true
+        working-directory: tools/battle_studio/frontend
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run check 2>&1 | tee ../../../artifacts/battle_studio_ci/typecheck.log
+
+      - name: Frontend tests
+        id: frontend_tests
+        continue-on-error: true
+        working-directory: tools/battle_studio/frontend
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee ../../../artifacts/battle_studio_ci/frontend_tests.log
+
+      - name: Production build
+        id: frontend_build
+        continue-on-error: true
+        working-directory: tools/battle_studio/frontend
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run build 2>&1 | tee ../../../artifacts/battle_studio_ci/frontend_build.log
+
+      - name: Python converter tests
+        id: python_tests
+        continue-on-error: true
+        working-directory: tools/battle_studio/backend
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m unittest -v test_replay_converter.py 2>&1 | tee ../../../artifacts/battle_studio_ci/python_tests.log
+
+      - name: Validate JSON schema syntax
+        id: schema_check
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m json.tool tools/battle_studio/schemas/battle_replay.schema.json 2>&1 | tee artifacts/battle_studio_ci/schema.log >/dev/null
+
+      - name: Protected path guard
+        id: protected_paths
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          git fetch origin main --quiet
+          changed="$(git diff --name-only origin/main...HEAD)"
+          printf '%s\n' "$changed" | tee artifacts/battle_studio_ci/changed_files.log
+          if printf '%s\n' "$changed" | grep -Eq '^(submission/|deck\.csv$)'; then
+            echo "Protected submission or deck path changed" | tee -a artifacts/battle_studio_ci/changed_files.log
+            exit 1
+          fi
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: black-battle-studio-ci-diagnostics
+          path: artifacts/battle_studio_ci
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload static build
+        if: steps.frontend_build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: black-battle-studio-dist
+          path: tools/battle_studio/frontend/dist
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Enforce validation gate
+        if: always()
+        shell: bash
+        env:
+          TYPECHECK: ${{ steps.typecheck.outcome }}
+          FRONTEND_TESTS: ${{ steps.frontend_tests.outcome }}
+          FRONTEND_BUILD: ${{ steps.frontend_build.outcome }}
+          PYTHON_TESTS: ${{ steps.python_tests.outcome }}
+          SCHEMA_CHECK: ${{ steps.schema_check.outcome }}
+          PROTECTED_PATHS: ${{ steps.protected_paths.outcome }}
+        run: |
+          set -euo pipefail
+          printf 'typecheck=%s\nfrontend_tests=%s\nfrontend_build=%s\npython_tests=%s\nschema_check=%s\nprotected_paths=%s\n' \
+            "$TYPECHECK" "$FRONTEND_TESTS" "$FRONTEND_BUILD" "$PYTHON_TESTS" "$SCHEMA_CHECK" "$PROTECTED_PATHS"
+          test "$TYPECHECK" = success
+          test "$FRONTEND_TESTS" = success
+          test "$FRONTEND_BUILD" = success
+          test "$PYTHON_TESTS" = success
+          test "$SCHEMA_CHECK" = success
+          test "$PROTECTED_PATHS" = success

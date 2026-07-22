@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://black.local/schemas/battle_replay.schema.json",
+  "title": "BLACK Battle Studio Replay",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "replayId", "createdAt", "source", "hiddenInformationPolicy", "frames"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "replayId": { "type": "string", "minLength": 1 },
+    "createdAt": { "type": "string", "minLength": 1 },
+    "source": { "enum": ["cabt", "kaggle", "demo", "unknown"] },
+    "hiddenInformationPolicy": { "enum": ["player_view", "spectator", "unknown"] },
+    "frames": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/frame" }
+    }
+  },
+  "$defs": {
+    "card": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["playerIndex", "serial", "cardId", "name", "zone", "slot", "hp", "maxHp", "damage", "energies", "tools", "status", "evolution", "imageUrl"],
+      "properties": {
+        "playerIndex": { "type": "integer", "minimum": 0, "maximum": 1 },
+        "serial": { "type": "integer", "minimum": 0 },
+        "cardId": { "type": "integer", "minimum": 0 },
+        "name": { "type": "string" },
+        "zone": { "enum": ["active", "bench", "hand", "deck", "discard", "prize", "looking", "unknown"] },
+        "slot": { "type": ["integer", "null"], "minimum": 0 },
+        "hp": { "type": ["integer", "null"], "minimum": 0 },
+        "maxHp": { "type": ["integer", "null"], "minimum": 0 },
+        "damage": { "type": "integer", "minimum": 0 },
+        "energies": { "type": "array", "items": { "type": "string" } },
+        "tools": { "type": "array", "items": { "type": "string" } },
+        "status": { "type": "array", "items": { "type": "string" } },
+        "evolution": { "type": "array", "items": { "type": "integer", "minimum": 0 } },
+        "imageUrl": { "type": ["string", "null"] }
+      }
+    },
+    "player": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "active", "bench", "hand", "handCount", "deckCount", "prizeCount", "discard", "supporterPlayed", "retreated"],
+      "properties": {
+        "name": { "type": "string" },
+        "active": { "oneOf": [{ "$ref": "#/$defs/card" }, { "type": "null" }] },
+        "bench": { "type": "array", "maxItems": 5, "items": { "$ref": "#/$defs/card" } },
+        "hand": { "type": "array", "items": { "$ref": "#/$defs/card" } },
+        "handCount": { "type": "integer", "minimum": 0 },
+        "deckCount": { "type": "integer", "minimum": 0 },
+        "prizeCount": { "type": "integer", "minimum": 0 },
+        "discard": { "type": "array", "items": { "$ref": "#/$defs/card" } },
+        "supporterPlayed": { "type": "boolean" },
+        "retreated": { "type": "boolean" }
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "actor", "text", "cardKey"],
+      "properties": {
+        "type": { "type": "string" },
+        "actor": { "type": ["integer", "null"], "minimum": 0, "maximum": 1 },
+        "text": { "type": "string" },
+        "cardKey": { "type": ["string", "null"] }
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "score", "selected"],
+      "properties": {
+        "label": { "type": "string" },
+        "score": { "type": "number" },
+        "selected": { "type": "boolean" }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actor", "goal", "chosen", "confidence", "elapsedMs", "candidates"],
+      "properties": {
+        "actor": { "type": "integer", "minimum": 0, "maximum": 1 },
+        "goal": { "type": "string" },
+        "chosen": { "type": "string" },
+        "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "elapsedMs": { "type": ["number", "null"], "minimum": 0 },
+        "candidates": { "type": "array", "items": { "$ref": "#/$defs/candidate" } }
+      }
+    },
+    "frame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["frameId", "turn", "actionCount", "actingPlayer", "phase", "players", "stadium", "events", "decision", "result"],
+      "properties": {
+        "frameId": { "type": "integer", "minimum": 0 },
+        "turn": { "type": "integer", "minimum": 0 },
+        "actionCount": { "type": "integer", "minimum": 0 },
+        "actingPlayer": { "type": "integer", "minimum": 0, "maximum": 1 },
+        "phase": { "type": "string" },
+        "players": {
+          "type": "array",
+          "prefixItems": [{ "$ref": "#/$defs/player" }, { "$ref": "#/$defs/player" }],
+          "items": false,
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "stadium": { "oneOf": [{ "$ref": "#/$defs/card" }, { "type": "null" }] },
+        "events": { "type": "array", "items": { "$ref": "#/$defs/event" } },
+        "decision": { "oneOf": [{ "$ref": "#/$defs/decision" }, { "type": "null" }] },
+        "result": { "type": ["string", "null"] }
+      }
+    }
+  }
+}
