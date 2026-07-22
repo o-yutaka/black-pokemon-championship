@@ -4,9 +4,12 @@ import asyncio
 import os
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from emulator_engine import CabtShapeEmulator
@@ -24,7 +27,14 @@ class Session:
 
 
 app = FastAPI(title="BLACK Battle Studio Live Bridge", version="1.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
+)
 SESSIONS: dict[str, Session] = {}
+FRONTEND_DIST = Path(__file__).resolve().parents[1] / "frontend" / "dist"
 
 
 def _official_available() -> bool:
@@ -42,6 +52,7 @@ async def health() -> dict[str, Any]:
         "service": "black-battle-studio-live-bridge",
         "emulator": True,
         "officialCabt": _official_available(),
+        "frontendDist": FRONTEND_DIST.is_dir(),
         "pid": os.getpid(),
     }
 
@@ -102,3 +113,7 @@ async def battle_socket(websocket: WebSocket, session_id: str) -> None:
                 await websocket.send_json({"type": "error", "code": "ENGINE_REJECTED", "detail": str(exc)})
     except WebSocketDisconnect:
         return
+
+
+if FRONTEND_DIST.is_dir():
+    app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="battle-studio")
