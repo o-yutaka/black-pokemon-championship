@@ -20,8 +20,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
-      - name: Checkout
+      - name: Checkout exact head
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -92,6 +95,7 @@ jobs:
           fi
 
       - name: Upload connection evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: black-battle-studio-live-connection-evidence
