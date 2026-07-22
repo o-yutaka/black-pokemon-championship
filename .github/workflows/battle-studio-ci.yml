@@ -1,0 +1,74 @@
+name: battle-studio-ci
+
+on:
+  pull_request:
+    paths:
+      - "tools/battle_studio/**"
+      - ".github/workflows/battle-studio-ci.yml"
+  push:
+    branches:
+      - "feature/black-battle-studio-v1"
+    paths:
+      - "tools/battle_studio/**"
+      - ".github/workflows/battle-studio-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+
+      - name: Install frontend dependencies
+        working-directory: tools/battle_studio/frontend
+        run: npm install --no-audit --no-fund
+
+      - name: Type check
+        working-directory: tools/battle_studio/frontend
+        run: npm run check
+
+      - name: Frontend tests
+        working-directory: tools/battle_studio/frontend
+        run: npm test
+
+      - name: Production build
+        working-directory: tools/battle_studio/frontend
+        run: npm run build
+
+      - name: Python converter tests
+        working-directory: tools/battle_studio/backend
+        run: python -m unittest -v test_replay_converter.py
+
+      - name: Validate JSON schema syntax
+        run: python -m json.tool tools/battle_studio/schemas/battle_replay.schema.json >/dev/null
+
+      - name: Protected path guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main --quiet
+          changed="$(git diff --name-only origin/main...HEAD)"
+          printf '%s\n' "$changed"
+          if printf '%s\n' "$changed" | grep -Eq '^(submission/|deck\.csv$)'; then
+            echo "Protected submission or deck path changed"
+            exit 1
+          fi
+
+      - name: Upload static build
+        uses: actions/upload-artifact@v4
+        with:
+          name: black-battle-studio-dist
+          path: tools/battle_studio/frontend/dist
+          if-no-files-found: error
+          retention-days: 7
