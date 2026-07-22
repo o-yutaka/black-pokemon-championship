@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { demoReplay } from "./demo";
+import { connectLiveEmulator, type LiveConnection, type LiveSnapshot, type LiveStatus } from "./live";
 import { readReplayFile } from "./replay";
 import { cardKey, type BattleFrame, type BattleReplay, type CardInstance } from "./types";
 import "./styles.css";
@@ -75,9 +76,12 @@ export default function App() {
   const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(1);
   const [selectedCard, setSelectedCard] = useState<CardInstance | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [liveStatus, setLiveStatus] = useState<LiveStatus>("disconnected");
+  const [legalSelections, setLegalSelections] = useState<number[][]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
+  const liveRef = useRef<LiveConnection | null>(null);
 
-  const frame = replay.frames[frameIndex];
+  const frame = replay.frames[Math.min(frameIndex, replay.frames.length - 1)];
   const progress = replay.frames.length <= 1 ? 0 : (frameIndex / (replay.frames.length - 1)) * 100;
 
   useEffect(() => {
@@ -95,14 +99,52 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, [playing, replay.frames.length, speed]);
 
-  useEffect(() => {
-    setSelectedCard(null);
-  }, [frameIndex]);
+  useEffect(() => setSelectedCard(null), [frameIndex]);
+  useEffect(() => () => liveRef.current?.close(), []);
 
   const frameLabel = useMemo(() => `Turn ${frame.turn} · ${frame.phase} · Action ${frame.actionCount}`, [frame]);
 
+  const applyLiveSnapshot = (snapshot: LiveSnapshot) => {
+    setLegalSelections(snapshot.legalSelections);
+    setReplay((current) => {
+      const frames = current.replayId === snapshot.sessionId
+        ? [...current.frames.filter((item) => item.frameId !== snapshot.frame.frameId), snapshot.frame].sort((a, b) => a.frameId - b.frameId)
+        : [snapshot.frame];
+      return {
+        schemaVersion: "1.0",
+        replayId: snapshot.sessionId,
+        createdAt: new Date().toISOString(),
+        source: "unknown",
+        hiddenInformationPolicy: "spectator",
+        frames,
+      };
+    });
+    setFrameIndex(snapshot.frame.frameId);
+  };
+
+  const connectEmulator = async () => {
+    setError(null);
+    setPlaying(false);
+    liveRef.current?.close();
+    try {
+      const baseUrl = import.meta.env.VITE_LIVE_BASE_URL || window.location.origin;
+      liveRef.current = await connectLiveEmulator(baseUrl, applyLiveSnapshot, setLiveStatus, setError);
+    } catch (caught) {
+      setLiveStatus("error");
+      setError(caught instanceof Error ? caught.message : "Live connection failed");
+    }
+  };
+
+  const disconnectLive = () => {
+    liveRef.current?.close();
+    liveRef.current = null;
+    setLiveStatus("disconnected");
+    setLegalSelections([]);
+  };
+
   const loadFile = async (file: File | undefined) => {
     if (!file) return;
+    disconnectLive();
     setError(null);
     setPlaying(false);
     try {
@@ -117,11 +159,14 @@ export default function App() {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <div><h1>BLACK Battle Studio</h1><p>{replay.replayId} · {frameLabel}</p></div>
+        <div><h1>BLACK Battle Studio</h1><p>{replay.replayId} · {frameLabel} · LIVE {liveStatus.toUpperCase()}</p></div>
         <div className="top-actions">
           <input ref={fileRef} className="file-input" type="file" accept="application/json,.json" onChange={(event) => void loadFile(event.target.files?.[0])} />
           <button type="button" onClick={() => fileRef.current?.click()}>Open Replay</button>
-          <button type="button" onClick={() => { setReplay(demoReplay); setFrameIndex(0); setPlaying(false); setError(null); }}>Demo</button>
+          <button type="button" onClick={() => void connectEmulator()} disabled={liveStatus === "connecting" || liveStatus === "connected"}>Connect Emulator</button>
+          <button type="button" onClick={() => liveRef.current?.step(legalSelections[0] ?? [0])} disabled={liveStatus !== "connected" || legalSelections.length === 0}>Live Step</button>
+          <button type="button" onClick={disconnectLive} disabled={liveStatus === "disconnected"}>Disconnect</button>
+          <button type="button" onClick={() => { disconnectLive(); setReplay(demoReplay); setFrameIndex(0); setPlaying(false); setError(null); }}>Demo</button>
         </div>
       </header>
 
