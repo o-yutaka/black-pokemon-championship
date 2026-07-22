@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import socket
 import subprocess
 import sys
@@ -26,6 +27,11 @@ def request_json(url: str, data: dict | None = None) -> dict:
         return json.loads(response.read())
 
 
+def request_text(url: str) -> str:
+    with urllib.request.urlopen(url, timeout=3) as response:
+        return response.read().decode("utf-8")
+
+
 def main() -> int:
     port = free_port()
     command = [sys.executable, "-m", "uvicorn", "live_server:app", "--host", "127.0.0.1", "--port", str(port), "--log-level", "warning"]
@@ -44,6 +50,12 @@ def main() -> int:
             raise RuntimeError("health endpoint did not become ready")
         evidence["health"] = health
         evidence["checks"].append("http_health_pass")
+
+        if os.environ.get("EXPECT_FRONTEND_DIST") == "1":
+            assert health.get("frontendDist") is True
+            index = request_text(f"http://127.0.0.1:{port}/")
+            assert 'id="root"' in index
+            evidence["checks"].append("built_pwa_static_serve_pass")
 
         session = request_json(f"http://127.0.0.1:{port}/api/sessions", {"engine": "emulator"})
         evidence["session"] = session
