@@ -64,6 +64,15 @@ def _nullable_integer(value: Any) -> int | None:
         return None
 
 
+def _nullable_float(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _string_list(value: Any) -> list[str]:
     result: list[str] = []
     for item in _as_sequence(value):
@@ -116,13 +125,27 @@ def normalize_card(raw: Any, player_index: int, zone: str, slot: int | None) -> 
     }
 
 
-def _normalize_cards(raw: Any, player_index: int, zone: str, limit: int | None = None) -> list[dict[str, Any]]:
+def _normalize_cards(
+    raw: Any,
+    player_index: int,
+    zone: str,
+    limit: int | None = None,
+    *,
+    skip_opaque: bool = False,
+) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     for slot, item in enumerate(_as_sequence(raw)):
         if limit is not None and len(result) >= limit:
             break
         if item is None:
             continue
+        if skip_opaque:
+            if not isinstance(item, Mapping):
+                continue
+            if _nullable_integer(_first(item, "serial", "instanceSerial")) is None:
+                continue
+            if _nullable_integer(_first(item, "cardId", "card_id", "id")) is None:
+                continue
         result.append(normalize_card(item, player_index, zone, slot))
     return result
 
@@ -132,7 +155,7 @@ def normalize_player(raw: Any, player_index: int) -> dict[str, Any]:
     active_raw = _first(player, "active", "activePokemon")
     active = normalize_card(active_raw, player_index, "active", 0) if active_raw else None
     bench = _normalize_cards(_first(player, "bench", "benchPokemon", default=[]), player_index, "bench", limit=5)
-    hand = _normalize_cards(_first(player, "hand", default=[]), player_index, "hand")
+    hand = _normalize_cards(_first(player, "hand", default=[]), player_index, "hand", skip_opaque=True)
     discard = _normalize_cards(_first(player, "discard", "discardPile", default=[]), player_index, "discard")
 
     hand_count = _integer(_first(player, "handCount", "hand_count", default=len(hand)), len(hand))
@@ -173,6 +196,45 @@ def normalize_events(raw: Any) -> list[dict[str, Any]]:
     return events
 
 
+def normalize_decision(raw: Any) -> dict[str, Any] | None:
+    if not isinstance(raw, Mapping):
+        return None
+    actor = _nullable_integer(_first(raw, "actor", "playerIndex"))
+    chosen = _first(raw, "chosen", "selected", "action")
+    if actor not in (0, 1) or chosen is None:
+        return None
+
+    confidence = _nullable_float(_first(raw, "confidence"))
+    if confidence is not None and not 0.0 <= confidence <= 1.0:
+        confidence = None
+    elapsed_ms = _nullable_float(_first(raw, "elapsedMs", "elapsed_ms", "decisionMs"))
+    if elapsed_ms is not None and elapsed_ms < 0:
+        elapsed_ms = None
+
+    candidates: list[dict[str, Any]] = []
+    for item in _as_sequence(_first(raw, "candidates", default=[])):
+        if not isinstance(item, Mapping):
+            continue
+        label = _first(item, "label", "action", "name")
+        score = _nullable_float(_first(item, "score", "value"))
+        if label is None or score is None:
+            continue
+        candidates.append({
+            "label": str(label),
+            "score": score,
+            "selected": bool(_first(item, "selected", default=False)),
+        })
+
+    return {
+        "actor": actor,
+        "goal": str(_first(raw, "goal", default="unrecorded")),
+        "chosen": str(chosen),
+        "confidence": confidence,
+        "elapsedMs": elapsed_ms,
+        "candidates": candidates,
+    }
+
+
 def _extract_state(frame: Mapping[str, Any]) -> Mapping[str, Any]:
     current = frame.get("current")
     if isinstance(current, Mapping):
@@ -200,8 +262,12 @@ def normalize_frame(raw: Any, frame_id: int) -> dict[str, Any]:
     if acting_player not in (0, 1):
         raise ConversionError(f"frame[{frame_id}] has invalid acting player")
 
+    stadium = None
     stadium_raw = _first(state, "stadium")
-    stadium = normalize_card(stadium_raw, acting_player, "unknown", None) if isinstance(stadium_raw, Mapping) and _first(stadium_raw, "serial") is not None else None
+    if isinstance(stadium_raw, Mapping) and _first(stadium_raw, "serial") is not None:
+        stadium_owner = _nullable_integer(_first(stadium_raw, "playerIndex", "owner", "ownerIndex"))
+        if stadium_owner in (0, 1):
+            stadium = normalize_card(stadium_raw, stadium_owner, "unknown", None)
 
     return {
         "frameId": frame_id,
@@ -212,7 +278,7 @@ def normalize_frame(raw: Any, frame_id: int) -> dict[str, Any]:
         "players": [normalize_player(players[0], 0), normalize_player(players[1], 1)],
         "stadium": stadium,
         "events": normalize_events(_first(frame, "logs", "events", default=[])),
-        "decision": _first(frame, "decision", default=None),
+        "decision": normalize_decision(_first(frame, "decision", default=None)),
         "result": _first(frame, "result", default=_first(state, "result", default=None)),
     }
 
