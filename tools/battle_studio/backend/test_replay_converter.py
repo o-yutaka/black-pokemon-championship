@@ -54,6 +54,46 @@ class ReplayConverterTest(unittest.TestCase):
         with self.assertRaises(ConversionError):
             convert(self.payload, "r1", "cabt", "unknown")
 
+    def test_skips_opaque_hidden_hand_cards_without_inference(self) -> None:
+        player = self.payload["snapshots"][0]["current"]["players"][1]
+        player["hand"] = [
+            {"hidden": True},
+            {"serial": 21, "cardId": 901, "name": "Visible card"},
+        ]
+        result = convert(self.payload, "r1", "cabt", "player_view")
+        normalized = result["frames"][0]["players"][1]
+        self.assertEqual(normalized["handCount"], 4)
+        self.assertEqual([card["serial"] for card in normalized["hand"]], [21])
+
+    def test_does_not_infer_stadium_owner_from_turn_player(self) -> None:
+        self.payload["snapshots"][0]["current"]["stadium"] = {"serial": 30, "cardId": 777, "name": "Stadium"}
+        result = convert(self.payload, "r1", "cabt", "player_view")
+        self.assertIsNone(result["frames"][0]["stadium"])
+
+    def test_preserves_stadium_when_owner_is_observed(self) -> None:
+        self.payload["snapshots"][0]["current"]["stadium"] = {
+            "serial": 30,
+            "cardId": 777,
+            "name": "Stadium",
+            "playerIndex": 1,
+        }
+        result = convert(self.payload, "r1", "cabt", "player_view")
+        self.assertEqual(result["frames"][0]["stadium"]["playerIndex"], 1)
+
+    def test_normalizes_supported_decision_trace_only(self) -> None:
+        self.payload["snapshots"][0]["decision"] = {
+            "actor": 0,
+            "goal": "prize route",
+            "chosen": "attack",
+            "confidence": 0.8,
+            "elapsedMs": 12,
+            "candidates": [{"label": "attack", "score": 4.2, "selected": True}],
+        }
+        result = convert(self.payload, "r1", "cabt", "player_view")
+        decision = result["frames"][0]["decision"]
+        self.assertEqual(decision["chosen"], "attack")
+        self.assertEqual(decision["candidates"][0]["score"], 4.2)
+
 
 if __name__ == "__main__":
     unittest.main()
