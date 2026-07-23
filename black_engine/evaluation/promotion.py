@@ -62,6 +62,8 @@ def _replay_checks(manifest: dict, replay_summary: dict | None) -> list[GateChec
     source_hashes = replay_summary.get("source_sha256") if isinstance(replay_summary.get("source_sha256"), list) else []
     episode_ids = replay_summary.get("episode_ids") if isinstance(replay_summary.get("episode_ids"), list) else []
     corpus_id = str(replay_summary.get("corpus_id", ""))
+    training_corpus_sha = str(replay_summary.get("training_corpus_sha256", ""))
+    training_overlap = replay_summary.get("training_overlap") if isinstance(replay_summary.get("training_overlap"), list) else None
     episodes = int(replay_summary.get("episodes", 0))
     minimum = int(promotion.get("minimum_postfix_replay_episodes", 1))
 
@@ -69,14 +71,14 @@ def _replay_checks(manifest: dict, replay_summary: dict | None) -> list[GateChec
         [
             GateCheck(
                 "postfix_replay.candidate_sha",
-                bool(expected_candidate)
-                and expected_candidate != "REQUIRED_BEFORE_RUN"
-                and replay_candidate == expected_candidate,
+                bool(expected_candidate) and expected_candidate != "REQUIRED_BEFORE_RUN" and replay_candidate == expected_candidate,
                 replay_candidate,
                 expected_candidate,
             ),
             GateCheck("postfix_replay.corpus_kind", corpus_kind == required_kind, corpus_kind, required_kind),
             GateCheck("postfix_replay.corpus_id", bool(corpus_id), corpus_id, "non-empty"),
+            GateCheck("postfix_replay.training_corpus_sha", len(training_corpus_sha) == 64, training_corpus_sha, "SHA-256"),
+            GateCheck("postfix_replay.training_overlap", training_overlap == [], training_overlap, []),
             GateCheck("postfix_replay.episodes", episodes >= minimum, episodes, minimum),
             GateCheck("postfix_replay.source_hashes", len(source_hashes) == episodes and all(isinstance(value, str) and len(value) == 64 for value in source_hashes), len(source_hashes), episodes),
             GateCheck("postfix_replay.unique_sources", len(set(source_hashes)) == episodes, len(set(source_hashes)), episodes),
@@ -88,8 +90,13 @@ def _replay_checks(manifest: dict, replay_summary: dict | None) -> list[GateChec
         checks.append(GateCheck("postfix_replay.fatal", fatal == 0, fatal, 0))
     counts = replay_summary.get("canonical_failure_counts") if isinstance(replay_summary.get("canonical_failure_counts"), dict) else {}
     support = replay_summary.get("classifier_support") if isinstance(replay_summary.get("classifier_support"), dict) else {}
+    applicability = promotion.get("replay_taxonomy_applicability") if isinstance(promotion.get("replay_taxonomy_applicability"), dict) else {}
     for code in required:
-        checks.append(GateCheck(f"postfix_replay.{code}.supported", bool(support.get(code)), support.get(code), "non-empty"))
+        mode = str(applicability.get(code, "REQUIRED"))
+        if mode.startswith("NOT_APPLICABLE"):
+            checks.append(GateCheck(f"postfix_replay.{code}.applicability", True, mode, mode))
+        else:
+            checks.append(GateCheck(f"postfix_replay.{code}.supported", bool(support.get(code)), support.get(code), "non-empty"))
         actual = int(counts.get(code, 0))
         checks.append(GateCheck(f"postfix_replay.{code}.count", actual == 0, actual, 0))
     return checks
@@ -109,6 +116,8 @@ def evaluate_promotion(manifest: dict, summaries: dict[str, dict], replay_summar
         checks.append(GateCheck(f"{slug}.configured", isinstance(config, dict), bool(config), True))
         if not isinstance(config, dict):
             continue
+        strength_mode = str(config.get("strength_evidence", ""))
+        checks.append(GateCheck(f"{slug}.strength_evidence", strength_mode == "PROMOTION", strength_mode, "PROMOTION"))
         summary = summaries.get(slug)
         checks.append(GateCheck(f"{slug}.present", summary is not None, bool(summary), True))
         if summary is None:
@@ -155,18 +164,8 @@ def evaluate_promotion(manifest: dict, summaries: dict[str, dict], replay_summar
         [
             GateCheck("candidate_sha_consistent", len(candidate_hashes) == 1, sorted(candidate_hashes), "one exact SHA"),
             GateCheck("engine_sha_consistent", len(engine_hashes) == 1, sorted(engine_hashes), "one exact SHA"),
-            GateCheck(
-                "candidate_sha_frozen",
-                bool(expected_candidate) and expected_candidate != "REQUIRED_BEFORE_RUN" and candidate_hashes == {expected_candidate},
-                sorted(candidate_hashes),
-                expected_candidate,
-            ),
-            GateCheck(
-                "engine_sha_frozen",
-                bool(expected_engine) and expected_engine != "REQUIRED_BEFORE_RUN" and engine_hashes == {expected_engine},
-                sorted(engine_hashes),
-                expected_engine,
-            ),
+            GateCheck("candidate_sha_frozen", bool(expected_candidate) and expected_candidate != "REQUIRED_BEFORE_RUN" and candidate_hashes == {expected_candidate}, sorted(candidate_hashes), expected_candidate),
+            GateCheck("engine_sha_frozen", bool(expected_engine) and expected_engine != "REQUIRED_BEFORE_RUN" and engine_hashes == {expected_engine}, sorted(engine_hashes), expected_engine),
         ]
     )
     checks.extend(_runtime_checks(total_runtime, int(promotion.get("minimum_runtime_completed", 400))))
