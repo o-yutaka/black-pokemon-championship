@@ -33,10 +33,20 @@ if set(matchups) != set(profiles) or set(matchups) != set(sources):
     )
 if payload.get("evidence_law", {}).get("seat_balance") is not True:
     raise SystemExit("seat_balance must be true")
+if payload.get("evidence_law", {}).get("search_api") != "absent from current production bundle; enforced by static gate":
+    raise SystemExit("current production Search API absence must be explicit")
 if int(promotion.get("minimum_runtime_completed", 0)) < 1000:
     raise SystemExit("minimum_runtime_completed must cover five matchups x 200 games")
 if int(promotion.get("minimum_postfix_replay_episodes", 0)) <= 0:
     raise SystemExit("minimum_postfix_replay_episodes must be positive")
+if promotion.get("required_replay_corpus_kind") != "POST_FIX_HOLDOUT":
+    raise SystemExit("required_replay_corpus_kind must be POST_FIX_HOLDOUT")
+for field in ("candidate_bundle_sha256", "engine_sha256"):
+    value = promotion.get(field)
+    if not isinstance(value, str) or not value:
+        raise SystemExit(f"promotion.{field} must exist; use REQUIRED_BEFORE_RUN until locked")
+    if value != "REQUIRED_BEFORE_RUN" and (len(value) != 64 or any(ch not in "0123456789abcdef" for ch in value.lower())):
+        raise SystemExit(f"promotion.{field} must be REQUIRED_BEFORE_RUN or SHA-256")
 
 for slug, config in matchups.items():
     for field in (
