@@ -24,25 +24,13 @@ class PromotionVerdict:
         return all(value.passed for value in self.checks)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "verdict": self.verdict,
-            "passed": self.passed,
-            "checks": [value.__dict__ for value in self.checks],
-        }
+        return {"verdict": self.verdict, "passed": self.passed, "checks": [value.__dict__ for value in self.checks]}
 
 
 def _runtime_checks(runtime: dict, minimum_completed: int) -> list[GateCheck]:
     completed = int(runtime.get("completed", 0))
     checks = [GateCheck("games_completed", completed >= minimum_completed, completed, minimum_completed)]
-    for key in (
-        "crash",
-        "runtime_error",
-        "illegal_action",
-        "mandatory_empty",
-        "timeout",
-        "fallback",
-        "search_resource_leak",
-    ):
+    for key in ("crash", "runtime_error", "illegal_action", "mandatory_empty", "timeout", "fallback", "search_resource_leak"):
         actual = int(runtime.get(key, 0))
         checks.append(GateCheck(key, actual == 0, actual, 0))
     return checks
@@ -85,22 +73,11 @@ def evaluate_promotion(manifest: dict, summaries: dict[str, dict], replay_summar
     promotion = manifest.get("promotion") if isinstance(manifest.get("promotion"), dict) else {}
     matchups = manifest.get("matchups") if isinstance(manifest.get("matchups"), dict) else {}
     required_slugs = _required_matchups(manifest)
-    checks: list[GateCheck] = [
-        GateCheck("required_matchup_count", len(required_slugs) > 0, len(required_slugs), ">0")
-    ]
-    total_runtime = {
-        key: 0
-        for key in (
-            "completed",
-            "crash",
-            "runtime_error",
-            "illegal_action",
-            "mandatory_empty",
-            "timeout",
-            "fallback",
-            "search_resource_leak",
-        )
-    }
+    checks: list[GateCheck] = [GateCheck("required_matchup_count", len(required_slugs) > 0, len(required_slugs), ">0")]
+    candidate_hashes: set[str] = set()
+    engine_hashes: set[str] = set()
+    total_runtime = {key: 0 for key in ("completed", "crash", "runtime_error", "illegal_action", "mandatory_empty", "timeout", "fallback", "search_resource_leak")}
+
     for slug in required_slugs:
         config = matchups.get(slug)
         checks.append(GateCheck(f"{slug}.configured", isinstance(config, dict), bool(config), True))
@@ -115,34 +92,42 @@ def evaluate_promotion(manifest: dict, summaries: dict[str, dict], replay_summar
         seat1 = int(summary.get("seat1_games", 0))
         required_games = int(config.get("minimum_games", promotion.get("minimum_games_per_matchup", 200)))
         required_seat = required_games // 2
+        candidate_sha = str(summary.get("candidate_bundle_sha256", ""))
+        opponent_sha = str(summary.get("opponent_bundle_sha256", ""))
+        engine_sha = str(summary.get("engine_sha256", ""))
+        expected_opponent_sha = str(config.get("bundle_sha256", ""))
+        if candidate_sha:
+            candidate_hashes.add(candidate_sha)
+        if engine_sha:
+            engine_hashes.add(engine_sha)
         checks.extend(
             [
+                GateCheck(f"{slug}.matchup_identity", summary.get("matchup") == slug, summary.get("matchup"), slug),
+                GateCheck(f"{slug}.candidate_sha_present", bool(candidate_sha), candidate_sha, "non-empty"),
+                GateCheck(f"{slug}.engine_sha_present", bool(engine_sha), engine_sha, "non-empty"),
+                GateCheck(
+                    f"{slug}.opponent_sha",
+                    bool(expected_opponent_sha) and expected_opponent_sha != "REQUIRED_BEFORE_RUN" and opponent_sha == expected_opponent_sha,
+                    opponent_sha,
+                    expected_opponent_sha,
+                ),
                 GateCheck(f"{slug}.games", games == required_games, games, required_games),
                 GateCheck(f"{slug}.seat0", seat0 == required_seat, seat0, required_seat),
                 GateCheck(f"{slug}.seat1", seat1 == required_seat, seat1, required_seat),
-                GateCheck(
-                    f"{slug}.win_rate",
-                    float(summary.get("win_rate", 0.0)) >= float(config.get("minimum_win_rate", 0.5)),
-                    float(summary.get("win_rate", 0.0)),
-                    float(config.get("minimum_win_rate", 0.5)),
-                ),
-                GateCheck(
-                    f"{slug}.wilson_low",
-                    float(summary.get("wilson_low", 0.0)) >= float(config.get("minimum_wilson_low", 0.4)),
-                    float(summary.get("wilson_low", 0.0)),
-                    float(config.get("minimum_wilson_low", 0.4)),
-                ),
-                GateCheck(
-                    f"{slug}.evidence_mode",
-                    summary.get("evidence_mode") == "PROMOTION",
-                    summary.get("evidence_mode"),
-                    "PROMOTION",
-                ),
+                GateCheck(f"{slug}.win_rate", float(summary.get("win_rate", 0.0)) >= float(config.get("minimum_win_rate", 0.5)), float(summary.get("win_rate", 0.0)), float(config.get("minimum_win_rate", 0.5))),
+                GateCheck(f"{slug}.wilson_low", float(summary.get("wilson_low", 0.0)) >= float(config.get("minimum_wilson_low", 0.4)), float(summary.get("wilson_low", 0.0)), float(config.get("minimum_wilson_low", 0.4))),
+                GateCheck(f"{slug}.evidence_mode", summary.get("evidence_mode") == "PROMOTION", summary.get("evidence_mode"), "PROMOTION"),
             ]
         )
         runtime = summary.get("runtime") if isinstance(summary.get("runtime"), dict) else {}
         for key in total_runtime:
             total_runtime[key] += int(runtime.get(key, 0))
+
+    checks.append(GateCheck("candidate_sha_consistent", len(candidate_hashes) == 1, sorted(candidate_hashes), "one exact SHA"))
+    checks.append(GateCheck("engine_sha_consistent", len(engine_hashes) == 1, sorted(engine_hashes), "one exact SHA"))
+    expected_candidate = str(promotion.get("candidate_bundle_sha256", ""))
+    if expected_candidate:
+        checks.append(GateCheck("candidate_sha_frozen", expected_candidate != "REQUIRED_BEFORE_RUN" and candidate_hashes == {expected_candidate}, sorted(candidate_hashes), expected_candidate))
     checks.extend(_runtime_checks(total_runtime, int(promotion.get("minimum_runtime_completed", 400))))
     checks.extend(_replay_checks(manifest, replay_summary))
     return PromotionVerdict("PROMOTE" if all(value.passed for value in checks) else "HOLD", checks)
