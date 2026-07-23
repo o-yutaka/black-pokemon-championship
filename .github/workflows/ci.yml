@@ -17,7 +17,15 @@ jobs:
       - run: python -m pip install --upgrade pip pytest
       - run: python scripts/static_gate.py
       - run: python scripts/validate_red_team_manifest.py
-      - run: python -m py_compile black_engine/evaluation/*.py scripts/run_official_red_team.py scripts/judge_replays.py scripts/promotion_gate.py
+      - run: >-
+          python -m py_compile
+          black_engine/evaluation/*.py
+          red_team/replay_grounded_agent.py
+          scripts/run_official_red_team.py
+          scripts/judge_replays.py
+          scripts/promotion_gate.py
+          scripts/build_red_team_bundles.py
+          scripts/audit_red_team_fidelity.py
       - name: Run pytest with captured log
         shell: bash
         run: |
