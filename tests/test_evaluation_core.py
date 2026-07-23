@@ -78,22 +78,20 @@ def test_matchup_summary_is_seat_balanced_and_includes_runtime():
     assert summary.seat0_games == summary.seat1_games == 2
     assert summary.wins == summary.losses == 2
     assert summary.runtime.completed == 4
+    assert summary.candidate_bundle_sha256 == "a"
+    assert summary.opponent_bundle_sha256 == "b"
 
 
 def test_promotion_gate_fails_closed_when_matchup_missing():
     manifest = {
         "promotion": {"minimum_runtime_completed": 2, "required_replay_taxonomy": list(clean_replay_summary()["canonical_failure_counts"])},
-        "matchups": {"grim": {"minimum_games": 2, "minimum_win_rate": 0.5, "minimum_wilson_low": 0.0}},
+        "matchups": {"grim": {"minimum_games": 2, "minimum_win_rate": 0.5, "minimum_wilson_low": 0.0, "bundle_sha256": "opponent"}},
     }
     assert evaluate_promotion(manifest, {}).verdict == "HOLD"
 
 
-def test_promotion_gate_passes_only_clean_promotion_evidence():
-    manifest = {
-        "promotion": {"minimum_runtime_completed": 2, "required_replay_taxonomy": list(clean_replay_summary()["canonical_failure_counts"])},
-        "matchups": {"grim": {"minimum_games": 2, "minimum_win_rate": 0.5, "minimum_wilson_low": 0.0}},
-    }
-    summary = {
+def _clean_summary(matchup: str = "grim"):
+    return {
         "games": 2,
         "seat0_games": 1,
         "seat1_games": 1,
@@ -101,8 +99,19 @@ def test_promotion_gate_passes_only_clean_promotion_evidence():
         "wilson_low": 0.34,
         "evidence_mode": "PROMOTION",
         "runtime": RuntimeCounters(completed=2).__dict__,
+        "matchup": matchup,
+        "candidate_bundle_sha256": "candidate",
+        "opponent_bundle_sha256": "opponent",
+        "engine_sha256": "engine",
     }
-    verdict = evaluate_promotion(manifest, {"grim": summary}, clean_replay_summary())
+
+
+def test_promotion_gate_passes_only_clean_promotion_evidence():
+    manifest = {
+        "promotion": {"minimum_runtime_completed": 2, "required_replay_taxonomy": list(clean_replay_summary()["canonical_failure_counts"])},
+        "matchups": {"grim": {"minimum_games": 2, "minimum_win_rate": 0.5, "minimum_wilson_low": 0.0, "bundle_sha256": "opponent"}},
+    }
+    verdict = evaluate_promotion(manifest, {"grim": _clean_summary()}, clean_replay_summary())
     assert verdict.verdict == "PROMOTE"
     assert verdict.passed
 
@@ -115,20 +124,11 @@ def test_promotion_gate_requires_only_explicit_core_pool():
             "required_replay_taxonomy": list(clean_replay_summary()["canonical_failure_counts"]),
         },
         "matchups": {
-            "core": {"minimum_games": 2, "minimum_win_rate": 0.5, "minimum_wilson_low": 0.0},
+            "core": {"minimum_games": 2, "minimum_win_rate": 0.5, "minimum_wilson_low": 0.0, "bundle_sha256": "opponent"},
             "optional": {"minimum_games": 200, "minimum_win_rate": 1.0, "minimum_wilson_low": 1.0},
         },
     }
-    summary = {
-        "games": 2,
-        "seat0_games": 1,
-        "seat1_games": 1,
-        "win_rate": 1.0,
-        "wilson_low": 0.34,
-        "evidence_mode": "PROMOTION",
-        "runtime": RuntimeCounters(completed=2).__dict__,
-    }
-    assert evaluate_promotion(manifest, {"core": summary}, clean_replay_summary()).verdict == "PROMOTE"
+    assert evaluate_promotion(manifest, {"core": _clean_summary("core")}, clean_replay_summary()).verdict == "PROMOTE"
 
 
 def _episode_for_observation(obs: dict, action: list[int]) -> dict:
@@ -197,9 +197,7 @@ def test_replay_judge_detects_nonterminal_lethal_miss(tmp_path: Path):
 
 
 def test_canonical_taxonomy_preserves_required_zero_categories():
-    counts = canonical_failure_counts(
-        ["LETHAL_ACTION_MISS", "TERMINAL_ACTION_MISS", "PRIZE_AWARE_ACTIVE_MISS", "ENERGY_ATTACH_SUBOPTIMAL", "SPREAD_TARGET_REGRET"]
-    )
+    counts = canonical_failure_counts(["LETHAL_ACTION_MISS", "TERMINAL_ACTION_MISS", "PRIZE_AWARE_ACTIVE_MISS", "ENERGY_ATTACH_SUBOPTIMAL", "SPREAD_TARGET_REGRET"])
     assert counts == {
         "LETHAL_MISS": 1,
         "BAD_SPREAD_TARGET": 1,
@@ -257,15 +255,6 @@ def test_promotion_gate_fails_closed_without_postfix_replay_summary():
             "minimum_runtime_completed": 2,
             "required_replay_taxonomy": list(clean_replay_summary()["canonical_failure_counts"]),
         },
-        "matchups": {"grim": {"minimum_games": 2, "minimum_win_rate": 0.5, "minimum_wilson_low": 0.0}},
+        "matchups": {"grim": {"minimum_games": 2, "minimum_win_rate": 0.5, "minimum_wilson_low": 0.0, "bundle_sha256": "opponent"}},
     }
-    summary = {
-        "games": 2,
-        "seat0_games": 1,
-        "seat1_games": 1,
-        "win_rate": 1.0,
-        "wilson_low": 0.34,
-        "evidence_mode": "PROMOTION",
-        "runtime": RuntimeCounters(completed=2).__dict__,
-    }
-    assert evaluate_promotion(manifest, {"grim": summary}, None).verdict == "HOLD"
+    assert evaluate_promotion(manifest, {"grim": _clean_summary()}, None).verdict == "HOLD"
