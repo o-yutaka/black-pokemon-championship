@@ -96,7 +96,10 @@ def _stage_runtime(cg_dir: Path, stage: Path) -> None:
     black_engine = stage / "black_engine"
     black_engine.mkdir()
     for name in BLACK_ENGINE_FILE_ORDER:
-        shutil.copy2(ROOT / "black_engine" / name, black_engine / name)
+        source = ROOT / "black_engine" / name
+        target = black_engine / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
 
     cg_target = stage / "cg"
     cg_target.mkdir()
