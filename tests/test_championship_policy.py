@@ -160,7 +160,7 @@ def test_prize_aware_active_selection_rejects_unready_ex_into_known_lethal():
 
 def test_observed_nonpersistent_attack_pair_is_not_repeated():
     active = pokemon(MEWTWO_EX, 10, 280, 280, (TEAM_ROCKET_ENERGY, 5))
-    opponent = pokemon(999, 900, 220, 220)
+    opponent = pokemon(999, 900, 320, 320)
     obs = observation(
         active=active,
         bench=rocket_bench_with_spidops((1,)),
