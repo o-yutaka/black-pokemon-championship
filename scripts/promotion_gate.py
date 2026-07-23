@@ -16,10 +16,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Fail closed unless every official championship promotion gate passes.")
     parser.add_argument("--manifest", default=ROOT / "red_team" / "manifest.json", type=Path)
     parser.add_argument("--results", default=ROOT / "artifacts" / "official_red_team", type=Path)
+    parser.add_argument("--replay-summary", default=ROOT / "artifacts" / "replay_judge" / "summary.json", type=Path)
     parser.add_argument("--out", default=ROOT / "artifacts" / "promotion_verdict.json", type=Path)
     args = parser.parse_args()
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
-    verdict = evaluate_promotion(manifest, load_summaries(args.results))
+    replay_summary = (
+        json.loads(args.replay_summary.read_text(encoding="utf-8"))
+        if args.replay_summary.is_file()
+        else None
+    )
+    verdict = evaluate_promotion(manifest, load_summaries(args.results), replay_summary)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(verdict.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(verdict.to_dict(), ensure_ascii=False, indent=2))
