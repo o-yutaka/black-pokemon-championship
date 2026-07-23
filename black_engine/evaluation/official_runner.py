@@ -81,7 +81,6 @@ def run_game(
                 runtime.mandatory_empty += 1
                 error = "mandatory empty official selection"
                 break
-
             started = time.perf_counter()
             try:
                 action = seat_bundles[actor].agent(obs, None)
@@ -101,7 +100,6 @@ def run_game(
                 break
             obs = game.battle_select(action)
             steps += 1
-
         result = _result(obs)
         if result in (0, 1):
             runtime.completed += 1
@@ -126,7 +124,6 @@ def run_game(
         except Exception as exc:
             runtime.runtime_error += 1
             error = error or f"battle_finish: {type(exc).__name__}: {exc}"
-
     return GameRecord(
         matchup=matchup,
         candidate_bundle_sha256=seat_bundles[candidate_seat].sha256,
@@ -199,10 +196,12 @@ def run_matchup(
 ) -> MatchupSummary:
     if games <= 0 or games % 2:
         raise ValueError("games must be a positive even number for seat balance")
-    candidate = load_bundle(candidate_bundle)
-    opponent = load_bundle(opponent_bundle)
+    candidate_root = Path(candidate_bundle)
+    opponent_root = Path(opponent_bundle)
     records: list[GameRecord] = []
     for index in range(games):
+        candidate = load_bundle(candidate_root)
+        opponent = load_bundle(opponent_root)
         candidate_seat = index % 2
         seats = (candidate, opponent) if candidate_seat == 0 else (opponent, candidate)
         records.append(
