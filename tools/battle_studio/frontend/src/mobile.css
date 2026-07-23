@@ -1,0 +1,41 @@
+html { min-height: 100%; background: #07090d; }
+body { min-height: 100%; overscroll-behavior-y: none; -webkit-text-size-adjust: 100%; }
+button, a, input, select { touch-action: manipulation; }
+button { min-height: 44px; -webkit-tap-highlight-color: transparent; }
+
+@supports (padding: max(0px)) {
+  .app-shell {
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-width: 640px) {
+  .app-shell {
+    padding-top: max(8px, env(safe-area-inset-top));
+    padding-left: max(8px, env(safe-area-inset-left));
+    padding-right: max(8px, env(safe-area-inset-right));
+    padding-bottom: calc(88px + env(safe-area-inset-bottom));
+  }
+  .topbar { width: 100%; flex-direction: column; }
+  .topbar > div:first-child { min-width: 0; }
+  .topbar p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .top-actions { width: 100%; display: grid; grid-template-columns: 1fr 1fr; }
+  .top-actions button { min-width: 0; min-height: 44px; }
+  .controls {
+    bottom: max(6px, env(safe-area-inset-bottom));
+    margin-bottom: 0;
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+  .control-buttons { display: grid; grid-template-columns: repeat(5, 1fr); width: 100%; }
+  .control-buttons button { min-width: 0; min-height: 44px; }
+  .card-face { -webkit-user-select: none; user-select: none; }
+  .modal-backdrop { padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
+  .card-modal { max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px); overflow: auto; -webkit-overflow-scrolling: touch; }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  button:hover:not(:disabled), .card-face:hover:not(.empty) { transform: none; }
+  button:active:not(:disabled), .card-face:active:not(.empty) { transform: scale(.985); }
+}
