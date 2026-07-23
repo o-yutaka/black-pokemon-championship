@@ -48,10 +48,16 @@ def main() -> int:
         cg.mkdir()
         for name in REQUIRED_CG_FILES:
             target = cg / name
-            target.write_bytes(b"test-libcg" if name == "libcg.so" else b"# fixture\n")
+            target.write_bytes(b"\x7fELFtest-libcg" if name == "libcg.so" else b"# fixture\n")
 
         archive_path = build(cg, temporary / "submission.tar.gz")
         archive = inspect_archive(archive_path)
+        second_path = build(cg, temporary / "submission-second.tar.gz")
+        second = inspect_archive(second_path)
+        if archive["sha256"] != second["sha256"]:
+            raise RuntimeError(
+                f"submission build is not byte-reproducible: {archive['sha256']} != {second['sha256']}"
+            )
         if archive["root_entry"] != "main.py":
             raise RuntimeError("main.py is not the first archive entry")
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -113,12 +114,17 @@ def validate_runtime_layout(root: str | Path) -> dict:
     missing = [name for name in REQUIRED_CG_FILES if not (cg / name).is_file()]
     if missing:
         raise SubmissionContractError(f"runtime cg missing: {sorted(missing)}")
-    if (cg / "libcg.so").stat().st_size <= 0:
+    libcg = cg / "libcg.so"
+    if libcg.stat().st_size <= 0:
         raise SubmissionContractError("cg/libcg.so is empty")
+    if not libcg.read_bytes().startswith(b"\x7fELF"):
+        raise SubmissionContractError("cg/libcg.so is not an ELF shared object")
+    libcg_sha = hashlib.sha256(libcg.read_bytes()).hexdigest()
     return {
         **source,
         "runtime": "PASS",
-        "libcg_size": (cg / "libcg.so").stat().st_size,
+        "libcg_size": libcg.stat().st_size,
+        "libcg_sha256": libcg_sha,
     }
 
 

@@ -5,6 +5,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .models import GameRecord, RuntimeCounters
+from .official_runner import summarize
+
 
 @dataclass
 class GateCheck:
@@ -181,9 +184,69 @@ def evaluate_promotion(manifest: dict, summaries: dict[str, dict], replay_summar
     return PromotionVerdict("PROMOTE" if all(value.passed for value in checks) else "HOLD", checks)
 
 
+def _record_from_row(row: dict[str, Any]) -> GameRecord:
+    runtime_raw = row.get("runtime") if isinstance(row.get("runtime"), dict) else {}
+    runtime = RuntimeCounters(
+        **{key: int(runtime_raw.get(key, 0)) for key in RuntimeCounters.__dataclass_fields__}
+    )
+    return GameRecord(
+        matchup=str(row.get("matchup", "")),
+        candidate_bundle_sha256=str(row.get("candidate_bundle_sha256", "")),
+        opponent_bundle_sha256=str(row.get("opponent_bundle_sha256", "")),
+        candidate_seat=int(row.get("candidate_seat", -1)),
+        winner_seat=row.get("winner_seat") if row.get("winner_seat") in (0, 1) else None,
+        result=str(row.get("result", "")),
+        steps=int(row.get("steps", 0)),
+        decision_ms=[float(value) for value in row.get("decision_ms", [])],
+        runtime=runtime,
+        error=str(row.get("error")) if row.get("error") is not None else None,
+    )
+
+
+def _load_verified_summary(directory: Path) -> dict:
+    summary_path = directory / "summary.json"
+    games_path = directory / "games.jsonl"
+    if not summary_path.is_file() or not games_path.is_file():
+        raise ValueError(f"promotion evidence requires summary.json and games.jsonl: {directory}")
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    rows = [
+        json.loads(line)
+        for line in games_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    if not rows:
+        raise ValueError(f"empty games.jsonl: {games_path}")
+    records = [_record_from_row(row) for row in rows]
+    matchup = directory.name
+    if any(record.matchup != matchup for record in records):
+        raise ValueError(f"mixed matchup identity in {games_path}")
+    rebuilt = summarize(
+        matchup,
+        records,
+        evidence_mode=str(summary.get("evidence_mode", "")),
+        engine_sha256=str(summary.get("engine_sha256", "")),
+    ).to_dict()
+    fields = (
+        "matchup", "games", "wins", "losses", "draws_or_errors",
+        "seat0_games", "seat1_games", "seat0_wins", "seat1_wins",
+        "win_rate", "wilson_low", "wilson_high", "runtime",
+        "mean_decision_ms", "p95_decision_ms", "evidence_mode",
+        "candidate_bundle_sha256", "opponent_bundle_sha256", "engine_sha256",
+    )
+    mismatches = {
+        field: {"summary": summary.get(field), "rebuilt": rebuilt.get(field)}
+        for field in fields
+        if summary.get(field) != rebuilt.get(field)
+    }
+    if mismatches:
+        raise ValueError(f"summary/games evidence mismatch for {matchup}: {mismatches}")
+    return summary
+
+
 def load_summaries(root: str | Path) -> dict[str, dict]:
     base = Path(root)
     summaries: dict[str, dict] = {}
-    for path in base.glob("*/summary.json"):
-        summaries[path.parent.name] = json.loads(path.read_text(encoding="utf-8"))
+    for directory in sorted(path for path in base.iterdir() if path.is_dir()) if base.is_dir() else []:
+        if (directory / "summary.json").is_file() or (directory / "games.jsonl").is_file():
+            summaries[directory.name] = _load_verified_summary(directory)
     return summaries

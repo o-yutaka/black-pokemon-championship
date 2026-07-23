@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import gzip
+import hashlib
 import shutil
 import sys
 import tarfile
@@ -19,6 +21,14 @@ from submission_contract import (
     validate_archive_layout,
     validate_source_layout,
 )
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _is_tar_gz(path: Path) -> bool:
@@ -80,6 +90,7 @@ def inspect_archive(archive_path: Path, expected_root: Path | None = None) -> di
     return {
         "archive": "PASS",
         "path": str(archive_path),
+        "sha256": _file_sha256(archive_path),
         "files": names,
         "root_entry": names[0],
     }
@@ -129,14 +140,16 @@ def build(cg_dir: Path, out_archive: Path) -> Path:
         _stage_runtime(cg_dir, stage)
         validate_archive_layout(stage)
 
-        with tarfile.open(out_archive, "w:gz", format=tarfile.PAX_FORMAT) as archive:
-            for relative in ARCHIVE_FILE_ORDER:
-                archive.add(
-                    stage / relative,
-                    arcname=relative,
-                    recursive=False,
-                    filter=_normalized_tarinfo,
-                )
+        with out_archive.open("wb") as raw_stream:
+            with gzip.GzipFile(filename="", mode="wb", fileobj=raw_stream, mtime=0) as gzip_stream:
+                with tarfile.open(fileobj=gzip_stream, mode="w", format=tarfile.PAX_FORMAT) as archive:
+                    for relative in ARCHIVE_FILE_ORDER:
+                        archive.add(
+                            stage / relative,
+                            arcname=relative,
+                            recursive=False,
+                            filter=_normalized_tarinfo,
+                        )
 
         inspect_archive(out_archive, expected_root=stage)
         return out_archive

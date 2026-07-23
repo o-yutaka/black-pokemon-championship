@@ -19,7 +19,7 @@ def _fake_cg(root: Path) -> Path:
     for name in REQUIRED_CG_FILES:
         path = root / name
         if name == "libcg.so":
-            path.write_bytes(b"test-libcg-placeholder")
+            path.write_bytes(b"\x7fELFtest-libcg-placeholder")
         else:
             path.write_text("# test fixture\n", encoding="utf-8")
     return root
@@ -32,6 +32,8 @@ def test_archive_is_rooted_ordered_and_executable_without_file(tmp_path: Path):
     )
 
     report = inspect_archive(archive_path)
+    second = build(_fake_cg(tmp_path / "cg-second"), tmp_path / "submission-second.tar.gz")
+    assert inspect_archive(second)["sha256"] == report["sha256"]
     assert report["files"] == list(ARCHIVE_FILE_ORDER)
     assert report["root_entry"] == "main.py"
     assert all(not name.startswith("submission/") for name in report["files"])
