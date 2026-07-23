@@ -1,6 +1,7 @@
 {
-  "source_head": "6004171bc7ac5f5e67fb9197836af6a0460a9ac2",
-  "tested_source_digest": "sha256:35bd33a44ce64a2a53718f1a1ca209a5afdb7353b14372baf3d6f827ee2efb53",
+  "policy_source_head": "6004171bc7ac5f5e67fb9197836af6a0460a9ac2",
+  "policy_tested_source_digest": "sha256:35bd33a44ce64a2a53718f1a1ca209a5afdb7353b14372baf3d6f827ee2efb53",
+  "recorded_in_head": "a5230fc5faaac3034759b9223504efec63194ae3",
   "verdict": "PASS",
   "thresholds": {"minimum_overall": 0.35, "minimum_attack": 0.95},
   "evidence_identity": "REPLAY_GROUNDED_RECONSTRUCTION",
