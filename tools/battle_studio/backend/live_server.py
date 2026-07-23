@@ -123,7 +123,12 @@ async def battle_socket(websocket: WebSocket, session_id: str) -> None:
                 await websocket.send_json({"type": "pong", "sessionId": session_id})
                 continue
             if message_type == "close":
+                await websocket.send_json({"type": "closed", "sessionId": session_id})
+                await websocket.close(code=1000)
+                break
+            if message_type == "destroy":
                 await session.engine.close()
+                SESSIONS.pop(session_id, None)
                 await websocket.send_json({"type": "closed", "sessionId": session_id})
                 await websocket.close(code=1000)
                 break
@@ -141,9 +146,7 @@ async def battle_socket(websocket: WebSocket, session_id: str) -> None:
             except (ValueError, OfficialEngineError) as exc:
                 await websocket.send_json({"type": "error", "code": "ENGINE_REJECTED", "detail": str(exc)})
     except WebSocketDisconnect:
-        await session.engine.close()
-    finally:
-        SESSIONS.pop(session_id, None)
+        return
 
 
 if FRONTEND_DIST.is_dir():
