@@ -58,7 +58,30 @@ def _required_matchups(manifest: dict) -> list[str]:
     return selected or list(matchups)
 
 
-def evaluate_promotion(manifest: dict, summaries: dict[str, dict]) -> PromotionVerdict:
+def _replay_checks(manifest: dict, replay_summary: dict | None) -> list[GateCheck]:
+    promotion = manifest.get("promotion") if isinstance(manifest.get("promotion"), dict) else {}
+    required = promotion.get("required_replay_taxonomy")
+    if not isinstance(required, list) or not required:
+        return []
+    checks = [GateCheck("postfix_replay.present", isinstance(replay_summary, dict), bool(replay_summary), True)]
+    if not isinstance(replay_summary, dict):
+        return checks
+    episodes = int(replay_summary.get("episodes", 0))
+    minimum = int(promotion.get("minimum_postfix_replay_episodes", 1))
+    checks.append(GateCheck("postfix_replay.episodes", episodes >= minimum, episodes, minimum))
+    if promotion.get("require_zero_fatal_replay_findings", True):
+        fatal = int(replay_summary.get("fatal", 0))
+        checks.append(GateCheck("postfix_replay.fatal", fatal == 0, fatal, 0))
+    counts = replay_summary.get("canonical_failure_counts") if isinstance(replay_summary.get("canonical_failure_counts"), dict) else {}
+    support = replay_summary.get("classifier_support") if isinstance(replay_summary.get("classifier_support"), dict) else {}
+    for code in required:
+        checks.append(GateCheck(f"postfix_replay.{code}.supported", bool(support.get(code)), support.get(code), "non-empty"))
+        actual = int(counts.get(code, 0))
+        checks.append(GateCheck(f"postfix_replay.{code}.count", actual == 0, actual, 0))
+    return checks
+
+
+def evaluate_promotion(manifest: dict, summaries: dict[str, dict], replay_summary: dict | None = None) -> PromotionVerdict:
     promotion = manifest.get("promotion") if isinstance(manifest.get("promotion"), dict) else {}
     matchups = manifest.get("matchups") if isinstance(manifest.get("matchups"), dict) else {}
     required_slugs = _required_matchups(manifest)
@@ -78,7 +101,6 @@ def evaluate_promotion(manifest: dict, summaries: dict[str, dict]) -> PromotionV
             "search_resource_leak",
         )
     }
-
     for slug in required_slugs:
         config = matchups.get(slug)
         checks.append(GateCheck(f"{slug}.configured", isinstance(config, dict), bool(config), True))
@@ -95,9 +117,9 @@ def evaluate_promotion(manifest: dict, summaries: dict[str, dict]) -> PromotionV
         required_seat = required_games // 2
         checks.extend(
             [
-                GateCheck(f"{slug}.games", games >= required_games, games, required_games),
-                GateCheck(f"{slug}.seat0", seat0 >= required_seat, seat0, required_seat),
-                GateCheck(f"{slug}.seat1", seat1 >= required_seat, seat1, required_seat),
+                GateCheck(f"{slug}.games", games == required_games, games, required_games),
+                GateCheck(f"{slug}.seat0", seat0 == required_seat, seat0, required_seat),
+                GateCheck(f"{slug}.seat1", seat1 == required_seat, seat1, required_seat),
                 GateCheck(
                     f"{slug}.win_rate",
                     float(summary.get("win_rate", 0.0)) >= float(config.get("minimum_win_rate", 0.5)),
@@ -121,8 +143,8 @@ def evaluate_promotion(manifest: dict, summaries: dict[str, dict]) -> PromotionV
         runtime = summary.get("runtime") if isinstance(summary.get("runtime"), dict) else {}
         for key in total_runtime:
             total_runtime[key] += int(runtime.get(key, 0))
-
     checks.extend(_runtime_checks(total_runtime, int(promotion.get("minimum_runtime_completed", 400))))
+    checks.extend(_replay_checks(manifest, replay_summary))
     return PromotionVerdict("PROMOTE" if all(value.passed for value in checks) else "HOLD", checks)
 
 
