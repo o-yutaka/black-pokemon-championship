@@ -133,3 +133,51 @@ def test_replay_judge_detects_terminal_attack_miss(tmp_path: Path):
     audit = audit_episode(path, "ジェニファー")
     assert audit.metadata["finding_counts"]["TERMINAL_ACTION_MISS"] == 1
     assert audit.overall_score == 75.0
+
+
+def test_red_team_profiles_cover_manifest_and_decks_are_exact_60():
+    root = Path(__file__).resolve().parents[1]
+    profiles = json.loads((root / "red_team" / "profiles.json").read_text(encoding="utf-8"))
+    sources = json.loads((root / "red_team" / "replay_sources.json").read_text(encoding="utf-8"))
+    manifest = json.loads((root / "red_team" / "manifest.json").read_text(encoding="utf-8"))
+    assert set(profiles) == set(sources) == set(manifest["matchups"])
+    for slug in profiles:
+        deck = [int(value) for value in (root / "red_team" / "decks" / f"{slug}.csv").read_text().splitlines() if value]
+        assert len(deck) == 60
+
+
+def test_replay_grounded_grimmsnarl_prefers_shadow_bullet():
+    from red_team.replay_grounded_agent import ReplayGroundedPolicy
+
+    root = Path(__file__).resolve().parents[1]
+    profiles = json.loads((root / "red_team" / "profiles.json").read_text(encoding="utf-8"))
+    deck = [int(value) for value in (root / "red_team" / "decks" / "grimmsnarl.csv").read_text().splitlines() if value]
+    policy = ReplayGroundedPolicy(deck, profiles["grimmsnarl"])
+    obs = {
+        "current": {
+            "yourIndex": 1,
+            "turn": 6,
+            "players": [
+                {"active": [pokemon(431, 1, 280, 280)], "bench": [], "prize": [None] * 6},
+                {"active": [pokemon(648, 2, 320, 320, (7, 7))], "bench": [], "prize": [None] * 6},
+            ],
+        },
+        "select": {
+            "context": 0,
+            "minCount": 1,
+            "maxCount": 1,
+            "option": [{"type": 14}, {"type": 13, "attackId": 937}],
+        },
+    }
+    assert policy.agent(obs) == [1]
+
+
+def test_bundle_tree_hash_ignores_python_cache(tmp_path: Path):
+    from black_engine.evaluation.bundles import tree_sha256
+
+    (tmp_path / "main.py").write_text("x=1\n")
+    before = tree_sha256(tmp_path)
+    cache = tmp_path / "__pycache__"
+    cache.mkdir()
+    (cache / "main.cpython-312.pyc").write_bytes(b"generated")
+    assert tree_sha256(tmp_path) == before
