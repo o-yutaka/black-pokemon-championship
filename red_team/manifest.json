@@ -1,0 +1,86 @@
+{
+  "schema_version": "1.0",
+  "candidate": "rocket_mewtwo_championship_v1",
+  "evidence_law": {
+    "engine": "official cg/libcg.so only",
+    "opponents": "real fixed opponent Bundles only",
+    "seat_balance": true,
+    "paired_seed_claim": false,
+    "forbidden": [
+      "deterministic_fallback opponent",
+      "GenericHeuristicPolicy as promotion evidence",
+      "FLM win rate",
+      "pre-fix or mixed-head aggregation",
+      "oracle evidence reported as production"
+    ]
+  },
+  "promotion": {
+    "minimum_runtime_completed": 400,
+    "minimum_games_per_matchup": 200,
+    "required_zero_counters": [
+      "crash",
+      "runtime_error",
+      "illegal_action",
+      "mandatory_empty",
+      "timeout",
+      "fallback",
+      "search_resource_leak"
+    ]
+  },
+  "matchups": {
+    "grimmsnarl": {
+      "display_name": "Marnie's Grimmsnarl / Froslass",
+      "bundle_path": "red_team/bundles/grimmsnarl",
+      "bundle_sha256": "REQUIRED_BEFORE_RUN",
+      "policy_source": "official ladder replay reconstruction",
+      "minimum_games": 200,
+      "minimum_win_rate": 0.45,
+      "minimum_wilson_low": 0.38
+    },
+    "crustle_ogerpon": {
+      "display_name": "Crustle / Cornerstone Ogerpon control",
+      "bundle_path": "red_team/bundles/crustle_ogerpon",
+      "bundle_sha256": "REQUIRED_BEFORE_RUN",
+      "policy_source": "Great Tusk/Crustle control notebook plus official replay reconstruction",
+      "minimum_games": 200,
+      "minimum_win_rate": 0.45,
+      "minimum_wilson_low": 0.38
+    },
+    "mega_starmie_cinderace": {
+      "display_name": "Mega Starmie / Cinderace",
+      "bundle_path": "red_team/bundles/mega_starmie_cinderace",
+      "bundle_sha256": "REQUIRED_BEFORE_RUN",
+      "policy_source": "official replay reconstruction",
+      "minimum_games": 200,
+      "minimum_win_rate": 0.45,
+      "minimum_wilson_low": 0.38
+    },
+    "alakazam": {
+      "display_name": "Alakazam / Dunsparce",
+      "bundle_path": "red_team/bundles/alakazam",
+      "bundle_sha256": "REQUIRED_BEFORE_RUN",
+      "policy_source": "official replay reconstruction and search-agent benchmark",
+      "minimum_games": 200,
+      "minimum_win_rate": 0.50,
+      "minimum_wilson_low": 0.43
+    },
+    "mega_abomasnow": {
+      "display_name": "Mega Abomasnow / Kyogre",
+      "bundle_path": "red_team/bundles/mega_abomasnow",
+      "bundle_sha256": "REQUIRED_BEFORE_RUN",
+      "policy_source": "official replay reconstruction",
+      "minimum_games": 200,
+      "minimum_win_rate": 0.50,
+      "minimum_wilson_low": 0.43
+    },
+    "mewtwo_mirror": {
+      "display_name": "Rocket Mewtwo mirror",
+      "bundle_path": "red_team/bundles/mewtwo_mirror",
+      "bundle_sha256": "REQUIRED_BEFORE_RUN",
+      "policy_source": "frozen prior current-head-equivalent opponent Bundle",
+      "minimum_games": 200,
+      "minimum_win_rate": 0.50,
+      "minimum_wilson_low": 0.43
+    }
+  }
+}
