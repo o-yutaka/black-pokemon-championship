@@ -35,6 +35,8 @@ if payload.get("evidence_law", {}).get("seat_balance") is not True:
     raise SystemExit("seat_balance must be true")
 if int(promotion.get("minimum_runtime_completed", 0)) < 1000:
     raise SystemExit("minimum_runtime_completed must cover five matchups x 200 games")
+if int(promotion.get("minimum_postfix_replay_episodes", 0)) <= 0:
+    raise SystemExit("minimum_postfix_replay_episodes must be positive")
 
 for slug, config in matchups.items():
     for field in (
@@ -74,6 +76,9 @@ for slug, config in matchups.items():
     if source_type == "official_replay_and_frozen_black_candidate":
         if not source.get("sha256") or not source.get("deck_blob_sha"):
             raise SystemExit(f"{slug}: combined source requires replay sha256 and deck_blob_sha")
+    policy_source = str(config.get("policy_source", "")).lower()
+    if source_type == "frozen_black_candidate" and "official" in policy_source:
+        raise SystemExit(f"{slug}: frozen candidate must not be described as official replay reconstruction")
 
 required_taxonomy = {
     "LETHAL_MISS",
