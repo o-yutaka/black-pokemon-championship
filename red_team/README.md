@@ -38,13 +38,7 @@ python scripts/build_red_team_bundles.py \
   --lock-out artifacts/red_team_manifest.lock.json
 ```
 
-The lock binds:
-
-- one candidate tree SHA-256;
-- one `libcg.so` SHA-256;
-- every opponent tree SHA-256.
-
-Missing, mixed, or placeholder identities fail closed.
+The lock binds one candidate tree SHA-256, one `libcg.so` SHA-256, and every opponent tree SHA-256. Missing, mixed, or placeholder identities fail closed.
 
 ## Official evaluation
 
@@ -85,13 +79,7 @@ python scripts/judge_replays.py NEW_1.json NEW_2.json NEW_3.json NEW_4.json NEW_
   --corpus-kind POST_FIX_HOLDOUT
 ```
 
-Promotion requires:
-
-- at least five unique post-fix Replay files and episode IDs;
-- candidate SHA matching the official run;
-- zero overlap with the frozen training corpus;
-- zero fatal findings;
-- zero applicable canonical failure counts.
+Promotion requires at least five unique post-fix Replay files and episode IDs, candidate SHA matching the official run, zero overlap with the frozen training corpus, zero fatal findings, and zero applicable canonical failure counts.
 
 `BAD_SPREAD_TARGET` is explicitly not applicable to the current fixed Rocket Mewtwo deck because it has no spread-target action contract. It is not reported as supported merely because its count is zero.
 
