@@ -29,7 +29,7 @@ def main() -> int:
         replay_path = args.replay_dir / source["filename"]
         if not replay_path.is_file():
             report["verdict"] = "HOLD"
-            report["matchups"][slug] = {"passed": false, "error": f"missing replay {replay_path}"}
+            report["matchups"][slug] = {"passed": False, "error": f"missing replay {replay_path}"}
             continue
         payload = json.loads(replay_path.read_text(encoding="utf-8"))
         seat = int(source["seat"])
