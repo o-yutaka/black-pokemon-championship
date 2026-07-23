@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>BLACK Championship Replay Visualizer</title>
+  <style>
+    :root{color-scheme:dark;--bg:#080b10;--panel:#111722;--panel2:#171f2c;--line:#2b3545;--text:#edf3ff;--muted:#92a0b7;--good:#42d392;--warn:#f5b942;--bad:#ff667a;--accent:#8ab4ff}
+    *{box-sizing:border-box} body{margin:0;background:linear-gradient(180deg,#080b10,#0d121b);color:var(--text);font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
+    button,input{font:inherit} button{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px 12px;cursor:pointer} button:hover{border-color:var(--accent)}
+    header{position:sticky;top:0;z-index:5;background:#090d14ee;backdrop-filter:blur(12px);border-bottom:1px solid var(--line);padding:10px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+    header h1{font-size:16px;margin:0 10px 0 0}.status{color:var(--muted)} input[type=file]{max-width:250px}.spacer{flex:1}
+    main{padding:14px;display:grid;grid-template-columns:minmax(0,1fr) 390px;gap:14px;max-width:1700px;margin:auto}.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;box-shadow:0 12px 40px #0004}
+    .board{display:grid;grid-template-columns:1fr 1fr;gap:12px}.player{min-width:0}.player h2{margin:0 0 8px;font-size:15px;display:flex;justify-content:space-between}.meta{display:flex;gap:8px;flex-wrap:wrap;color:var(--muted);font-size:12px}.zone{margin-top:10px}.zone-title{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:5px}.pokemon-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:7px}.pokemon{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:8px;min-height:76px}.pokemon.active{border-color:var(--accent);box-shadow:inset 0 0 0 1px #8ab4ff55}.pokemon .name{font-weight:700}.pokemon .sub{font-size:12px;color:var(--muted);margin-top:4px}.hpbar{height:5px;background:#303948;border-radius:10px;margin-top:7px;overflow:hidden}.hpbar i{display:block;height:100%;background:var(--good)}
+    .timeline{margin-top:12px}.timeline-row{display:flex;align-items:center;gap:9px}.timeline input{width:100%}.step-label{min-width:100px;text-align:right;color:var(--muted)}
+    .events{max-height:190px;overflow:auto;margin-top:8px;border-top:1px solid var(--line)}.event{padding:6px 2px;border-bottom:1px solid #202938;font-size:12px}.event b{color:var(--accent)}
+    aside{display:flex;flex-direction:column;gap:12px}.section-title{display:flex;align-items:center;justify-content:space-between;margin:0 0 8px;font-size:14px}.badge{display:inline-block;padding:3px 7px;border-radius:999px;font-size:11px;font-weight:700}.good{background:#173d31;color:#7ee2b8}.warn{background:#493719;color:#ffd27a}.bad{background:#4a2029;color:#ff9aa8}.neutral{background:#263144;color:#b9c8df}
+    .options{display:flex;flex-direction:column;gap:6px}.option{display:grid;grid-template-columns:28px 1fr auto;gap:7px;align-items:start;padding:7px;border:1px solid var(--line);border-radius:8px;background:var(--panel2)}.option.chosen{border-color:var(--good)}.option .idx{color:var(--muted)}.option pre{margin:0;white-space:pre-wrap;word-break:break-word;font:11px/1.35 ui-monospace,monospace;color:#cad5e7}.score{font-weight:700;color:var(--accent)}
+    .issues{display:flex;flex-direction:column;gap:7px}.issue{padding:8px;border-radius:8px;background:var(--panel2);border-left:3px solid var(--warn)}.issue.fatal{border-left-color:var(--bad)}.issue strong{display:block}.issue small{color:var(--muted)}
+    .kv{display:grid;grid-template-columns:145px 1fr;gap:5px 8px;font-size:12px}.kv dt{color:var(--muted)}.kv dd{margin:0;word-break:break-word}.empty{color:var(--muted);padding:12px;text-align:center}.raw{max-height:230px;overflow:auto;white-space:pre-wrap;word-break:break-word;font:11px/1.4 ui-monospace,monospace;color:#b8c7dc}
+    @media(max-width:1000px){main{grid-template-columns:1fr}.board{grid-template-columns:1fr}aside{display:grid;grid-template-columns:1fr 1fr}}@media(max-width:650px){aside{display:flex}.pokemon-grid{grid-template-columns:1fr 1fr}header{padding:9px}.hide-mobile{display:none}}
+  </style>
+</head>
+<body>
+<header>
+  <h1>BLACK Championship Visualizer</h1>
+  <input id="file" type="file" accept=".json,application/json">
+  <button id="prev">◀</button><button id="play">▶</button><button id="next">▶|</button>
+  <button id="export">Frame JSON</button>
+  <span id="status" class="status">Replay JSONを選択</span><span class="spacer"></span>
+  <span class="badge neutral hide-mobile">OFFLINE / NO ENGINE MUTATION</span>
+</header>
+<main>
+  <section>
+    <div id="board" class="board"></div>
+    <div class="card timeline">
+      <div class="timeline-row"><input id="range" type="range" min="0" max="0" value="0"><span id="stepLabel" class="step-label">0 / 0</span></div>
+      <div id="events" class="events"></div>
+    </div>
+  </section>
+  <aside>
+    <div class="card"><h3 class="section-title">Decision <span id="decisionBadge" class="badge neutral">UNVERIFIED</span></h3><div id="decision"></div></div>
+    <div class="card"><h3 class="section-title">BLACK Judge</h3><div id="issues" class="issues"></div></div>
+    <div class="card"><h3 class="section-title">Red Team Metrics</h3><dl id="metrics" class="kv"></dl></div>
+    <details class="card"><summary>Raw frame</summary><pre id="raw" class="raw"></pre></details>
+  </aside>
+</main>
+<script>
+'use strict';
+let frames=[], index=0, timer=null;
+const $=id=>document.getElementById(id);
+const safeArray=v=>Array.isArray(v)?v:[];
+const isObj=v=>v&&typeof v==='object'&&!Array.isArray(v);
+
+function normalizeReplay(root){
+  if(Array.isArray(root)) return root;
+  if(isObj(root)&&Array.isArray(root.frames)) return root.frames;
+  if(isObj(root)&&Array.isArray(root.visualize)) return root.visualize;
+  if(isObj(root)&&Array.isArray(root.steps)){
+    const nested=root.steps?.[0]?.[0]?.visualize;
+    if(Array.isArray(nested)) return nested;
+    const flattened=[];
+    root.steps.forEach(step=>safeArray(step).forEach(cell=>{
+      if(isObj(cell)&&cell.visualize) flattened.push(...safeArray(cell.visualize));
+      else if(isObj(cell)) flattened.push(cell);
+    }));
+    if(flattened.length) return flattened;
+  }
+  throw new Error('対応Replay形式ではありません: array / frames / visualize / Kaggle steps');
+}
+
+function currentObs(frame){return frame?.obs||frame?.observation||frame?.state||frame||{}}
+function currentState(frame){const o=currentObs(frame);return o.current||frame.current||o}
+function players(frame){return safeArray(currentState(frame).players)}
+function cardId(x){if(!isObj(x))return x;return x.id??x.cardId??x.card??x.pokemonId??'?'}
+function serial(x){return isObj(x)?(x.serial??x.instanceId??'—'):'—'}
+function energies(x){return safeArray(x?.energyCards).length||safeArray(x?.energies).length||safeArray(x?.energy).length}
+function hp(x){return Number(x?.hp??x?.currentHp??0)}
+function maxHp(x){return Number(x?.maxHp??x?.maxHP??x?.HP??hp(x)??0)}
+function prizeValue(x){if(x?.mega===true)return 3;if(x?.ex===true)return 2;return x?.prizeValue??1}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+
+function pokemonHtml(p, active=false){
+  const m=Math.max(1,maxHp(p)), h=Math.max(0,hp(p)), pct=Math.max(0,Math.min(100,h/m*100));
+  return `<div class="pokemon ${active?'active':''}"><div class="name">ID ${esc(cardId(p))} <small>#${esc(serial(p))}</small></div><div class="sub">HP ${h}/${m} · Energy ${energies(p)} · Prize ${prizeValue(p)}</div><div class="hpbar"><i style="width:${pct}%"></i></div></div>`;
+}
+function playerHtml(p,i,state){
+  const act=safeArray(p?.active), bench=safeArray(p?.bench), prizes=safeArray(p?.prize).length||(p?.prizeCount??'—');
+  return `<div class="card player"><h2>Player ${i}${state.yourIndex===i?' <span class="badge neutral">TO ACT</span>':''}</h2><div class="meta"><span>Prize ${prizes}</span><span>Deck ${p?.deckCount??safeArray(p?.deck).length??'—'}</span><span>Hand ${p?.handCount??safeArray(p?.hand).length??'—'}</span></div><div class="zone"><div class="zone-title">Active</div><div class="pokemon-grid">${act.length?act.map(x=>pokemonHtml(x,true)).join(''):'<div class="empty">Empty</div>'}</div></div><div class="zone"><div class="zone-title">Bench</div><div class="pokemon-grid">${bench.length?bench.map(x=>pokemonHtml(x)).join(''):'<div class="empty">Empty</div>'}</div></div></div>`;
+}
+
+function selectedIndices(frame){
+  const a=frame?.action??currentObs(frame)?.action??[];
+  if(Array.isArray(a)&&Array.isArray(a[0])) return safeArray(a[currentState(frame).yourIndex??0]);
+  return safeArray(a);
+}
+function optionLabel(o){
+  const type=o?.type??'?'; const parts=[`type=${type}`];
+  if(o?.card!=null||o?.cardId!=null)parts.push(`card=${o.card??o.cardId}`);
+  if(o?.attackId!=null)parts.push(`attack=${o.attackId}`);
+  if(o?.inPlayArea!=null)parts.push(`area=${o.inPlayArea}`);
+  if(o?.inPlayIndex!=null)parts.push(`slot=${o.inPlayIndex}`);
+  if(o?.energyIndex!=null)parts.push(`energy=${o.energyIndex}`);
+  return parts.join(' · ');
+}
+function renderDecision(frame){
+  const obs=currentObs(frame), sel=obs.select||frame.select||{}, opts=safeArray(sel.option), chosen=new Set(selectedIndices(frame));
+  const analysis=frame.black_analysis||frame.analysis||obs.black_analysis||{};
+  $('decisionBadge').textContent=analysis.verdict||analysis.runner_id||analysis.runnerId||'UNVERIFIED';
+  $('decisionBadge').className='badge '+((analysis.verdict==='PASS')?'good':(analysis.verdict==='FAIL'?'bad':'neutral'));
+  if(!opts.length){$('decision').innerHTML='<div class="empty">このFrameに選択肢なし</div>';return}
+  const scores=analysis.option_scores||analysis.optionScores||{};
+  $('decision').innerHTML=`<div class="meta" style="margin-bottom:8px"><span>context ${sel.context??'—'}</span><span>min ${sel.minCount??'—'}</span><span>max ${sel.maxCount??'—'}</span></div><div class="options">${opts.map((o,i)=>`<div class="option ${chosen.has(i)?'chosen':''}"><span class="idx">${i}</span><div><strong>${esc(optionLabel(o))}</strong><pre>${esc(JSON.stringify(o))}</pre></div><span class="score">${scores[i]!=null?Number(scores[i]).toFixed(2):chosen.has(i)?'✓':''}</span></div>`).join('')}</div>`;
+}
+
+function inferredIssues(frame){
+  const obs=currentObs(frame), state=currentState(frame), ps=players(frame), actor=state.yourIndex??0, mine=ps[actor]||{}, opp=ps[1-actor]||{};
+  const active=safeArray(mine.active)[0], oppActive=safeArray(opp.active)[0], opts=safeArray(obs.select?.option), chosen=selectedIndices(frame);
+  const issues=[]; const analysis=frame.black_analysis||frame.analysis||obs.black_analysis||{};
+  safeArray(analysis.issues||analysis.failure_buckets).forEach(x=>issues.push(typeof x==='string'?{code:x,detail:'Replay分析結果'}:x));
+  const hasAttack=opts.some(o=>o?.type===13), choseAttack=chosen.some(i=>opts[i]?.type===13);
+  if(hasAttack&&!choseAttack&&analysis.terminal_win_available===true) issues.push({code:'LETHAL_MISS',detail:'勝利可能な攻撃があるのに別行動',fatal:true});
+  if(active?.ex&&energies(active)===0&&oppActive&&analysis.observed_opponent_damage>=hp(active)) issues.push({code:'UNREADY_EX_EXPOSED',detail:'攻撃不能exが既知リーサル前',fatal:true});
+  const deck=Number(mine.deckCount??safeArray(mine.deck).length??99), prizes=safeArray(mine.prize).length;
+  if(deck<=prizes+2) issues.push({code:'DECK_CLOCK_CRITICAL',detail:`deck=${deck}, remaining prizes=${prizes}`});
+  if(analysis.nonpersistent_attack===true)issues.push({code:'NONPERSISTENT_DAMAGE',detail:'同一攻撃でHP進捗なし'});
+  if(analysis.backup_attacker_ready===false&&analysis.current_attacker_expected_ko===true)issues.push({code:'NO_BACKUP_ATTACKER',detail:'返しKO後の攻撃役なし'});
+  return issues;
+}
+function renderIssues(frame){
+  const xs=inferredIssues(frame); $('issues').innerHTML=xs.length?xs.map(x=>`<div class="issue ${x.fatal?'fatal':''}"><strong>${esc(x.code||'ISSUE')}</strong><small>${esc(x.detail||x.message||'')}</small></div>`).join(''):'<div class="empty"><span class="badge good">NO DETECTED ISSUE</span><br>未検出は完全性の証明ではありません</div>';
+}
+function renderMetrics(frame){
+  const obs=currentObs(frame), state=currentState(frame), ps=players(frame), actor=state.yourIndex??0, mine=ps[actor]||{};
+  const a=frame.black_analysis||frame.analysis||obs.black_analysis||{};
+  const metrics={episode_id:a.episode_id??frame.episode_id??'—',turn:state.turn??obs.step??frame.step??index,actor,decision_ms:a.decision_ms??'—',runner:a.runner_id??a.runnerId??'—',policy_confidence:a.policy_confidence??'—',search_triggered:a.search_triggered??'—',search_nodes:a.search_nodes??'—',fallback_used:a.fallback_used??'—',deck_count:mine.deckCount??safeArray(mine.deck).length??'—',remaining_prizes:safeArray(mine.prize).length||'—',first_decisive_error:a.first_decisive_error??'—'};
+  $('metrics').innerHTML=Object.entries(metrics).map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('');
+}
+function renderEvents(frame){
+  const logs=safeArray(frame.logs||currentObs(frame).logs||frame.events||frame.log);
+  $('events').innerHTML=logs.length?logs.map((x,i)=>`<div class="event"><b>${i+1}</b> ${esc(typeof x==='string'?x:JSON.stringify(x))}</div>`).join(''):'<div class="empty">Event logなし</div>';
+}
+function render(){
+  if(!frames.length)return; index=Math.max(0,Math.min(frames.length-1,index)); const frame=frames[index], state=currentState(frame), ps=players(frame);
+  $('board').innerHTML=ps.length?ps.map((p,i)=>playerHtml(p,i,state)).join(''):'<div class="card empty">playersを解決できません</div>';
+  $('range').max=String(frames.length-1);$('range').value=String(index);$('stepLabel').textContent=`${index+1} / ${frames.length}`;
+  $('status').textContent=`result=${state.result??'—'} · turn=${state.turn??frame.step??index}`;
+  renderDecision(frame);renderIssues(frame);renderMetrics(frame);renderEvents(frame);$('raw').textContent=JSON.stringify(frame,null,2);
+}
+function setPlaying(on){if(timer){clearInterval(timer);timer=null}$('play').textContent=on?'⏸':'▶';if(on)timer=setInterval(()=>{if(index>=frames.length-1){setPlaying(false);return}index++;render()},650)}
+$('file').addEventListener('change',async e=>{try{setPlaying(false);const text=await e.target.files[0].text();frames=normalizeReplay(JSON.parse(text));index=0;render()}catch(err){frames=[];$('status').textContent=`ERROR: ${err.message}`;alert(err.message)}});
+$('range').addEventListener('input',e=>{index=Number(e.target.value);render()});$('prev').onclick=()=>{index--;render()};$('next').onclick=()=>{index++;render()};$('play').onclick=()=>setPlaying(!timer);
+$('export').onclick=()=>{if(!frames.length)return;const blob=new Blob([JSON.stringify(frames[index],null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`black_frame_${index}.json`;a.click();URL.revokeObjectURL(a.href)};
+</script>
+</body>
+</html>
