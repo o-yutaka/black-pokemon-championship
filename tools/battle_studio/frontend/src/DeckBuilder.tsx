@@ -52,6 +52,10 @@ function countsFromIds(ids: number[]): Map<number, number> {
   return next;
 }
 
+function hpText(value: string): string {
+  return value && value.toLowerCase() !== "n/a" ? `HP ${value.replace(/\.0$/, "")}` : "";
+}
+
 export function DeckBuilder({ importedDeck }: { importedDeck: number[] | null }) {
   const defaultBridge = localStorage.getItem("black.bridgeUrl") || (!window.location.hostname.endsWith("github.io") ? window.location.origin : "");
   const [bridgeUrl, setBridgeUrl] = useState(defaultBridge);
@@ -202,7 +206,7 @@ export function DeckBuilder({ importedDeck }: { importedDeck: number[] | null })
                 <button className="catalog-card-main" type="button" onClick={() => setSelectedId(card.id)}>
                   <span className="catalog-id">#{card.id} · {card.expansion} {card.number}</span>
                   <strong>{card.name}</strong>
-                  <span className="catalog-meta">{[card.stage || card.kind, card.type, card.hp && `HP ${Number(card.hp)}`].filter(Boolean).join(" · ")}</span>
+                  <span className="catalog-meta">{[card.stage || card.kind, card.type, hpText(card.hp)].filter(Boolean).join(" · ")}</span>
                   <span className="catalog-move">{card.moves[0]?.name || card.rule || "効果なし"}</span>
                 </button>
                 <div className="catalog-add">
@@ -245,7 +249,7 @@ export function DeckBuilder({ importedDeck }: { importedDeck: number[] | null })
           <button className="deck-modal-close" type="button" onClick={() => setSelectedId(null)}>閉じる</button>
           <span className="catalog-id">#{selectedCard.id} · {selectedCard.expansion} {selectedCard.number}</span>
           <h3>{selectedCard.name}</h3>
-          <p>{[selectedCard.stage || selectedCard.kind, selectedCard.type, selectedCard.hp && `HP ${Number(selectedCard.hp)}`, selectedCard.previous && `進化元 ${selectedCard.previous}`].filter(Boolean).join(" · ")}</p>
+          <p>{[selectedCard.stage || selectedCard.kind, selectedCard.type, hpText(selectedCard.hp), selectedCard.previous && `進化元 ${selectedCard.previous}`].filter(Boolean).join(" · ")}</p>
           {selectedCard.rule && <div className="deck-rule">{selectedCard.rule}</div>}
           <div className="move-list">{selectedCard.moves.map((move, index) => <article key={`${move.name}-${index}`}><div><strong>{move.name || "Ability"}</strong><span>{move.cost} {move.damage}</span></div>{move.text && <p>{move.text}</p>}</article>)}</div>
           <button className="primary modal-add" type="button" onClick={() => changeCount(selectedCard.id, 1)}>デッキに追加</button>
