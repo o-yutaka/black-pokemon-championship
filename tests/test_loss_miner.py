@@ -31,10 +31,7 @@ def pokemon(cid, serial, hp, max_hp, energies=()):
         "serial": serial,
         "hp": hp,
         "maxHp": max_hp,
-        "energyCards": [
-            {"id": energy, "serial": serial * 100 + index}
-            for index, energy in enumerate(energies)
-        ],
+        "energyCards": [{"id": energy, "serial": serial * 100 + index} for index, energy in enumerate(energies)],
     }
 
 
@@ -52,8 +49,8 @@ def test_loss_mode_contract_covers_all_five_known_routes():
     assert FINDING_TO_LOSS_MODE["DECK_CLOCK_VIOLATION"] == "DECK_OUT_CLOCK"
 
 
-def test_miner_detects_turn_closed_before_legal_mewtwo_setup(tmp_path: Path):
-    observation = {
+def _setup_observation(opponent_hp=320):
+    return {
         "current": {
             "yourIndex": 0,
             "turn": 5,
@@ -73,7 +70,7 @@ def test_miner_detects_turn_closed_before_legal_mewtwo_setup(tmp_path: Path):
                     "supporterPlayed": False,
                 },
                 {
-                    "active": [pokemon(999, 900, 320, 320)],
+                    "active": [pokemon(999, 900, opponent_hp, 320)],
                     "bench": [],
                     "handCount": 5,
                     "prize": [None] * 6,
@@ -87,40 +84,28 @@ def test_miner_detects_turn_closed_before_legal_mewtwo_setup(tmp_path: Path):
             "minCount": 1,
             "maxCount": 1,
             "option": [
-                {
-                    "type": 8,
-                    "cardId": TEAM_ROCKET_ENERGY,
-                    "playerIndex": 0,
-                    "inPlayArea": 5,
-                    "inPlayIndex": 0,
-                },
-                {
-                    "type": 13,
-                    "attackId": SPIDOPS_ROCKET_RUSH,
-                    "playerIndex": 0,
-                    "inPlayArea": 4,
-                    "inPlayIndex": 0,
-                },
+                {"type": 8, "cardId": TEAM_ROCKET_ENERGY, "playerIndex": 0, "inPlayArea": 5, "inPlayIndex": 0},
+                {"type": 13, "attackId": SPIDOPS_ROCKET_RUSH, "playerIndex": 0, "inPlayArea": 4, "inPlayIndex": 0},
             ],
         },
     }
+
+
+def _write_episode(path: Path, observation: dict, reward: int, episode_id: int):
     episode = {
-        "info": {"EpisodeId": 77, "Agents": [{"Name": "BLACK"}, {"Name": "RED"}]},
-        "rewards": [-1, 1],
+        "info": {"EpisodeId": episode_id, "Agents": [{"Name": "BLACK"}, {"Name": "RED"}]},
+        "rewards": [reward, -reward],
         "steps": [
-            [
-                {"action": [], "status": "ACTIVE", "observation": observation},
-                {"action": [], "status": "INACTIVE", "observation": {"select": None}},
-            ],
-            [
-                {"action": [1], "status": "INACTIVE", "observation": {"select": None}},
-                {"action": [], "status": "ACTIVE", "observation": {"select": None}},
-            ],
+            [{"action": [], "status": "ACTIVE", "observation": observation}, {"action": [], "status": "INACTIVE", "observation": {"select": None}}],
+            [{"action": [1], "status": "INACTIVE", "observation": {"select": None}}, {"action": [], "status": "ACTIVE", "observation": {"select": None}}],
         ],
     }
-    path = tmp_path / "77.json"
     path.write_text(json.dumps(episode), encoding="utf-8")
 
+
+def test_miner_detects_turn_closed_before_legal_mewtwo_setup(tmp_path: Path):
+    path = tmp_path / "77.json"
+    _write_episode(path, _setup_observation(320), -1, 77)
     report = mine_episode(path, "BLACK")
     cases = [case for case in report.cases if case.loss_mode == "MEWTWO_SETUP_DELAY"]
     assert len(cases) == 1
@@ -135,21 +120,8 @@ def test_miner_detects_log_grounded_unready_ex_exposure(tmp_path: Path):
         "current": {"yourIndex": 0, "turn": 10, "players": [{}, {}], "result": -1},
         "select": None,
         "logs": [
-            {
-                "type": 15,
-                "playerIndex": 1,
-                "cardId": GRIMMSNARL_EX,
-                "serial": 90,
-                "attackId": 937,
-            },
-            {
-                "type": 16,
-                "playerIndex": 0,
-                "cardId": SPIDOPS,
-                "serial": 7,
-                "putDamageCounter": False,
-                "value": -180,
-            },
+            {"type": 15, "playerIndex": 1, "cardId": GRIMMSNARL_EX, "serial": 90, "attackId": 937},
+            {"type": 16, "playerIndex": 0, "cardId": SPIDOPS, "serial": 7, "putDamageCounter": False, "value": -180},
         ],
     }
     switch_observation = {
@@ -198,23 +170,13 @@ def test_miner_detects_log_grounded_unready_ex_exposure(tmp_path: Path):
         "info": {"EpisodeId": 88, "Agents": [{"Name": "BLACK"}, {"Name": "RED"}]},
         "rewards": [-1, 1],
         "steps": [
-            [
-                {"action": [], "status": "INACTIVE", "observation": damage_observation},
-                {"action": [], "status": "ACTIVE", "observation": {"select": None}},
-            ],
-            [
-                {"action": [], "status": "ACTIVE", "observation": switch_observation},
-                {"action": [], "status": "INACTIVE", "observation": {"select": None}},
-            ],
-            [
-                {"action": [0], "status": "INACTIVE", "observation": {"select": None}},
-                {"action": [], "status": "ACTIVE", "observation": {"select": None}},
-            ],
+            [{"action": [], "status": "INACTIVE", "observation": damage_observation}, {"action": [], "status": "ACTIVE", "observation": {"select": None}}],
+            [{"action": [], "status": "ACTIVE", "observation": switch_observation}, {"action": [], "status": "INACTIVE", "observation": {"select": None}}],
+            [{"action": [0], "status": "INACTIVE", "observation": {"select": None}}, {"action": [], "status": "ACTIVE", "observation": {"select": None}}],
         ],
     }
     path = tmp_path / "88.json"
     path.write_text(json.dumps(episode), encoding="utf-8")
-
     report = mine_episode(path, "BLACK")
     cases = [case for case in report.cases if case.loss_mode == "UNREADY_EX_EXPOSED"]
     assert len(cases) == 1
@@ -227,31 +189,24 @@ def test_miner_detects_log_grounded_unready_ex_exposure(tmp_path: Path):
 
 
 def test_repair_queue_orders_by_accumulated_severity():
-    common = dict(
-        episode_id=1,
-        agent_name="BLACK",
-        step=1,
-        turn=1,
-        recorded=[0],
-        expected=None,
-        evidence={},
-        acceptance="contract",
-        confidence=1.0,
-    )
-    fatal = LossModeCase(
-        **common,
-        loss_mode="UNREADY_EX_EXPOSED",
-        detail_code="KNOWN_LETHAL_UNREADY_EX_SWITCH",
-        severity="FATAL",
-        policy_hook="FORBID_VOLUNTARY_SWITCH_TO_UNREADY_EX",
-    )
-    major = LossModeCase(
-        **common,
-        loss_mode="DECK_OUT_CLOCK",
-        detail_code="DECK_CLOCK_VIOLATION",
-        severity="MAJOR",
-        policy_hook="DECK_CLOCK_SUPPRESS_RESOURCE",
-    )
+    common = dict(episode_id=1, agent_name="BLACK", step=1, turn=1, recorded=[0], expected=None, evidence={}, acceptance="contract", confidence=1.0)
+    fatal = LossModeCase(**common, loss_mode="UNREADY_EX_EXPOSED", detail_code="KNOWN_LETHAL_UNREADY_EX_SWITCH", severity="FATAL", policy_hook="FORBID_VOLUNTARY_SWITCH_TO_UNREADY_EX")
+    major = LossModeCase(**common, loss_mode="DECK_OUT_CLOCK", detail_code="DECK_CLOCK_VIOLATION", severity="MAJOR", policy_hook="DECK_CLOCK_SUPPRESS_RESOURCE")
     summary = aggregate_reports([LossModeReport(1, "BLACK", "LOSS", (major, fatal))])
     assert summary["repair_queue"][0]["loss_mode"] == "UNREADY_EX_EXPOSED"
     assert summary["counts"]["DECK_OUT_CLOCK"] == 1
+
+
+def test_loss_miner_does_not_label_winning_episode_as_loss_mode(tmp_path: Path):
+    path = tmp_path / "99.json"
+    _write_episode(path, _setup_observation(120), 1, 99)
+    report = mine_episode(path, "BLACK")
+    assert report.result == "WIN"
+    assert report.cases == ()
+
+
+def test_loss_miner_does_not_call_immediate_ko_setup_delay(tmp_path: Path):
+    path = tmp_path / "100.json"
+    _write_episode(path, _setup_observation(120), -1, 100)
+    report = mine_episode(path, "BLACK")
+    assert not any(case.detail_code == "MEWTWO_SETUP_TURN_CLOSED" for case in report.cases)
