@@ -4,8 +4,9 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-path = ROOT / "red_team" / "manifest.json"
-payload = json.loads(path.read_text(encoding="utf-8"))
+payload = json.loads((ROOT / "red_team" / "manifest.json").read_text(encoding="utf-8"))
+profiles = json.loads((ROOT / "red_team" / "profiles.json").read_text(encoding="utf-8"))
+sources = json.loads((ROOT / "red_team" / "replay_sources.json").read_text(encoding="utf-8"))
 matchups = payload.get("matchups") if isinstance(payload.get("matchups"), dict) else {}
 promotion = payload.get("promotion") if isinstance(payload.get("promotion"), dict) else {}
 
@@ -24,6 +25,11 @@ if configured_required != required:
     raise SystemExit(
         "promotion.required_matchups must be the exact five-deck core pool: "
         f"expected={sorted(required)}, actual={sorted(configured_required)}"
+    )
+if set(matchups) != set(profiles) or set(matchups) != set(sources):
+    raise SystemExit(
+        "manifest, profiles, and replay_sources must have identical matchup sets: "
+        f"manifest={sorted(matchups)}, profiles={sorted(profiles)}, sources={sorted(sources)}"
     )
 if payload.get("evidence_law", {}).get("seat_balance") is not True:
     raise SystemExit("seat_balance must be true")
@@ -46,6 +52,19 @@ for slug, config in matchups.items():
         raise SystemExit(f"{slug}: minimum_games must be positive and even")
     if slug in required and config["required_for_promotion"] is not True:
         raise SystemExit(f"{slug}: core matchup must be required_for_promotion=true")
+    deck_path = ROOT / "red_team" / "decks" / f"{slug}.csv"
+    if not deck_path.is_file():
+        raise SystemExit(f"{slug}: missing source deck {deck_path}")
+    deck = [line.strip() for line in deck_path.read_text(encoding="utf-8-sig").splitlines() if line.strip()]
+    if len(deck) != 60 or any(not value.isdigit() for value in deck):
+        raise SystemExit(f"{slug}: source deck must contain exactly 60 integer IDs")
+    source_type = sources[slug].get("source_type")
+    if source_type not in {
+        "official_replay",
+        "official_replay_and_frozen_black_candidate",
+        "frozen_black_candidate",
+    }:
+        raise SystemExit(f"{slug}: invalid source_type={source_type!r}")
 
 required_taxonomy = {
     "LETHAL_MISS",
