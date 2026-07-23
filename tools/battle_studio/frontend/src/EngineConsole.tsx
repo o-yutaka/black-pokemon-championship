@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { uploadKaggleBundle, type BundleInfo } from "./bundle";
 import type { LiveStatus } from "./live";
 import "./engine.css";
@@ -46,7 +46,7 @@ function BundleSlot({ title, hint, info, busy, required, onPick, onClear }: {
       {!info ? (
         <button className="bundle-drop" type="button" onClick={onPick} disabled={busy}>
           <strong>{busy ? "検証中…" : "Kaggle Bundleを選択"}</strong>
-          <span>.tar.gz / .tgz</span>
+          <span>iPhoneの「ファイル」App対応 · .tar.gz / .tgz</span>
         </button>
       ) : (
         <>
@@ -71,6 +71,10 @@ function BundleSlot({ title, hint, info, busy, required, onPick, onClear }: {
   );
 }
 
+function detectIos(): boolean {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
 export function EngineConsole({ liveStatus, liveEngine, legalSelectionCount, onStart, onStep, onDisconnect, onError }: {
   liveStatus: LiveStatus;
   liveEngine: string | null;
@@ -80,9 +84,11 @@ export function EngineConsole({ liveStatus, liveEngine, legalSelectionCount, onS
   onDisconnect: () => void;
   onError: (message: string | null) => void;
 }) {
-  const defaultBridgeUrl = import.meta.env.VITE_LIVE_BASE_URL || (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" ? window.location.origin : "http://127.0.0.1:8000");
+  const isIos = useMemo(detectIos, []);
+  const isBridgeHosted = !window.location.hostname.endsWith("github.io");
+  const defaultBridgeUrl = import.meta.env.VITE_LIVE_BASE_URL || (isBridgeHosted ? window.location.origin : "");
   const [bridgeUrl, setBridgeUrl] = useState(defaultBridgeUrl);
-  const [bridgeState, setBridgeState] = useState<BridgeState>("checking");
+  const [bridgeState, setBridgeState] = useState<BridgeState>(defaultBridgeUrl ? "checking" : "offline");
   const [checkingBridge, setCheckingBridge] = useState(false);
   const [playerBundle, setPlayerBundle] = useState<BundleInfo | null>(null);
   const [opponentBundle, setOpponentBundle] = useState<BundleInfo | null>(null);
@@ -95,6 +101,16 @@ export function EngineConsole({ liveStatus, liveEngine, legalSelectionCount, onS
     if (!value) throw new Error("Bridge URLを入力してください");
     return new URL(value).toString();
   };
+
+  const bridgeLink = useMemo(() => {
+    try { return bridgeUrl.trim() ? new URL(bridgeUrl.trim()).toString() : null; }
+    catch { return null; }
+  }, [bridgeUrl]);
+
+  const mixedContentRisk = useMemo(() => {
+    if (!bridgeLink) return false;
+    return window.location.protocol === "https:" && new URL(bridgeLink).protocol === "http:";
+  }, [bridgeLink]);
 
   const checkBridge = async () => {
     setCheckingBridge(true);
@@ -114,7 +130,9 @@ export function EngineConsole({ liveStatus, liveEngine, legalSelectionCount, onS
     }
   };
 
-  useEffect(() => { void checkBridge(); }, []);
+  useEffect(() => {
+    if (defaultBridgeUrl) void checkBridge();
+  }, []);
 
   const uploadBundle = async (role: BundleRole, file: File | undefined) => {
     if (!file) return;
@@ -149,8 +167,8 @@ export function EngineConsole({ liveStatus, liveEngine, legalSelectionCount, onS
   const runnerReady = bridgeState === "ready";
   return (
     <section className="engine-console" aria-label="Official engine console">
-      <input ref={playerBundleRef} className="file-input" type="file" accept=".tgz,.gz,.tar.gz,application/gzip" onChange={(event) => void uploadBundle("player", event.target.files?.[0])} />
-      <input ref={opponentBundleRef} className="file-input" type="file" accept=".tgz,.gz,.tar.gz,application/gzip" onChange={(event) => void uploadBundle("opponent", event.target.files?.[0])} />
+      <input ref={playerBundleRef} className="file-input" type="file" accept=".tgz,.gz,.tar.gz,application/gzip,application/x-gzip" onChange={(event) => void uploadBundle("player", event.target.files?.[0])} />
+      <input ref={opponentBundleRef} className="file-input" type="file" accept=".tgz,.gz,.tar.gz,application/gzip,application/x-gzip" onChange={(event) => void uploadBundle("opponent", event.target.files?.[0])} />
 
       <div className="engine-console-head">
         <div>
@@ -161,13 +179,24 @@ export function EngineConsole({ liveStatus, liveEngine, legalSelectionCount, onS
         <span className={`engine-status ${bridgeState}`}>{bridgeState.replace("-", " ").toUpperCase()}</span>
       </div>
 
+      {isIos && (
+        <div className="iphone-mode">
+          <div>
+            <strong>iPhone Mode</strong>
+            <span>PCと同じWi‑Fiで、WSL2 Bridgeが表示した <code>http://PC-IP:8000/</code> をSafariで直接開く。</span>
+          </div>
+          {bridgeLink && <a href={bridgeLink}>Bridge UIを開く</a>}
+        </div>
+      )}
+
       <div className="bridge-row">
-        <label>Bridge URL<input value={bridgeUrl} onChange={(event) => setBridgeUrl(event.target.value)} spellCheck={false} inputMode="url" /></label>
+        <label>Bridge URL<input value={bridgeUrl} onChange={(event) => setBridgeUrl(event.target.value)} placeholder={isIos ? "http://192.168.x.x:8000" : "http://127.0.0.1:8000"} spellCheck={false} autoCapitalize="none" autoCorrect="off" inputMode="url" /></label>
         <button type="button" onClick={() => void checkBridge()} disabled={checkingBridge}>{checkingBridge ? "確認中…" : "接続確認"}</button>
       </div>
 
+      {mixedContentRisk && <div className="engine-warning">GitHub Pages（HTTPS）からPCのHTTP Bridgeへ直接通信できない場合がある。上の「Bridge UIを開く」で同一オリジン表示に切り替える。</div>}
       {bridgeState === "runner-missing" && <div className="engine-warning">Bridgeには接続済み。ただし <code>BLACK_OFFICIAL_RUNNER</code> が未設定のため公式対戦は開始できない。</div>}
-      {bridgeState === "offline" && <div className="engine-warning">Bridgeへ接続できない。WSL2側のLive Bridgeを起動し、URLを確認してください。</div>}
+      {bridgeState === "offline" && bridgeUrl && <div className="engine-warning">Bridgeへ接続できない。WSL2側を <code>python run_mobile_bridge.py</code> で起動し、同じWi‑FiのPC-IPを入力してください。</div>}
 
       <div className="bundle-grid">
         <BundleSlot title="PLAYER 1 / 自分" hint="Kaggleへ提出する自分側Agent" info={playerBundle} busy={uploadRole === "player"} required onPick={() => playerBundleRef.current?.click()} onClear={() => setPlayerBundle(null)} />
@@ -182,7 +211,7 @@ export function EngineConsole({ liveStatus, liveEngine, legalSelectionCount, onS
           <span>{legalSelectionCount} legal selections</span>
         </div>
         <div className="engine-run-actions">
-          <button type="button" onClick={() => start("emulator")} disabled={liveStatus === "connecting" || liveStatus === "connected"}>Emulator</button>
+          <button type="button" onClick={() => start("emulator")} disabled={!bridgeUrl || liveStatus === "connecting" || liveStatus === "connected"}>Emulator</button>
           <button className="primary" type="button" onClick={() => start("official")} disabled={!playerBundle || !runnerReady || liveStatus === "connecting" || liveStatus === "connected"}>Official Start</button>
           <button type="button" onClick={onStep} disabled={liveStatus !== "connected" || legalSelectionCount === 0}>Live Step</button>
           <button type="button" onClick={onDisconnect} disabled={liveStatus === "disconnected"}>Disconnect</button>
