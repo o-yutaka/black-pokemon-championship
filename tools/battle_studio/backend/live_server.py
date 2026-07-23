@@ -153,6 +153,15 @@ async def create_session(request: SessionRequest) -> dict[str, Any]:
         raise _http_error(exc) from exc
 
 
+@app.delete("/api/sessions/{session_id}")
+async def delete_session(session_id: str) -> dict[str, Any]:
+    session = SESSIONS.pop(session_id, None)
+    if session is None:
+        raise HTTPException(status_code=404, detail="unknown session")
+    await session.engine.close()
+    return {"deleted": True, "sessionId": session_id}
+
+
 async def _snapshot_payload(session_id: str, session: Session) -> dict[str, Any]:
     assert session.frame is not None
     return {"type": "snapshot", "sessionId": session_id, "engine": session.engine.name, "frame": session.frame, "legalSelections": session.engine.legal_selections()}
@@ -174,8 +183,6 @@ async def battle_socket(websocket: WebSocket, session_id: str) -> None:
                 await websocket.send_json({"type": "pong", "sessionId": session_id})
                 continue
             if message_type == "close":
-                await session.engine.close()
-                SESSIONS.pop(session_id, None)
                 await websocket.send_json({"type": "closed", "sessionId": session_id})
                 await websocket.close(code=1000)
                 break
