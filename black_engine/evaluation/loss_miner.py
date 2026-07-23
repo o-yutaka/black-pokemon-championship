@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
-from black_engine.championship_policy import ChampionshipRocketMewtwoPolicy
+from black_engine import ChampionshipRocketMewtwoPolicy
 from black_engine.prize_truth import prize_value
 from black_engine.rocket_mewtwo_worldline import (
     CTX_SWITCH,
@@ -136,8 +136,6 @@ def _finding_case(audit: EpisodeAudit, finding: DecisionFinding) -> LossModeCase
         best_plan = str(finding.evidence.get("best_plan", ""))
         if best_plan in {"FIRST_MEWTWO_READY", "SECOND_MEWTWO_DEVELOPMENT"}:
             loss_mode = "MEWTWO_SETUP_DELAY"
-            # This is a counterfactual ranking against the current policy. It is a
-            # repair candidate until same-seed official-engine A/B proves causality.
             evidence_level = "CANDIDATE"
     if loss_mode is None:
         return None
@@ -185,7 +183,6 @@ def _closing_setup_delay_cases(path: Path, agent_name: str, audit: EpisodeAudit)
     policy = ChampionshipRocketMewtwoPolicy()
     result: list[LossModeCase] = []
     steps = payload.get("steps") if isinstance(payload.get("steps"), list) else []
-
     for step_index, pair in enumerate(steps[:-1]):
         if not isinstance(pair, list) or seat >= len(pair) or not isinstance(pair[seat], dict):
             continue
@@ -194,18 +191,13 @@ def _closing_setup_delay_cases(path: Path, agent_name: str, audit: EpisodeAudit)
             continue
         obs = row.get("observation") if isinstance(row.get("observation"), dict) else None
         next_pair = steps[step_index + 1]
-        next_row = (
-            next_pair[seat]
-            if isinstance(next_pair, list) and seat < len(next_pair) and isinstance(next_pair[seat], dict)
-            else {}
-        )
+        next_row = next_pair[seat] if isinstance(next_pair, list) and seat < len(next_pair) and isinstance(next_pair[seat], dict) else {}
         recorded = next_row.get("action")
         if not isinstance(obs, dict) or not isinstance(obs.get("select"), dict):
             continue
         options = obs["select"].get("option") if isinstance(obs["select"].get("option"), list) else []
         if not options or not isinstance(recorded, list) or len(recorded) != 1:
             continue
-
         context = policy.build_context(obs)
         truth = context["truth"]
         if context.get("ready_mewtwo"):
@@ -216,22 +208,18 @@ def _closing_setup_delay_cases(path: Path, agent_name: str, audit: EpisodeAudit)
         chosen = truth.options[actual]
         if chosen.action_type not in {T_ATTACK, T_END}:
             continue
-
         setup = _best_setup_attachment(policy, context)
         if setup is None or setup.plan.root_action_index == actual:
             continue
         terminal = policy._terminal_attack(context)
         if terminal is not None and terminal == actual:
             continue
-
         immediate_ko = False
         if chosen.action_type == T_ATTACK:
             target = truth.opponent_active
-            immediate_ko = bool(
-                target
-                and policy._attack_option_damage(chosen, context) >= target.current_hp > 0
-            )
-
+            immediate_ko = bool(target and policy._attack_option_damage(chosen, context) >= target.current_hp > 0)
+        if immediate_ko:
+            continue
         current = obs.get("current") if isinstance(obs.get("current"), dict) else {}
         turn = int(current.get("turn", 0) or 0)
         contract = REPAIR_CONTRACTS["MEWTWO_SETUP_DELAY"]
@@ -298,7 +286,6 @@ def _unready_ex_exposure_cases(path: Path, agent_name: str, audit: EpisodeAudit)
     known_damage: dict[int, int] = {}
     cases: list[LossModeCase] = []
     steps = payload.get("steps") if isinstance(payload.get("steps"), list) else []
-
     for step_index, pair in enumerate(steps[:-1]):
         if not isinstance(pair, list) or seat >= len(pair) or not isinstance(pair[seat], dict):
             continue
@@ -310,20 +297,14 @@ def _unready_ex_exposure_cases(path: Path, agent_name: str, audit: EpisodeAudit)
         if row.get("status") != "ACTIVE" or not isinstance(obs.get("select"), dict):
             continue
         next_pair = steps[step_index + 1]
-        next_row = (
-            next_pair[seat]
-            if isinstance(next_pair, list) and seat < len(next_pair) and isinstance(next_pair[seat], dict)
-            else {}
-        )
+        next_row = next_pair[seat] if isinstance(next_pair, list) and seat < len(next_pair) and isinstance(next_pair[seat], dict) else {}
         recorded = next_row.get("action")
         if not isinstance(recorded, list) or len(recorded) != 1:
             continue
-
         select = obs["select"]
         context_id = int(select.get("context", -1) or -1)
         if context_id not in {CTX_SWITCH, CTX_TO_ACTIVE}:
             continue
-
         current = obs.get("current") if isinstance(obs.get("current"), dict) else {}
         players = current.get("players") if isinstance(current.get("players"), list) else []
         their_active = []
@@ -335,7 +316,6 @@ def _unready_ex_exposure_cases(path: Path, agent_name: str, audit: EpisodeAudit)
         observed = known_damage.get(attacker_card, 0) if attacker_card is not None else 0
         if observed <= 0:
             continue
-
         if attacker_card is not None:
             policy.observed_damage_by_attacker[attacker_card] = observed
         context = policy.build_context(obs)
@@ -353,7 +333,6 @@ def _unready_ex_exposure_cases(path: Path, agent_name: str, audit: EpisodeAudit)
             continue
         if observed < candidate.current_hp:
             continue
-
         expected = policy._promotion_choice(context)
         terminal_loss = truth.opponent_prizes > 0 and prize_value(candidate.card_id) >= truth.opponent_prizes
         contract = REPAIR_CONTRACTS["UNREADY_EX_EXPOSED"]
@@ -393,22 +372,16 @@ def _unready_ex_exposure_cases(path: Path, agent_name: str, audit: EpisodeAudit)
 def mine_episode(path: str | Path, agent_name: str) -> LossModeReport:
     replay = Path(path)
     audit = audit_episode(replay, agent_name)
+    if audit.result != "LOSS":
+        return LossModeReport(audit.episode_id, agent_name, audit.result, ())
     cases = [case for finding in audit.findings if (case := _finding_case(audit, finding)) is not None]
     cases.extend(_closing_setup_delay_cases(replay, agent_name, audit))
     cases.extend(_unready_ex_exposure_cases(replay, agent_name, audit))
-
     unique: dict[tuple[int, str], LossModeCase] = {}
     for case in cases:
         key = (case.step, case.loss_mode)
         existing = unique.get(key)
-        if (
-            existing is None
-            or case.priority > existing.priority
-            or (
-                case.priority == existing.priority
-                and case.confidence > existing.confidence
-            )
-        ):
+        if existing is None or case.priority > existing.priority or (case.priority == existing.priority and case.confidence > existing.confidence):
             unique[key] = case
     ordered = tuple(sorted(unique.values(), key=lambda case: (-case.priority, case.step, case.loss_mode)))
     return LossModeReport(audit.episode_id, agent_name, audit.result, ordered)
@@ -421,7 +394,6 @@ def aggregate_reports(reports: Iterable[LossModeReport]) -> dict[str, Any]:
     evidence_levels: Counter[str] = Counter()
     episodes: dict[str, set[str]] = {mode: set() for mode in LOSS_MODES}
     examples: dict[str, list[dict[str, Any]]] = {mode: [] for mode in LOSS_MODES}
-
     for report in values:
         for case in report.cases:
             counts[case.loss_mode] += 1
@@ -430,7 +402,6 @@ def aggregate_reports(reports: Iterable[LossModeReport]) -> dict[str, Any]:
             episodes[case.loss_mode].add(str(case.episode_id))
             if len(examples[case.loss_mode]) < 5:
                 examples[case.loss_mode].append(case.to_dict())
-
     queue = []
     for mode in LOSS_MODES:
         contract = REPAIR_CONTRACTS[mode]
