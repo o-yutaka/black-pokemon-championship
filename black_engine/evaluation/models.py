@@ -17,11 +17,7 @@ class RuntimeCounters:
 
     @property
     def clean(self) -> bool:
-        return all(
-            value == 0
-            for key, value in asdict(self).items()
-            if key != "completed"
-        )
+        return all(value == 0 for key, value in asdict(self).items() if key != "completed")
 
     def merge(self, other: "RuntimeCounters") -> None:
         for key in asdict(self):
@@ -102,6 +98,9 @@ class MatchupSummary:
     mean_decision_ms: float
     p95_decision_ms: float
     evidence_mode: str = "PROMOTION"
+    candidate_bundle_sha256: str = ""
+    opponent_bundle_sha256: str = ""
+    engine_sha256: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
