@@ -88,7 +88,7 @@ def main() -> int:
             opponent_bundle=bundle,
             games=games,
             out_dir=args.out_dir / slug,
-            evidence_mode="PROMOTION",
+            evidence_mode=str(config.get("strength_evidence", "STRESS_ONLY")),
             decision_timeout_ms=args.decision_timeout_ms,
         )
         print(json.dumps(summary.to_dict(), ensure_ascii=False, indent=2))

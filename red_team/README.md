@@ -22,12 +22,12 @@ Each block is exactly 200 games, candidate seat 0/1 exactly 100 times:
 Current strength status:
 
 - `Cynthia's Garchomp`: `STRESS_ONLY`
-- `Dragapult / Cinderace`: `STRESS_ONLY`
+- `Dragapult / Cinderace`: `PROMOTION` — frozen standalone commit `51a98e353abf257e91c3dccbd14a188baddf73f6`
 - `Crustle / Ogerpon`: `STRESS_ONLY`
 - `Grimmsnarl / Froslass`: `STRESS_ONLY`
-- `Mewtwo mirror`: `STRESS_ONLY`
+- `Mewtwo mirror`: `PROMOTION` — frozen standalone commit `db4eb14b881e96b3f9b2599ea4c9a5e31c1dbc20`
 
-The current builder emits the same `ReplayGroundedPolicy` implementation for every generated opponent Bundle. Therefore all five current generated opponents are `STRESS_ONLY`. The championship gate remains `HOLD` until each required matchup is supplied as an independently frozen, executable promotion-grade challenger Bundle.
+The builder now has two fail-closed paths. Dragapult and the alternate Rocket Mewtwo mirror are rebuilt from their exact historical submission commits using each commit's own `scripts/build_submission.py`; the same official `cg/libcg.so` is injected and the rebuilt deck must exactly match the locked Red Team deck. Crustle, Garchomp and Grimmsnarl still use replay-grounded reconstruction and remain `STRESS_ONLY`. The championship gate therefore remains `HOLD` until those three matchups receive independent executable challengers and all five official blocks pass.
 
 ## Build one identity lock
 
@@ -38,7 +38,7 @@ python scripts/build_red_team_bundles.py \
   --lock-out artifacts/red_team_manifest.lock.json
 ```
 
-The lock binds one candidate tree SHA-256, one `libcg.so` SHA-256, and every opponent tree SHA-256. Missing, mixed, or placeholder identities fail closed.
+The lock binds one candidate tree SHA-256, one `libcg.so` SHA-256, and every opponent tree SHA-256. `promotion_sources.json` also freezes the exact historical commit, commit-owned package builder, policy identity and source PR for promotion-eligible challengers. Missing git history, a deck mismatch, a different engine, or any placeholder identity fails closed.
 
 ## Official evaluation
 

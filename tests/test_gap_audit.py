@@ -32,12 +32,15 @@ def test_generic_optional_multi_select_uses_minimum_not_maximum():
     assert policy.agent(obs) == []
 
 
-def test_manifest_freezes_exact_training_corpus_and_all_generated_red_bundles_are_stress_only():
+def test_manifest_freezes_training_corpus_and_distinguishes_executable_challengers():
     root = Path(__file__).resolve().parents[1]
     manifest = json.loads((root / "red_team" / "manifest.json").read_text())
     expected = hashlib.sha256((root / "red_team" / "training_replay_corpus.json").read_bytes()).hexdigest()
     assert manifest["promotion"]["training_corpus_sha256"] == expected
-    assert {cfg["strength_evidence"] for cfg in manifest["matchups"].values()} == {"STRESS_ONLY"}
+    promotion = {slug for slug, cfg in manifest["matchups"].items() if cfg["strength_evidence"] == "PROMOTION"}
+    stress = {slug for slug, cfg in manifest["matchups"].items() if cfg["strength_evidence"] == "STRESS_ONLY"}
+    assert promotion == {"dragapult_cinderace", "mewtwo_mirror"}
+    assert {"crustle_ogerpon", "cynthia_garchomp", "grimmsnarl"}.issubset(stress)
 
 
 def test_promotion_rejects_different_training_corpus_sha():

@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[1]
 payload = json.loads((ROOT / "red_team" / "manifest.json").read_text(encoding="utf-8"))
 profiles = json.loads((ROOT / "red_team" / "profiles.json").read_text(encoding="utf-8"))
 sources = json.loads((ROOT / "red_team" / "replay_sources.json").read_text(encoding="utf-8"))
+promotion_sources = json.loads((ROOT / "red_team" / "promotion_sources.json").read_text(encoding="utf-8"))
 training_path = ROOT / "red_team" / "training_replay_corpus.json"
 training = json.loads(training_path.read_text(encoding="utf-8"))
 matchups = payload.get("matchups") if isinstance(payload.get("matchups"), dict) else {}
@@ -20,6 +21,7 @@ required = {
     "dragapult_cinderace",
     "mewtwo_mirror",
 }
+expected_promotion_sources = {"dragapult_cinderace", "mewtwo_mirror"}
 configured_required = set(promotion.get("required_matchups") or [])
 missing = sorted(required.difference(matchups))
 if missing:
@@ -33,6 +35,11 @@ if set(matchups) != set(profiles) or set(matchups) != set(sources):
     raise SystemExit(
         "manifest, profiles, and replay_sources must have identical matchup sets: "
         f"manifest={sorted(matchups)}, profiles={sorted(profiles)}, sources={sorted(sources)}"
+    )
+if set(promotion_sources) != expected_promotion_sources:
+    raise SystemExit(
+        "promotion_sources must currently freeze only the two independently executable challengers: "
+        f"expected={sorted(expected_promotion_sources)}, actual={sorted(promotion_sources)}"
     )
 if payload.get("evidence_law", {}).get("seat_balance") is not True:
     raise SystemExit("seat_balance must be true")
@@ -80,11 +87,25 @@ for slug, config in matchups.items():
             raise SystemExit(f"{slug}: missing {field}")
     if config["strength_evidence"] not in {"PROMOTION", "STRESS_ONLY"}:
         raise SystemExit(f"{slug}: invalid strength_evidence={config['strength_evidence']!r}")
-    if config["strength_evidence"] != "STRESS_ONLY":
-        raise SystemExit(
-            f"{slug}: current builder executes generic ReplayGroundedPolicy; "
-            "an exact external executable Bundle is required before PROMOTION strength evidence"
-        )
+    spec = promotion_sources.get(slug)
+    if spec is not None:
+        if config["strength_evidence"] != "PROMOTION":
+            raise SystemExit(f"{slug}: frozen executable challenger must be PROMOTION eligible")
+        if config.get("promotion_source") != spec:
+            raise SystemExit(f"{slug}: manifest promotion_source must equal promotion_sources.json")
+        if spec.get("source_type") != "git_submission_commit":
+            raise SystemExit(f"{slug}: promotion source must use git_submission_commit")
+        commit = str(spec.get("commit_sha", ""))
+        if len(commit) != 40 or any(ch not in "0123456789abcdef" for ch in commit.lower()):
+            raise SystemExit(f"{slug}: invalid frozen commit SHA")
+        builder = PurePosixPath(str(spec.get("builder_path", "")))
+        if not builder.parts or builder.is_absolute() or ".." in builder.parts:
+            raise SystemExit(f"{slug}: unsafe builder_path")
+        if spec.get("evidence_identity") != "FROZEN_BLACK_EXECUTABLE_BUNDLE":
+            raise SystemExit(f"{slug}: invalid executable evidence identity")
+    elif config["strength_evidence"] != "STRESS_ONLY":
+        raise SystemExit(f"{slug}: no frozen executable source; must remain STRESS_ONLY")
+
     if int(config["minimum_games"]) <= 0 or int(config["minimum_games"]) % 2:
         raise SystemExit(f"{slug}: minimum_games must be positive and even")
     if slug in required and config["required_for_promotion"] is not True:
@@ -106,7 +127,7 @@ for slug, config in matchups.items():
     if source_type == "official_replay":
         if not source.get("filename") or not source.get("episode_id") or not source.get("sha256"):
             raise SystemExit(f"{slug}: exact official replay source requires filename, episode_id, and sha256")
-        if config["strength_evidence"] != "STRESS_ONLY":
+        if spec is None and config["strength_evidence"] != "STRESS_ONLY":
             raise SystemExit(f"{slug}: replay-only reconstruction cannot be PROMOTION strength evidence")
     if source_type == "frozen_black_candidate" and not source.get("deck_blob_sha"):
         raise SystemExit(f"{slug}: frozen candidate source requires deck_blob_sha")
