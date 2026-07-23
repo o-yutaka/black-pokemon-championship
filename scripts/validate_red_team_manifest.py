@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 payload = json.loads((ROOT / "red_team" / "manifest.json").read_text(encoding="utf-8"))
 profiles = json.loads((ROOT / "red_team" / "profiles.json").read_text(encoding="utf-8"))
 sources = json.loads((ROOT / "red_team" / "replay_sources.json").read_text(encoding="utf-8"))
+training = json.loads((ROOT / "red_team" / "training_replay_corpus.json").read_text(encoding="utf-8"))
 matchups = payload.get("matchups") if isinstance(payload.get("matchups"), dict) else {}
 promotion = payload.get("promotion") if isinstance(payload.get("promotion"), dict) else {}
 
@@ -48,11 +49,20 @@ for field in ("candidate_bundle_sha256", "engine_sha256"):
     if value != "REQUIRED_BEFORE_RUN" and (len(value) != 64 or any(ch not in "0123456789abcdef" for ch in value.lower())):
         raise SystemExit(f"promotion.{field} must be REQUIRED_BEFORE_RUN or SHA-256")
 
+training_rows = training.get("episodes") if isinstance(training.get("episodes"), list) else []
+training_ids = [str(row.get("episode_id")) for row in training_rows if isinstance(row, dict)]
+training_hashes = [str(row.get("sha256")) for row in training_rows if isinstance(row, dict)]
+if len(training_rows) != 14 or len(set(training_ids)) != 14 or len(set(training_hashes)) != 14:
+    raise SystemExit("training replay corpus must freeze 14 unique episode IDs and hashes")
+if any(len(value) != 64 for value in training_hashes):
+    raise SystemExit("training replay corpus hashes must be SHA-256")
+
 for slug, config in matchups.items():
     for field in (
         "bundle_path",
         "bundle_sha256",
         "policy_source",
+        "strength_evidence",
         "required_for_promotion",
         "minimum_games",
         "minimum_win_rate",
@@ -60,6 +70,8 @@ for slug, config in matchups.items():
     ):
         if field not in config:
             raise SystemExit(f"{slug}: missing {field}")
+    if config["strength_evidence"] not in {"PROMOTION", "STRESS_ONLY"}:
+        raise SystemExit(f"{slug}: invalid strength_evidence={config['strength_evidence']!r}")
     if int(config["minimum_games"]) <= 0 or int(config["minimum_games"]) % 2:
         raise SystemExit(f"{slug}: minimum_games must be positive and even")
     if slug in required and config["required_for_promotion"] is not True:
@@ -81,6 +93,8 @@ for slug, config in matchups.items():
     if source_type == "official_replay":
         if not source.get("filename") or not source.get("episode_id") or not source.get("sha256"):
             raise SystemExit(f"{slug}: exact official replay source requires filename, episode_id, and sha256")
+        if config["strength_evidence"] != "STRESS_ONLY":
+            raise SystemExit(f"{slug}: replay-only reconstruction cannot be PROMOTION strength evidence")
     if source_type == "frozen_black_candidate" and not source.get("deck_blob_sha"):
         raise SystemExit(f"{slug}: frozen candidate source requires deck_blob_sha")
     if source_type == "official_replay_and_frozen_black_candidate":
@@ -104,4 +118,11 @@ if actual_taxonomy != required_taxonomy:
         "required_replay_taxonomy mismatch: "
         f"expected={sorted(required_taxonomy)}, actual={sorted(actual_taxonomy)}"
     )
+applicability = promotion.get("replay_taxonomy_applicability")
+if not isinstance(applicability, dict) or set(applicability) != required_taxonomy:
+    raise SystemExit("replay_taxonomy_applicability must cover the exact canonical taxonomy")
+if applicability.get("BAD_SPREAD_TARGET") != "NOT_APPLICABLE_ROCKET_MEWTWO_FIXED_DECK_HAS_NO_SPREAD_TARGET_ACTION":
+    raise SystemExit("Rocket Mewtwo BAD_SPREAD_TARGET must be explicit N/A, never fake observed support")
+if any(applicability.get(code) != "REQUIRED" for code in required_taxonomy - {"BAD_SPREAD_TARGET"}):
+    raise SystemExit("all non-spread canonical replay classifiers must remain REQUIRED")
 print("RED_TEAM_MANIFEST PASS")
