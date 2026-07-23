@@ -85,24 +85,44 @@ def _finding(
     )
 
 
-def _trace_failure_codes(*values: Any) -> set[str]:
-    result: set[str] = set()
+def _trace_dicts(*values: Any) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
     for value in values:
         if not isinstance(value, dict):
             continue
-        candidates = [value]
+        result.append(value)
         for key in ("black_trace", "decision_trace", "evaluation"):
             nested = value.get(key)
             if isinstance(nested, dict):
-                candidates.append(nested)
-        for candidate in candidates:
-            one = candidate.get("failure_code")
-            many = candidate.get("failure_codes")
-            if isinstance(one, str):
-                result.add(one)
-            if isinstance(many, list):
-                result.update(item for item in many if isinstance(item, str))
+                result.append(nested)
     return result
+
+
+def _trace_failure_codes(*values: Any) -> set[str]:
+    result: set[str] = set()
+    for candidate in _trace_dicts(*values):
+        one = candidate.get("failure_code")
+        many = candidate.get("failure_codes")
+        if isinstance(one, str):
+            result.add(one)
+        if isinstance(many, list):
+            result.update(item for item in many if isinstance(item, str))
+    return result
+
+
+def _spread_trace_supported(*values: Any) -> bool:
+    for candidate in _trace_dicts(*values):
+        if candidate.get("spread_classifier_supported") is True:
+            return True
+        if any(key in candidate for key in ("spread_scores", "spread_counterfactuals", "damage_counter_scores")):
+            return True
+        one = candidate.get("failure_code")
+        many = candidate.get("failure_codes")
+        if one in {"BAD_SPREAD_TARGET", "SPREAD_TARGET_REGRET"}:
+            return True
+        if isinstance(many, list) and any(code in {"BAD_SPREAD_TARGET", "SPREAD_TARGET_REGRET"} for code in many):
+            return True
+    return False
 
 
 def _best_lethal_attack(policy: ChampionshipRocketMewtwoPolicy, context: dict) -> int | None:
@@ -150,6 +170,7 @@ def audit_episode(path: str | Path, agent_name: str) -> EpisodeAudit:
     )
     policy = ChampionshipRocketMewtwoPolicy()
     counts: Counter[str] = Counter()
+    spread_supported = False
     steps = payload.get("steps") or []
     for step_index, pair in enumerate(steps[:-1]):
         if not isinstance(pair, list) or seat >= len(pair) or not isinstance(pair[seat], dict):
@@ -221,6 +242,8 @@ def audit_episode(path: str | Path, agent_name: str) -> EpisodeAudit:
                 target = truth.opponent_active
                 if active is not None and target is not None:
                     policy._pending_attack = (active.card_id, chosen.attack_id, target.serial, target.card_id, target.current_hp, truth.turn)
+        if _spread_trace_supported(row, next_row, obs):
+            spread_supported = True
         trace_codes = _trace_failure_codes(row, next_row, obs)
         if "BAD_SPREAD_TARGET" in trace_codes or "SPREAD_TARGET_REGRET" in trace_codes:
             audit.findings.append(_finding(step=step_index, turn=turn, seat=seat, code="SPREAD_TARGET_REGRET", severity="MAJOR", recorded=recorded, expected=None, runner_id="DECK_SPECIFIC_SPREAD_ADAPTER", evidence={"source": "decision_trace"}))
@@ -235,16 +258,18 @@ def audit_episode(path: str | Path, agent_name: str) -> EpisodeAudit:
             domains[domain] = max(0.0, domains[domain] - penalty)
     audit.domain_scores = domains
     audit.overall_score = max(0.0, 100.0 - total_penalty)
+    classifier_support = {
+        "LETHAL_MISS": "BUILT_IN",
+        "ENERGY_ATTACH_ERROR": "BUILT_IN_ROCKET_MEWTWO",
+        "TERMINAL_MISS": "BUILT_IN",
+        "PROMOTION_ERROR": "BUILT_IN",
+    }
+    if spread_supported:
+        classifier_support["BAD_SPREAD_TARGET"] = "EXPLICIT_DECISION_TRACE"
     audit.metadata = {
         "finding_counts": dict(counts),
         "canonical_failure_counts": canonical_failure_counts(finding.code for finding in audit.findings),
-        "classifier_support": {
-            "LETHAL_MISS": "BUILT_IN",
-            "ENERGY_ATTACH_ERROR": "BUILT_IN_ROCKET_MEWTWO",
-            "TERMINAL_MISS": "BUILT_IN",
-            "PROMOTION_ERROR": "BUILT_IN",
-            "BAD_SPREAD_TARGET": "DECK_SPECIFIC_TRACE_REQUIRED",
-        },
+        "classifier_support": classifier_support,
         "source": str(Path(path)),
     }
     return audit
