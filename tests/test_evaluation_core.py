@@ -27,6 +27,8 @@ def clean_replay_summary():
         "candidate_bundle_sha256": "candidate",
         "corpus_id": "postfix-holdout-001",
         "corpus_kind": "POST_FIX_HOLDOUT",
+        "training_corpus_sha256": "a" * 64,
+        "training_overlap": [],
         "episodes": 5,
         "episode_ids": [1, 2, 3, 4, 5],
         "source_sha256": [f"{value:064x}" for value in range(1, 6)],
@@ -40,7 +42,6 @@ def clean_replay_summary():
         },
         "classifier_support": {
             "LETHAL_MISS": "BUILT_IN",
-            "BAD_SPREAD_TARGET": "DECK_SPECIFIC_TRACE_REQUIRED",
             "ENERGY_ATTACH_ERROR": "BUILT_IN_ROCKET_MEWTWO",
             "TERMINAL_MISS": "BUILT_IN",
             "PROMOTION_ERROR": "BUILT_IN",
@@ -54,18 +55,26 @@ def promotion_config(**extra):
         "engine_sha256": "engine",
         "minimum_runtime_completed": 2,
         "required_replay_taxonomy": list(clean_replay_summary()["canonical_failure_counts"]),
+        "replay_taxonomy_applicability": {
+            "LETHAL_MISS": "REQUIRED",
+            "BAD_SPREAD_TARGET": "NOT_APPLICABLE_ROCKET_MEWTWO_FIXED_DECK_HAS_NO_SPREAD_TARGET_ACTION",
+            "ENERGY_ATTACH_ERROR": "REQUIRED",
+            "TERMINAL_MISS": "REQUIRED",
+            "PROMOTION_ERROR": "REQUIRED",
+        },
         "required_replay_corpus_kind": "POST_FIX_HOLDOUT",
     }
     value.update(extra)
     return value
 
 
-def matchup_config():
+def matchup_config(strength: str = "PROMOTION"):
     return {
         "minimum_games": 2,
         "minimum_win_rate": 0.5,
         "minimum_wilson_low": 0.0,
         "bundle_sha256": "opponent",
+        "strength_evidence": strength,
     }
 
 
@@ -148,10 +157,22 @@ def test_promotion_gate_requires_only_explicit_core_pool():
     assert evaluate_promotion(manifest, {"core": _clean_summary("core")}, clean_replay_summary()).verdict == "PROMOTE"
 
 
+def test_promotion_gate_rejects_stress_only_opponent_as_strength_proof():
+    manifest = {"promotion": promotion_config(), "matchups": {"grim": matchup_config("STRESS_ONLY")}}
+    assert evaluate_promotion(manifest, {"grim": _clean_summary()}, clean_replay_summary()).verdict == "HOLD"
+
+
 def test_promotion_gate_rejects_training_replay_as_holdout():
     manifest = {"promotion": promotion_config(), "matchups": {"grim": matchup_config()}}
     replay = clean_replay_summary()
     replay["corpus_kind"] = "TRAINING_REPLAY"
+    assert evaluate_promotion(manifest, {"grim": _clean_summary()}, replay).verdict == "HOLD"
+
+
+def test_promotion_gate_rejects_training_overlap_even_when_mislabeled():
+    manifest = {"promotion": promotion_config(), "matchups": {"grim": matchup_config()}}
+    replay = clean_replay_summary()
+    replay["training_overlap"] = [replay["source_sha256"][0]]
     assert evaluate_promotion(manifest, {"grim": _clean_summary()}, replay).verdict == "HOLD"
 
 
@@ -216,6 +237,7 @@ def test_replay_judge_detects_terminal_attack_miss(tmp_path: Path):
     audit = audit_episode(path, "ジェニファー")
     assert audit.metadata["finding_counts"]["TERMINAL_ACTION_MISS"] == 1
     assert audit.metadata["canonical_failure_counts"]["TERMINAL_MISS"] == 1
+    assert "BAD_SPREAD_TARGET" not in audit.metadata["classifier_support"]
     assert audit.overall_score == 75.0
 
 
