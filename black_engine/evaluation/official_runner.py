@@ -3,14 +3,21 @@ from __future__ import annotations
 import hashlib
 import importlib
 import json
+import signal
 import sys
+import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Iterator
 
 from .bundles import LoadedBundle, load_bundle
 from .models import GameRecord, MatchupSummary, RuntimeCounters
 from .statistics import percentile, wilson_interval
+
+
+class DecisionTimeoutError(TimeoutError):
+    pass
 
 
 def legal_selection(obs: dict, action: Any) -> bool:
@@ -40,6 +47,36 @@ def _file_sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+@contextmanager
+def _hard_timeout(timeout_ms: float) -> Iterator[None]:
+    """Interrupt a stuck Python decision on Linux/WSL instead of measuring after return."""
+    timeout_seconds = max(0.001, float(timeout_ms) / 1000.0)
+    supported = (
+        hasattr(signal, "SIGALRM")
+        and hasattr(signal, "setitimer")
+        and threading.current_thread() is threading.main_thread()
+    )
+    if not supported:
+        yield
+        return
+
+    previous_handler = signal.getsignal(signal.SIGALRM)
+    previous_timer = signal.getitimer(signal.ITIMER_REAL)
+
+    def _raise_timeout(signum, frame):
+        raise DecisionTimeoutError(f"decision exceeded {timeout_ms:.3f} ms")
+
+    signal.signal(signal.SIGALRM, _raise_timeout)
+    signal.setitimer(signal.ITIMER_REAL, timeout_seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0.0)
+        signal.signal(signal.SIGALRM, previous_handler)
+        if previous_timer != (0.0, 0.0):
+            signal.setitimer(signal.ITIMER_REAL, previous_timer[0], previous_timer[1])
 
 
 def _load_game(cg_dir: Path):
@@ -94,15 +131,20 @@ def run_game(
             started = time.perf_counter()
             try:
                 bundle = seat_bundles[actor]
-                if bundle.decide is not None:
-                    decision = bundle.decide(obs, None)
-                    action = decision.selection
-                    decision_source = str(getattr(decision, "source", "unknown"))
-                    if decision_source == "fallback":
-                        runtime.fallback += 1
-                        error = error or f"agent fallback seat={actor}: {getattr(decision, 'error', None)}"
-                else:
-                    action = bundle.agent(obs, None)
+                with _hard_timeout(decision_timeout_ms):
+                    if bundle.decide is not None:
+                        decision = bundle.decide(obs, None)
+                        action = decision.selection
+                        decision_source = str(getattr(decision, "source", "unknown"))
+                        if decision_source == "fallback":
+                            runtime.fallback += 1
+                            error = error or f"agent fallback seat={actor}: {getattr(decision, 'error', None)}"
+                    else:
+                        action = bundle.agent(obs, None)
+            except DecisionTimeoutError as exc:
+                runtime.timeout += 1
+                error = f"decision timeout seat={actor}: {exc}"
+                break
             except Exception as exc:
                 runtime.crash += 1
                 error = f"agent crash seat={actor}: {type(exc).__name__}: {exc}"
