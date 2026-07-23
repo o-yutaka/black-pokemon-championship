@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { demoReplay } from "./demo";
-import { connectLiveEmulator, type LiveConnection, type LiveSnapshot, type LiveStatus } from "./live";
+import { EngineConsole, type EngineStartRequest } from "./EngineConsole";
+import { connectLive, type LiveConnection, type LiveSnapshot, type LiveStatus } from "./live";
 import { readReplayFile } from "./replay";
 import { cardKey, type BattleFrame, type BattleReplay, type CardInstance } from "./types";
 import "./styles.css";
@@ -77,6 +78,7 @@ export default function App() {
   const [selectedCard, setSelectedCard] = useState<CardInstance | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [liveStatus, setLiveStatus] = useState<LiveStatus>("disconnected");
+  const [liveEngine, setLiveEngine] = useState<string | null>(null);
   const [legalSelections, setLegalSelections] = useState<number[][]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const liveRef = useRef<LiveConnection | null>(null);
@@ -105,11 +107,13 @@ export default function App() {
   const frameLabel = useMemo(() => `Turn ${frame.turn} · ${frame.phase} · Action ${frame.actionCount}`, [frame]);
 
   const applyLiveSnapshot = (snapshot: LiveSnapshot) => {
+    setLiveEngine(snapshot.engine);
     setLegalSelections(snapshot.legalSelections);
     setReplay((current) => {
       const frames = current.replayId === snapshot.sessionId
         ? [...current.frames.filter((item) => item.frameId !== snapshot.frame.frameId), snapshot.frame].sort((a, b) => a.frameId - b.frameId)
         : [snapshot.frame];
+      window.setTimeout(() => setFrameIndex(frames.length - 1), 0);
       return {
         schemaVersion: "1.0",
         replayId: snapshot.sessionId,
@@ -119,27 +123,33 @@ export default function App() {
         frames,
       };
     });
-    setFrameIndex(snapshot.frame.frameId);
-  };
-
-  const connectEmulator = async () => {
-    setError(null);
-    setPlaying(false);
-    liveRef.current?.close();
-    try {
-      const baseUrl = import.meta.env.VITE_LIVE_BASE_URL || window.location.origin;
-      liveRef.current = await connectLiveEmulator(baseUrl, applyLiveSnapshot, setLiveStatus, setError);
-    } catch (caught) {
-      setLiveStatus("error");
-      setError(caught instanceof Error ? caught.message : "Live connection failed");
-    }
   };
 
   const disconnectLive = () => {
     liveRef.current?.close();
     liveRef.current = null;
     setLiveStatus("disconnected");
+    setLiveEngine(null);
     setLegalSelections([]);
+  };
+
+  const startEngine = async (request: EngineStartRequest) => {
+    setError(null);
+    setPlaying(false);
+    disconnectLive();
+    try {
+      liveRef.current = await connectLive(
+        request.bridgeUrl,
+        { engine: request.engine, bundleId: request.bundleId, opponentBundleId: request.opponentBundleId },
+        applyLiveSnapshot,
+        setLiveStatus,
+        setError,
+      );
+      setLiveEngine(liveRef.current.engine);
+    } catch (caught) {
+      setLiveStatus("error");
+      setError(caught instanceof Error ? caught.message : "Live connection failed");
+    }
   };
 
   const loadFile = async (file: File | undefined) => {
@@ -163,14 +173,21 @@ export default function App() {
         <div className="top-actions">
           <input ref={fileRef} className="file-input" type="file" accept="application/json,.json" onChange={(event) => void loadFile(event.target.files?.[0])} />
           <button type="button" onClick={() => fileRef.current?.click()}>Open Replay</button>
-          <button type="button" onClick={() => void connectEmulator()} disabled={liveStatus === "connecting" || liveStatus === "connected"}>Connect Emulator</button>
-          <button type="button" onClick={() => liveRef.current?.step(legalSelections[0] ?? [0])} disabled={liveStatus !== "connected" || legalSelections.length === 0}>Live Step</button>
-          <button type="button" onClick={disconnectLive} disabled={liveStatus === "disconnected"}>Disconnect</button>
           <button type="button" onClick={() => { disconnectLive(); setReplay(demoReplay); setFrameIndex(0); setPlaying(false); setError(null); }}>Demo</button>
         </div>
       </header>
 
       {error && <div className="error-banner" role="alert">{error}</div>}
+
+      <EngineConsole
+        liveStatus={liveStatus}
+        liveEngine={liveEngine}
+        legalSelectionCount={legalSelections.length}
+        onStart={(request) => void startEngine(request)}
+        onStep={() => liveRef.current?.step(legalSelections[0] ?? [0])}
+        onDisconnect={disconnectLive}
+        onError={setError}
+      />
 
       <div className="workspace">
         <div className="battle-column">
@@ -189,8 +206,8 @@ export default function App() {
           <button type="button" onClick={() => setFrameIndex((value) => Math.min(replay.frames.length - 1, value + 1))} disabled={frameIndex === replay.frames.length - 1}>▶</button>
           <button type="button" onClick={() => setFrameIndex(replay.frames.length - 1)} disabled={frameIndex === replay.frames.length - 1}>⏭</button>
         </div>
-        <label className="timeline-label">Frame {frameIndex + 1}/{replay.frames.length}
-          <input type="range" min="0" max={replay.frames.length - 1} value={frameIndex} onChange={(event) => { setPlaying(false); setFrameIndex(Number(event.target.value)); }} style={{ "--progress": `${progress}%` } as React.CSSProperties} />
+        <label className="timeline-label">Frame {Math.min(frameIndex + 1, replay.frames.length)}/{replay.frames.length}
+          <input type="range" min="0" max={Math.max(0, replay.frames.length - 1)} value={Math.min(frameIndex, replay.frames.length - 1)} onChange={(event) => { setPlaying(false); setFrameIndex(Number(event.target.value)); }} style={{ "--progress": `${progress}%` } as React.CSSProperties} />
         </label>
         <label className="speed-label">Speed
           <select value={speed} onChange={(event) => setSpeed(Number(event.target.value) as (typeof SPEEDS)[number])}>{SPEEDS.map((value) => <option key={value} value={value}>{value}×</option>)}</select>
