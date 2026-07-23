@@ -24,16 +24,26 @@ def file_sha256(path: Path) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Audit post-fix official Kaggle CABT replays against championship hard contracts.")
+    parser = argparse.ArgumentParser(description="Audit candidate-bound official CABT replay corpora against championship contracts.")
     parser.add_argument("replays", nargs="+", type=Path)
     parser.add_argument("--agent-name", default="ジェニファー")
     parser.add_argument("--candidate-sha256", required=True)
     parser.add_argument("--corpus-id", required=True)
     parser.add_argument("--corpus-kind", choices=("POST_FIX_HOLDOUT", "TRAINING_REPLAY", "DIAGNOSTIC"), required=True)
+    parser.add_argument("--training-corpus", default=ROOT / "red_team" / "training_replay_corpus.json", type=Path)
     parser.add_argument("--out-dir", default=ROOT / "artifacts" / "replay_judge", type=Path)
     args = parser.parse_args()
     if len(args.candidate_sha256) != 64:
         raise SystemExit("candidate-sha256 must be a 64-character SHA-256 digest")
+    if not args.training_corpus.is_file():
+        raise FileNotFoundError(args.training_corpus)
+    training_payload = json.loads(args.training_corpus.read_text(encoding="utf-8"))
+    training_hashes = {
+        str(value.get("sha256"))
+        for value in training_payload.get("episodes", [])
+        if isinstance(value, dict) and isinstance(value.get("sha256"), str)
+    }
+    training_corpus_sha = file_sha256(args.training_corpus)
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
     audits = []
@@ -43,11 +53,16 @@ def main() -> int:
     source_hashes: list[str] = []
     episode_ids: list[int | str] = []
     seen_hashes: set[str] = set()
+    training_overlap: list[str] = []
     for path in args.replays:
         source_hash = file_sha256(path)
         if source_hash in seen_hashes:
             raise SystemExit(f"duplicate replay bytes in corpus: {path}")
         seen_hashes.add(source_hash)
+        if source_hash in training_hashes:
+            training_overlap.append(source_hash)
+            if args.corpus_kind == "POST_FIX_HOLDOUT":
+                raise SystemExit(f"training replay cannot be reused as post-fix holdout: {path}")
         audit = audit_episode(path, args.agent_name)
         if str(audit.episode_id) in {str(value) for value in episode_ids}:
             raise SystemExit(f"duplicate episode id in corpus: {audit.episode_id}")
@@ -67,6 +82,8 @@ def main() -> int:
         "candidate_bundle_sha256": args.candidate_sha256,
         "corpus_id": args.corpus_id,
         "corpus_kind": args.corpus_kind,
+        "training_corpus_sha256": training_corpus_sha,
+        "training_overlap": training_overlap,
         "episodes": len(audits),
         "episode_ids": episode_ids,
         "source_sha256": source_hashes,
