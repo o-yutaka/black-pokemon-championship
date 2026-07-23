@@ -91,3 +91,40 @@ The command returns nonzero and `HOLD` unless every required matchup, seat count
 - `PROMOTION`: current-head candidate, fixed hashes, official engine, seat-balanced, all runtime counters included.
 - `ILLUSTRATIVE`: debugging only; cannot promote or reject the candidate.
 - `ORACLE`: research-only and never production evidence.
+
+## Replay loss mining
+
+```bash
+python scripts/mine_loss_modes.py /path/to/replays/*.json \
+  --agent-name ジェニファー \
+  --out-dir artifacts/loss_mining
+```
+
+The miner emits per-episode evidence, `repair_queue.json`, and `REPAIR_QUEUE.md` for five championship loss modes:
+
+- `MEWTWO_SETUP_DELAY`
+- `NO_BACKUP_AFTER_SPIDOPS`
+- `UNREADY_EX_EXPOSED`
+- `NONPERSISTENT_DAMAGE_LOOP`
+- `DECK_OUT_CLOCK`
+
+Each case has a separate evidence tier:
+
+- `CAUSAL`: the recorded action directly completes the demonstrated loss path.
+- `DIRECT`: official legal options, board state, damage logs, or persistent-HP evidence directly establish the violated contract; same-seed A/B is still required before claiming win-rate gain.
+- `CANDIDATE`: the current policy ranks another legal action higher. This enters the repair queue but is never automatically converted into a hard rule.
+
+### Current 14-replay baseline
+
+At source head `c65590fc5072edd6abd1896311f03119ec4c7bb2`:
+
+- 14 episodes: 11 losses, 3 wins;
+- 68 mined cases;
+- evidence levels: 1 causal, 23 direct, 44 candidate;
+- `MEWTWO_SETUP_DELAY`: 55 — 11 direct turn-close cases and 44 policy-ranked candidates;
+- `NO_BACKUP_AFTER_SPIDOPS`: 3 direct;
+- `UNREADY_EX_EXPOSED`: 2 — one direct and one causal/FATAL;
+- `NONPERSISTENT_DAMAGE_LOOP`: 4 direct;
+- `DECK_OUT_CLOCK`: 4 direct.
+
+The causal/FATAL case is official episode `87658435`, step 106, turn 11: Mimikyu was replaced by an unready Mewtwo ex at 170 HP after Grimmsnarl ex had demonstrated 180 damage, while the opponent had two Prizes remaining.
