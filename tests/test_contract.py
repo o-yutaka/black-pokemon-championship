@@ -39,7 +39,7 @@ ENERGY_IDS = {1, 3, 5, 15}
 TRAINER_IDS = set(EXPECTED_DECK_COUNTS) - POKEMON_IDS - ENERGY_IDS
 
 
-def test_only_final_rocket_mewtwo_xerosic2_deck_is_present():
+def test_only_final_rocket_mewtwo_championship_deck_is_present():
     deck = read_deck(ROOT / "deck.csv")
     counts = Counter(deck)
     report = validate_deck(deck, {1159})
@@ -56,7 +56,7 @@ def test_only_final_rocket_mewtwo_xerosic2_deck_is_present():
     assert counts[1175] == 0
 
 
-def test_source_layout_is_rocket_mewtwo_only():
+def test_source_layout_is_championship_rocket_mewtwo_only():
     report = validate_source_layout(ROOT)
-    assert report["candidate"] == "rocket_mewtwo_xerosic2"
+    assert report["candidate"] == "rocket_mewtwo_championship_v1"
     assert not (ROOT / "candidates").exists()
