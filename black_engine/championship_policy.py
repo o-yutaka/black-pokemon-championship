@@ -23,41 +23,25 @@ from .rocket_mewtwo_worldline_v2 import (
     erasure_damage,
 )
 
-# Resource actions that become actively harmful once the deck clock is critical.
-# This is intentionally narrow: the official option list remains the legal truth,
-# and only optional long-horizon actions are suppressed.
 LONG_HORIZON_RESOURCE_CARDS = frozenset(
     {
-        1094,  # Bug Catching Set
-        1097,  # Night Stretcher
-        1119,  # Energy Search
-        1134,  # Team Rocket's Transceiver
-        1152,  # Poke Pad
-        1216,  # Team Rocket's Ariana
-        1217,  # Team Rocket's Archer
-        1219,  # Team Rocket's Petrel
-        1220,  # Team Rocket's Proton
-        1227,  # Lillie's Determination
-        1257,  # Team Rocket's Factory
+        1094,
+        1097,
+        1119,
+        1134,
+        1152,
+        1216,
+        1217,
+        1219,
+        1220,
+        1227,
+        1257,
     }
 )
 
 
 class ChampionshipRocketMewtwoPolicy(RocketMewtwoWorldlinePolicy):
-    """Official-observation championship layer for Rocket Mewtwo.
-
-    The layer does not invent actions, mutate the official engine, or remap option
-    indices. It only ranks the legal options supplied by CABT and persists small,
-    directly observed facts between decisions.
-
-    Hard priorities:
-    1. take a game-winning attack now;
-    2. promote an attacker that wins immediately;
-    3. never volunteer an unready multi-prize Pokemon into known lethal damage;
-    4. stop repeating attack/target pairs whose damage did not persist;
-    5. respect the deck-out clock;
-    6. preserve a next attacker before making a non-terminal trade.
-    """
+    """Official-observation championship layer for Rocket Mewtwo."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -66,6 +50,21 @@ class ChampionshipRocketMewtwoPolicy(RocketMewtwoWorldlinePolicy):
         self._pending_attack: tuple[int, int, int, int, int, int] | None = None
         self._previous_mine_hp: dict[int, int] = {}
         self._previous_opponent_active_id: int | None = None
+
+    def reset_episode(self) -> None:
+        """Clear all evidence that is valid only inside one battle."""
+        self.observed_damage_by_attacker.clear()
+        self.nonpersistent_attack_pairs.clear()
+        self._pending_attack = None
+        self._previous_mine_hp.clear()
+        self._previous_opponent_active_id = None
+        self.desired_active_serial = None
+        self.desired_opponent_serial = None
+        self.last_runner_id = "BOOT"
+        if hasattr(self, "pending"):
+            self.pending.clear()
+        if hasattr(self, "last_turn"):
+            self.last_turn = None
 
     @staticmethod
     def _player(raw: dict, index: int) -> dict:
@@ -94,8 +93,6 @@ class ChampionshipRocketMewtwoPolicy(RocketMewtwoWorldlinePolicy):
         if value.card_id == SPIDOPS:
             return value.total_energy_units >= 1
         if value.card_id == ARTICUNO:
-            # Dark Frost requires a real funded route. Team Rocket Energy counts as
-            # two units, but a lone unrelated basic Energy does not.
             return value.total_energy_units >= 2
         if value.card_id in {MURKROW, WOBBUFFET}:
             return value.total_energy_units >= 1
@@ -136,23 +133,15 @@ class ChampionshipRocketMewtwoPolicy(RocketMewtwoWorldlinePolicy):
         attacker_id, attack_id, target_serial, target_card_id, hp_before, attack_turn = pending
         target = truth.by_serial(truth.opponent, target_serial)
         key = (attacker_id, attack_id, target_card_id)
-
-        # The official engine may ask effect-follow-up selections before damage is
-        # applied. Never classify that intermediate observation as zero damage.
         if target is not None and target.current_hp < hp_before:
             self.nonpersistent_attack_pairs.discard(key)
             self._pending_attack = None
             return
         if target is None:
-            # The exact instance left play (usually a KO). This is not a zero-value
-            # attack and must not poison future decisions against the same card ID.
             self._pending_attack = None
             return
         if truth.turn == attack_turn:
             return
-
-        # The turn advanced and the same instance retained all prior HP. This
-        # covers immunity, prevention, complete healing, and reset loops.
         self.nonpersistent_attack_pairs.add(key)
         self._pending_attack = None
 
@@ -169,7 +158,6 @@ class ChampionshipRocketMewtwoPolicy(RocketMewtwoWorldlinePolicy):
                     observed,
                     self.observed_damage_by_attacker.get(attacker, 0),
                 )
-
         self._previous_mine_hp = {value.serial: value.current_hp for value in truth.mine}
         opponent_active = truth.opponent_active
         self._previous_opponent_active_id = opponent_active.card_id if opponent_active else None
@@ -179,33 +167,20 @@ class ChampionshipRocketMewtwoPolicy(RocketMewtwoWorldlinePolicy):
         truth: MewtwoTruth = ctx["truth"]
         self._observe_previous_attack(truth)
         self._observe_incoming_damage(truth)
-
         opponent_active = truth.opponent_active
         opponent_prize_value = prize_value(opponent_active.card_id) if opponent_active else 0
-        observed_damage = (
-            self.observed_damage_by_attacker.get(opponent_active.card_id, 0)
-            if opponent_active
-            else 0
-        )
+        observed_damage = self.observed_damage_by_attacker.get(opponent_active.card_id, 0) if opponent_active else 0
         ready_bench = tuple(
-            value
-            for value in truth.mine
+            value for value in truth.mine
             if value.area == AREA_BENCH and self._pokemon_attack_ready(value, ctx)
         )
         deck_count = self._deck_count(obs, truth.actor)
-        # Conservative clock: one future draw per required Prize is reserved, plus
-        # a two-card forced-draw margin. It intentionally does not claim exact win
-        # turns when hidden information is unavailable.
         estimated_turns_to_win = max(1, truth.our_prizes)
         safe_draw_budget = deck_count - estimated_turns_to_win - 2
-
         ctx.update(
             {
                 "opponent_active_prize_value": opponent_prize_value,
-                "game_winning_target": bool(
-                    opponent_active
-                    and opponent_prize_value >= truth.our_prizes > 0
-                ),
+                "game_winning_target": bool(opponent_active and opponent_prize_value >= truth.our_prizes > 0),
                 "observed_opponent_damage": observed_damage,
                 "ready_bench_attackers": ready_bench,
                 "backup_attacker_ready": bool(ready_bench),
@@ -231,9 +206,6 @@ class ChampionshipRocketMewtwoPolicy(RocketMewtwoWorldlinePolicy):
 
     def _promotion_candidate(self, option: MewtwoOption, ctx: dict) -> PokemonInstance | None:
         truth: MewtwoTruth = ctx["truth"]
-        # Official SWITCH/TO_ACTIVE options are normalized as the selected
-        # in-play Pokemon's source serial because action type 12 is also used by
-        # retreat. Accept either field; the legal option index remains unchanged.
         serial = option.target_serial if option.target_serial is not None else option.source_serial
         return truth.by_serial(truth.actor, serial)
 
@@ -241,17 +213,13 @@ class ChampionshipRocketMewtwoPolicy(RocketMewtwoWorldlinePolicy):
         truth: MewtwoTruth = ctx["truth"]
         if truth.context not in {CTX_SWITCH, CTX_TO_ACTIVE}:
             return None
-
         candidates: list[tuple[MewtwoOption, PokemonInstance]] = []
         for option in truth.options:
             value = self._promotion_candidate(option, ctx)
             if value is not None:
                 candidates.append((option, value))
         if not candidates:
-            # Likely an opponent gust selection; the parent serial binding remains
-            # authoritative for that context.
             return None
-
         target = truth.opponent_active
         if target is not None and ctx["game_winning_target"]:
             winning = [
@@ -262,19 +230,15 @@ class ChampionshipRocketMewtwoPolicy(RocketMewtwoWorldlinePolicy):
             if winning:
                 self.last_runner_id = "PROMOTION_LETHAL_OVERRIDE"
                 return max(winning)[1]
-
         known_damage = ctx["observed_opponent_damage"]
         current = truth.active
         current_is_one_prize = bool(current and prize_value(current.card_id) == 1)
-
         ranked: list[tuple[tuple[int, ...], int]] = []
         for option, value in candidates:
             ready = self._pokemon_attack_ready(value, ctx)
             multi_prize = prize_value(value.card_id) > 1
             known_lethal = known_damage > 0 and known_damage >= value.current_hp
-            forbidden_unready_ex = bool(
-                current_is_one_prize and multi_prize and not ready and known_lethal
-            )
+            forbidden_unready_ex = bool(current_is_one_prize and multi_prize and not ready and known_lethal)
             score = (
                 int(not forbidden_unready_ex),
                 int(ready),
@@ -285,7 +249,6 @@ class ChampionshipRocketMewtwoPolicy(RocketMewtwoWorldlinePolicy):
                 -value.serial,
             )
             ranked.append((score, option.action_index))
-
         chosen = max(ranked, default=((0,), -1))[1]
         if chosen >= 0:
             self.last_runner_id = "PRIZE_AWARE_ACTIVE_SELECTION"
@@ -296,7 +259,6 @@ class ChampionshipRocketMewtwoPolicy(RocketMewtwoWorldlinePolicy):
         result = super()._plan_for_option(index, ctx)
         option: MewtwoOption = self._option(ctx, index)
         truth: MewtwoTruth = ctx["truth"]
-
         if option.action_type == T_ATTACK:
             pair = self._pair_key(option, ctx)
             damage = self._attack_option_damage(option, ctx)
@@ -308,36 +270,22 @@ class ChampionshipRocketMewtwoPolicy(RocketMewtwoWorldlinePolicy):
                 result.regret = max(result.regret, 5000.0)
                 result.opponent_pain = 0.0
                 result.confidence = 0.99
-
             active = ctx["active"]
             known_damage = ctx["observed_opponent_damage"]
-            expected_counter_ko = bool(
-                active and known_damage > 0 and known_damage >= active.current_hp
-            )
+            expected_counter_ko = bool(active and known_damage > 0 and known_damage >= active.current_hp)
             if expected_counter_ko and not immediate_ko and not ctx["backup_attacker_ready"]:
                 result.plan.plan_id = "ATTACK_WITHOUT_BACKUP"
                 result.regret = max(result.regret, 1400.0)
                 result.hostile_survival = min(result.hostile_survival, 0.12)
                 result.opponent_attacks_to_win = 1
-
-        if (
-            ctx["deck_clock_critical"]
-            and option.action_type == T_PLAY
-            and option.card_id in LONG_HORIZON_RESOURCE_CARDS
-        ):
+        if ctx["deck_clock_critical"] and option.action_type == T_PLAY and option.card_id in LONG_HORIZON_RESOURCE_CARDS:
             result.plan.plan_id = "DECK_CLOCK_SUPPRESS_RESOURCE"
             result.illegal = True
             result.regret = max(result.regret, 4000.0)
             result.opponent_pain = 0.0
             result.confidence = 0.99
-
         if option.action_type == T_END:
-            # Ending is still legal, but it must never outrank a winning attack.
-            result.regret = max(
-                result.regret,
-                2500.0 if self._terminal_attack(ctx) is not None else result.regret,
-            )
-
+            result.regret = max(result.regret, 2500.0 if self._terminal_attack(ctx) is not None else result.regret)
         return result
 
     def choose_single(self, options: list, context: dict) -> int:
@@ -348,7 +296,6 @@ class ChampionshipRocketMewtwoPolicy(RocketMewtwoWorldlinePolicy):
         else:
             promotion = self._promotion_choice(context)
             chosen = promotion if promotion is not None else super().choose_single(options, context)
-
         truth: MewtwoTruth = context["truth"]
         if 0 <= chosen < len(truth.options):
             option = truth.options[chosen]
