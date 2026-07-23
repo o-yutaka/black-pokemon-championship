@@ -6,21 +6,36 @@ from pathlib import Path
 from typing import Any
 
 from black_engine.championship_policy import ChampionshipRocketMewtwoPolicy, LONG_HORIZON_RESOURCE_CARDS
-from black_engine.rocket_mewtwo_worldline import T_ATTACK, T_PLAY
+from black_engine.rocket_mewtwo_worldline import T_ATTACK, T_ENERGY, T_PLAY
 
 from .models import DecisionFinding, EpisodeAudit
+from .taxonomy import canonical_failure_counts
 
 SEVERITY_PENALTY = {"FATAL": 25.0, "MAJOR": 8.0, "MINOR": 2.0}
 DOMAIN_BY_CODE = {
     "ILLEGAL_RECORDED_ACTION": "runtime",
     "MANDATORY_EMPTY": "runtime",
     "TERMINAL_ACTION_MISS": "terminal",
+    "LETHAL_ACTION_MISS": "terminal",
     "PROMOTION_LETHAL_MISS": "promotion",
     "PRIZE_AWARE_ACTIVE_MISS": "promotion",
+    "ENERGY_ATTACH_SUBOPTIMAL": "energy",
+    "SPREAD_TARGET_REGRET": "spread",
     "NONPERSISTENT_DAMAGE_REPEAT": "attack",
     "DECK_CLOCK_VIOLATION": "clock",
     "ATTACK_WITHOUT_BACKUP": "tempo",
 }
+
+BAD_ENERGY_PLAN_IDS = frozenset(
+    {
+        "UNRESOLVED_ENERGY_TARGET",
+        "ILLEGAL_ROCKET_ENERGY_TARGET",
+        "READY_MEWTWO_OVERATTACH",
+        "BATTERY_BEFORE_ATTACKER",
+        "PROTECT_TEAM_ROCKET_ENERGY",
+        "LOW_VALUE_ATTACHMENT",
+    }
+)
 
 
 def _agents(payload: dict) -> list[str]:
@@ -67,6 +82,62 @@ def _finding(
         runner_id=runner_id,
         evidence=evidence or {},
     )
+
+
+def _trace_failure_codes(*values: Any) -> set[str]:
+    """Read optional local decision traces without inventing replay evidence.
+
+    Official Kaggle replays do not expose deck-specific counterfactual scores. A
+    local Bundle may persist a trace alongside an observation; this hook lets a
+    Dragapult adapter report SPREAD_TARGET_REGRET while raw official replays stay
+    honestly unclassified for that deck-specific failure.
+    """
+
+    result: set[str] = set()
+    for value in values:
+        if not isinstance(value, dict):
+            continue
+        candidates = [value]
+        for key in ("black_trace", "decision_trace", "evaluation"):
+            nested = value.get(key)
+            if isinstance(nested, dict):
+                candidates.append(nested)
+        for candidate in candidates:
+            one = candidate.get("failure_code")
+            many = candidate.get("failure_codes")
+            if isinstance(one, str):
+                result.add(one)
+            if isinstance(many, list):
+                result.update(item for item in many if isinstance(item, str))
+    return result
+
+
+def _best_lethal_attack(policy: ChampionshipRocketMewtwoPolicy, context: dict) -> int | None:
+    truth = context["truth"]
+    target = truth.opponent_active
+    if target is None:
+        return None
+    lethal: list[tuple[int, int]] = []
+    for option in truth.options:
+        if option.action_type != T_ATTACK:
+            continue
+        damage = policy._attack_option_damage(option, context)
+        if damage >= target.current_hp > 0:
+            lethal.append((damage, option.action_index))
+    return max(lethal, default=(0, -1))[1] if lethal else None
+
+
+def _best_energy_action(policy: ChampionshipRocketMewtwoPolicy, context: dict) -> tuple[int | None, Any | None]:
+    truth = context["truth"]
+    candidates = [
+        policy._plan_for_option(option.action_index, context)
+        for option in truth.options
+        if option.action_type == T_ENERGY
+    ]
+    if not candidates:
+        return None, None
+    best = policy.judge.choose(candidates)
+    return best.plan.root_action_index, best
 
 
 def audit_episode(path: str | Path, agent_name: str) -> EpisodeAudit:
@@ -153,6 +224,7 @@ def audit_episode(path: str | Path, agent_name: str) -> EpisodeAudit:
         truth = context["truth"]
         terminal = policy._terminal_attack(context)
         promotion = policy._promotion_choice(context)
+        lethal = None if terminal is not None else _best_lethal_attack(policy, context)
         actual = recorded[0] if len(recorded) == 1 else None
 
         if terminal is not None and actual != terminal:
@@ -170,6 +242,21 @@ def audit_episode(path: str | Path, agent_name: str) -> EpisodeAudit:
                 )
             )
             counts["TERMINAL_ACTION_MISS"] += 1
+        elif lethal is not None and actual != lethal:
+            audit.findings.append(
+                _finding(
+                    step=step_index,
+                    turn=turn,
+                    seat=seat,
+                    code="LETHAL_ACTION_MISS",
+                    severity="MAJOR",
+                    recorded=recorded,
+                    expected=[lethal],
+                    runner_id="IMMEDIATE_KO_CHECK",
+                    evidence={"opponent_hp": context["opponent_hp"], "our_prizes": truth.our_prizes},
+                )
+            )
+            counts["LETHAL_ACTION_MISS"] += 1
         elif promotion is not None and actual != promotion:
             code = "PROMOTION_LETHAL_MISS" if policy.last_runner_id == "PROMOTION_LETHAL_OVERRIDE" else "PRIZE_AWARE_ACTIVE_MISS"
             severity = "FATAL" if code == "PROMOTION_LETHAL_MISS" else "MAJOR"
@@ -191,6 +278,28 @@ def audit_episode(path: str | Path, agent_name: str) -> EpisodeAudit:
         if actual is not None and 0 <= actual < len(truth.options):
             chosen = truth.options[actual]
             plan = policy._plan_for_option(actual, context)
+            if chosen.action_type == T_ENERGY and plan.plan.plan_id in BAD_ENERGY_PLAN_IDS:
+                best_index, best_plan = _best_energy_action(policy, context)
+                if best_index is not None and best_index != actual and best_plan is not None:
+                    audit.findings.append(
+                        _finding(
+                            step=step_index,
+                            turn=turn,
+                            seat=seat,
+                            code="ENERGY_ATTACH_SUBOPTIMAL",
+                            severity="MAJOR",
+                            recorded=recorded,
+                            expected=[best_index],
+                            runner_id=best_plan.plan.plan_id,
+                            evidence={
+                                "chosen_plan": plan.plan.plan_id,
+                                "best_plan": best_plan.plan.plan_id,
+                                "target_serial": chosen.target_serial,
+                                "energy_card_id": chosen.card_id,
+                            },
+                        )
+                    )
+                    counts["ENERGY_ATTACH_SUBOPTIMAL"] += 1
             if plan.plan.plan_id == "REJECT_NONPERSISTENT_DAMAGE":
                 audit.findings.append(
                     _finding(step=step_index, turn=turn, seat=seat, code="NONPERSISTENT_DAMAGE_REPEAT", severity="MAJOR", recorded=recorded, expected=None, runner_id=plan.plan.plan_id)
@@ -229,7 +338,33 @@ def audit_episode(path: str | Path, agent_name: str) -> EpisodeAudit:
                         truth.turn,
                     )
 
-    domains = {"runtime": 100.0, "terminal": 100.0, "promotion": 100.0, "attack": 100.0, "clock": 100.0, "tempo": 100.0}
+        trace_codes = _trace_failure_codes(row, next_row, obs)
+        if "BAD_SPREAD_TARGET" in trace_codes or "SPREAD_TARGET_REGRET" in trace_codes:
+            audit.findings.append(
+                _finding(
+                    step=step_index,
+                    turn=turn,
+                    seat=seat,
+                    code="SPREAD_TARGET_REGRET",
+                    severity="MAJOR",
+                    recorded=recorded,
+                    expected=None,
+                    runner_id="DECK_SPECIFIC_SPREAD_ADAPTER",
+                    evidence={"source": "decision_trace"},
+                )
+            )
+            counts["SPREAD_TARGET_REGRET"] += 1
+
+    domains = {
+        "runtime": 100.0,
+        "terminal": 100.0,
+        "promotion": 100.0,
+        "energy": 100.0,
+        "spread": 100.0,
+        "attack": 100.0,
+        "clock": 100.0,
+        "tempo": 100.0,
+    }
     total_penalty = 0.0
     for finding in audit.findings:
         penalty = SEVERITY_PENALTY.get(finding.severity, 0.0)
@@ -239,5 +374,16 @@ def audit_episode(path: str | Path, agent_name: str) -> EpisodeAudit:
             domains[domain] = max(0.0, domains[domain] - penalty)
     audit.domain_scores = domains
     audit.overall_score = max(0.0, 100.0 - total_penalty)
-    audit.metadata = {"finding_counts": dict(counts), "source": str(Path(path))}
+    audit.metadata = {
+        "finding_counts": dict(counts),
+        "canonical_failure_counts": canonical_failure_counts(finding.code for finding in audit.findings),
+        "classifier_support": {
+            "LETHAL_MISS": "BUILT_IN",
+            "ENERGY_ATTACH_ERROR": "BUILT_IN_ROCKET_MEWTWO",
+            "TERMINAL_MISS": "BUILT_IN",
+            "PROMOTION_ERROR": "BUILT_IN",
+            "BAD_SPREAD_TARGET": "DECK_SPECIFIC_TRACE_REQUIRED",
+        },
+        "source": str(Path(path)),
+    }
     return audit
