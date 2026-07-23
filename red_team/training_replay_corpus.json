@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0",
+  "purpose": "Replay Mining training corpus. These exact replay bytes are forbidden as post-fix holdout evidence.",
+  "episodes": [
+    {"episode_id": 87623546, "sha256": "2446e3e11c8b2f28dae15c6586d4e2f18c1d0bd2be55c3ac6dbfc366db3ac8c7"},
+    {"episode_id": 87624098, "sha256": "9ad0e0fac51cbf695e3f64af3e1bdc83b86a20d2d714bcd78b3e9250eb7abe22"},
+    {"episode_id": 87651908, "sha256": "981d1223307c17a6f17ad5c613c0b1c6bbb26f743d583298181269b95ae4ef2e"},
+    {"episode_id": 87652044, "sha256": "8de006632fccb2c0b171bc29d1ee5498aeabef11641807f6d6642c3ec27f2cad"},
+    {"episode_id": 87652599, "sha256": "7f1606ddca82e9f6bdb0d5a1588897a6daf57e84980a77dc5da1724ae170f75e"},
+    {"episode_id": 87653130, "sha256": "eb92ca3f5a60f75cb5c64721860f38e1cd2726dbe20316ee59a1e8fead2e0b43"},
+    {"episode_id": 87653638, "sha256": "35b1e8940bf03470c4be16e492fa3bb1a448e4049c892b291d5ef6783bd33c48"},
+    {"episode_id": 87654027, "sha256": "d858a38e6071ddbcb23e431f0416683877d522588b68bf342b4a015f3b79f897"},
+    {"episode_id": 87654157, "sha256": "0760a330756d0748df340cf999281b4d8eead779ed88bfe69e60d3f14ffbf661"},
+    {"episode_id": 87654188, "sha256": "d51176daa15bb35ae09c7b2c4a57d4e8f0b549e4157e848e9a4e07d69ea2dbb9"},
+    {"episode_id": 87655215, "sha256": "221d2138336c654f2ad011a2b3b81c04892a8e7bfa1970d59aaafed46b088945"},
+    {"episode_id": 87655769, "sha256": "e970d7ba88651624cd0508b0fa55a1a4219266e5ace5d55fdf2e61928c1c0327"},
+    {"episode_id": 87656309, "sha256": "0f48eb13f739a24e607706ec8c52d963bf65f7d8f9e695f8e75e9cc741591a2c"},
+    {"episode_id": 87658435, "sha256": "34621763c3ab617f888fa552dcd2cbc1d1bbc80098d7ab884d6df2a99147b4cc"}
+  ]
+}
