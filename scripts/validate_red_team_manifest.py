@@ -58,13 +58,22 @@ for slug, config in matchups.items():
     deck = [line.strip() for line in deck_path.read_text(encoding="utf-8-sig").splitlines() if line.strip()]
     if len(deck) != 60 or any(not value.isdigit() for value in deck):
         raise SystemExit(f"{slug}: source deck must contain exactly 60 integer IDs")
-    source_type = sources[slug].get("source_type")
+    source = sources[slug]
+    source_type = source.get("source_type")
     if source_type not in {
         "official_replay",
         "official_replay_and_frozen_black_candidate",
         "frozen_black_candidate",
     }:
         raise SystemExit(f"{slug}: invalid source_type={source_type!r}")
+    if source_type == "official_replay":
+        if not source.get("filename") or not source.get("episode_id") or not source.get("sha256"):
+            raise SystemExit(f"{slug}: exact official replay source requires filename, episode_id, and sha256")
+    if source_type == "frozen_black_candidate" and not source.get("deck_blob_sha"):
+        raise SystemExit(f"{slug}: frozen candidate source requires deck_blob_sha")
+    if source_type == "official_replay_and_frozen_black_candidate":
+        if not source.get("sha256") or not source.get("deck_blob_sha"):
+            raise SystemExit(f"{slug}: combined source requires replay sha256 and deck_blob_sha")
 
 required_taxonomy = {
     "LETHAL_MISS",
