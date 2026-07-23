@@ -21,6 +21,9 @@ from black_engine.rocket_mewtwo_worldline import (
     TEAM_ROCKET_ENERGY,
 )
 
+GRIMMSNARL_EX = 648
+MIMIKYU = 434
+
 
 def pokemon(cid, serial, hp, max_hp, energies=()):
     return {
@@ -125,6 +128,102 @@ def test_miner_detects_turn_closed_before_legal_mewtwo_setup(tmp_path: Path):
     assert cases[0].recorded == [1]
     assert cases[0].expected == [0]
     assert cases[0].evidence["best_setup_plan"] == "FIRST_MEWTWO_READY"
+
+
+def test_miner_detects_log_grounded_unready_ex_exposure(tmp_path: Path):
+    damage_observation = {
+        "current": {"yourIndex": 0, "turn": 10, "players": [{}, {}], "result": -1},
+        "select": None,
+        "logs": [
+            {
+                "type": 15,
+                "playerIndex": 1,
+                "cardId": GRIMMSNARL_EX,
+                "serial": 90,
+                "attackId": 937,
+            },
+            {
+                "type": 16,
+                "playerIndex": 0,
+                "cardId": SPIDOPS,
+                "serial": 7,
+                "putDamageCounter": False,
+                "value": -180,
+            },
+        ],
+    }
+    switch_observation = {
+        "current": {
+            "yourIndex": 0,
+            "turn": 11,
+            "players": [
+                {
+                    "active": [pokemon(MIMIKYU, 10, 60, 60)],
+                    "bench": [
+                        pokemon(MEWTWO_EX, 20, 170, 280),
+                        pokemon(SPIDOPS, 21, 130, 130, (1, 5)),
+                        pokemon(ARTICUNO, 22, 120, 120),
+                        pokemon(MEWTWO_EX, 23, 170, 280),
+                    ],
+                    "hand": [],
+                    "discard": [],
+                    "prize": [None] * 4,
+                    "deckCount": 20,
+                    "supporterPlayed": False,
+                },
+                {
+                    "active": [pokemon(GRIMMSNARL_EX, 90, 300, 320, (7, 7))],
+                    "bench": [],
+                    "handCount": 5,
+                    "prize": [None] * 2,
+                    "deckCount": 20,
+                },
+            ],
+            "result": -1,
+        },
+        "select": {
+            "context": 3,
+            "minCount": 1,
+            "maxCount": 1,
+            "option": [
+                {"type": 3, "area": 5, "index": 0, "playerIndex": 0},
+                {"type": 3, "area": 5, "index": 1, "playerIndex": 0},
+                {"type": 3, "area": 5, "index": 2, "playerIndex": 0},
+                {"type": 3, "area": 5, "index": 3, "playerIndex": 0},
+            ],
+        },
+        "logs": [],
+    }
+    episode = {
+        "info": {"EpisodeId": 88, "Agents": [{"Name": "BLACK"}, {"Name": "RED"}]},
+        "rewards": [-1, 1],
+        "steps": [
+            [
+                {"action": [], "status": "INACTIVE", "observation": damage_observation},
+                {"action": [], "status": "ACTIVE", "observation": {"select": None}},
+            ],
+            [
+                {"action": [], "status": "ACTIVE", "observation": switch_observation},
+                {"action": [], "status": "INACTIVE", "observation": {"select": None}},
+            ],
+            [
+                {"action": [0], "status": "INACTIVE", "observation": {"select": None}},
+                {"action": [], "status": "ACTIVE", "observation": {"select": None}},
+            ],
+        ],
+    }
+    path = tmp_path / "88.json"
+    path.write_text(json.dumps(episode), encoding="utf-8")
+
+    report = mine_episode(path, "BLACK")
+    cases = [case for case in report.cases if case.loss_mode == "UNREADY_EX_EXPOSED"]
+    assert len(cases) == 1
+    assert cases[0].detail_code == "KNOWN_LETHAL_UNREADY_EX_SWITCH"
+    assert cases[0].severity == "FATAL"
+    assert cases[0].recorded == [0]
+    assert cases[0].expected == [1]
+    assert cases[0].evidence["observed_damage"] == 180
+    assert cases[0].evidence["candidate_card_id"] == MEWTWO_EX
 
 
 def test_repair_queue_orders_by_accumulated_severity():
