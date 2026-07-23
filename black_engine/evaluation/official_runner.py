@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib
 import json
 import sys
@@ -33,13 +34,26 @@ def _result(obs: dict | None) -> int:
     return value if type(value) is int else -1
 
 
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _load_game(cg_dir: Path):
-    parent = str(cg_dir.resolve().parent)
-    if parent not in sys.path:
-        sys.path.insert(0, parent)
+    resolved = cg_dir.resolve()
+    parent = str(resolved.parent)
+    sys.path[:] = [value for value in sys.path if value != parent]
+    sys.path.insert(0, parent)
     sys.modules.pop("cg.game", None)
     sys.modules.pop("cg", None)
-    return importlib.import_module("cg.game")
+    module = importlib.import_module("cg.game")
+    module_path = Path(module.__file__).resolve().parent
+    if module_path != resolved:
+        raise RuntimeError(f"wrong cg.game imported: expected={resolved} actual={module_path}")
+    return module
 
 
 def run_game(
@@ -143,7 +157,7 @@ def run_game(
     )
 
 
-def summarize(matchup: str, records: list[GameRecord], evidence_mode: str = "PROMOTION") -> MatchupSummary:
+def summarize(matchup: str, records: list[GameRecord], evidence_mode: str = "PROMOTION", engine_sha256: str = "") -> MatchupSummary:
     runtime = RuntimeCounters()
     timings: list[float] = []
     wins = losses = draws_or_errors = 0
@@ -165,6 +179,10 @@ def summarize(matchup: str, records: list[GameRecord], evidence_mode: str = "PRO
                 seat1_wins += 1
         else:
             losses += 1
+    candidate_hashes = {record.candidate_bundle_sha256 for record in records}
+    opponent_hashes = {record.opponent_bundle_sha256 for record in records}
+    if len(candidate_hashes) != 1 or len(opponent_hashes) != 1:
+        raise ValueError("mixed bundle identities in one matchup summary")
     decided = wins + losses
     low, high = wilson_interval(wins, decided)
     return MatchupSummary(
@@ -184,6 +202,9 @@ def summarize(matchup: str, records: list[GameRecord], evidence_mode: str = "PRO
         mean_decision_ms=sum(timings) / len(timings) if timings else 0.0,
         p95_decision_ms=percentile(timings, 0.95),
         evidence_mode=evidence_mode,
+        candidate_bundle_sha256=next(iter(candidate_hashes)),
+        opponent_bundle_sha256=next(iter(opponent_hashes)),
+        engine_sha256=engine_sha256,
     )
 
 
@@ -203,6 +224,20 @@ def run_matchup(
         raise ValueError("games must be a positive even number for seat balance")
     candidate_root = Path(candidate_bundle)
     opponent_root = Path(opponent_bundle)
+    engine_path = Path(cg_dir).resolve() / "libcg.so"
+    if not engine_path.is_file():
+        raise FileNotFoundError(engine_path)
+    engine_sha256 = _file_sha256(engine_path)
+    for bundle_root in (candidate_root, opponent_root):
+        bundled_engine = bundle_root.resolve() / "cg" / "libcg.so"
+        if not bundled_engine.is_file():
+            raise FileNotFoundError(bundled_engine)
+        bundled_sha = _file_sha256(bundled_engine)
+        if bundled_sha != engine_sha256:
+            raise RuntimeError(
+                f"bundle/runner engine mismatch bundle={bundle_root} "
+                f"bundle_sha={bundled_sha} runner_sha={engine_sha256}"
+            )
     records: list[GameRecord] = []
     for index in range(games):
         candidate = load_bundle(candidate_root)
@@ -219,7 +254,7 @@ def run_matchup(
                 decision_timeout_ms=decision_timeout_ms,
             )
         )
-    summary = summarize(matchup, records, evidence_mode=evidence_mode)
+    summary = summarize(matchup, records, evidence_mode=evidence_mode, engine_sha256=engine_sha256)
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     (out / "games.jsonl").write_text(
