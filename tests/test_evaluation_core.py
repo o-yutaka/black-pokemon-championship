@@ -8,6 +8,7 @@ from black_engine.evaluation.official_runner import legal_selection, summarize
 from black_engine.evaluation.promotion import evaluate_promotion
 from black_engine.evaluation.replay_judge import audit_episode
 from black_engine.evaluation.statistics import wilson_interval
+from black_engine.evaluation.taxonomy import canonical_failure_counts
 from black_engine.rocket_mewtwo_worldline import SPIDOPS, SPIDOPS_ROCKET_RUSH
 
 
@@ -85,8 +86,39 @@ def test_promotion_gate_passes_only_clean_promotion_evidence():
     assert verdict.passed
 
 
-def test_replay_judge_detects_terminal_attack_miss(tmp_path: Path):
-    obs = {
+def test_promotion_gate_requires_only_explicit_core_pool():
+    manifest = {
+        "promotion": {"minimum_runtime_completed": 2, "required_matchups": ["core"]},
+        "matchups": {
+            "core": {"minimum_games": 2, "minimum_win_rate": 0.5, "minimum_wilson_low": 0.0},
+            "optional": {"minimum_games": 200, "minimum_win_rate": 1.0, "minimum_wilson_low": 1.0},
+        },
+    }
+    summary = {
+        "games": 2,
+        "seat0_games": 1,
+        "seat1_games": 1,
+        "win_rate": 1.0,
+        "wilson_low": 0.34,
+        "evidence_mode": "PROMOTION",
+        "runtime": RuntimeCounters(completed=2).__dict__,
+    }
+    assert evaluate_promotion(manifest, {"core": summary}).verdict == "PROMOTE"
+
+
+def _episode_for_observation(obs: dict, action: list[int]) -> dict:
+    return {
+        "info": {"EpisodeId": 1, "Agents": [{"Name": "ジェニファー"}, {"Name": "red"}]},
+        "rewards": [-1, 1],
+        "steps": [
+            [{"action": [], "status": "ACTIVE", "observation": obs}, {"action": [], "status": "INACTIVE", "observation": {"select": None}}],
+            [{"action": action, "status": "INACTIVE", "observation": {"select": None}}, {"action": [], "status": "ACTIVE", "observation": {"select": None}}],
+        ],
+    }
+
+
+def _spidops_attack_observation(our_prizes: int) -> dict:
+    return {
         "current": {
             "yourIndex": 0,
             "turn": 19,
@@ -96,7 +128,7 @@ def test_replay_judge_detects_terminal_attack_miss(tmp_path: Path):
                     "bench": [pokemon(431, 21, 280, 280), pokemon(414, 22, 120, 120), pokemon(400, 23, 50, 50)],
                     "hand": [],
                     "discard": [],
-                    "prize": [None, None],
+                    "prize": [None] * our_prizes,
                     "deckCount": 10,
                     "supporterPlayed": False,
                 },
@@ -120,27 +152,51 @@ def test_replay_judge_detects_terminal_attack_miss(tmp_path: Path):
             ],
         },
     }
-    episode = {
-        "info": {"EpisodeId": 1, "Agents": [{"Name": "ジェニファー"}, {"Name": "red"}]},
-        "rewards": [-1, 1],
-        "steps": [
-            [{"action": [], "status": "ACTIVE", "observation": obs}, {"action": [], "status": "INACTIVE", "observation": {"select": None}}],
-            [{"action": [0], "status": "INACTIVE", "observation": {"select": None}}, {"action": [], "status": "ACTIVE", "observation": {"select": None}}],
-        ],
-    }
+
+
+def test_replay_judge_detects_terminal_attack_miss(tmp_path: Path):
     path = tmp_path / "episode.json"
-    path.write_text(json.dumps(episode), encoding="utf-8")
+    path.write_text(json.dumps(_episode_for_observation(_spidops_attack_observation(2), [0])), encoding="utf-8")
     audit = audit_episode(path, "ジェニファー")
     assert audit.metadata["finding_counts"]["TERMINAL_ACTION_MISS"] == 1
+    assert audit.metadata["canonical_failure_counts"]["TERMINAL_MISS"] == 1
     assert audit.overall_score == 75.0
 
 
-def test_red_team_profiles_cover_manifest_and_decks_are_exact_60():
+def test_replay_judge_detects_nonterminal_lethal_miss(tmp_path: Path):
+    path = tmp_path / "episode.json"
+    path.write_text(json.dumps(_episode_for_observation(_spidops_attack_observation(3), [0])), encoding="utf-8")
+    audit = audit_episode(path, "ジェニファー")
+    assert audit.metadata["finding_counts"]["LETHAL_ACTION_MISS"] == 1
+    assert audit.metadata["canonical_failure_counts"]["LETHAL_MISS"] == 1
+
+
+def test_canonical_taxonomy_preserves_required_zero_categories():
+    counts = canonical_failure_counts(
+        [
+            "LETHAL_ACTION_MISS",
+            "TERMINAL_ACTION_MISS",
+            "PRIZE_AWARE_ACTIVE_MISS",
+            "ENERGY_ATTACH_SUBOPTIMAL",
+            "SPREAD_TARGET_REGRET",
+        ]
+    )
+    assert counts == {
+        "LETHAL_MISS": 1,
+        "BAD_SPREAD_TARGET": 1,
+        "ENERGY_ATTACH_ERROR": 1,
+        "TERMINAL_MISS": 1,
+        "PROMOTION_ERROR": 1,
+    }
+
+
+def test_red_team_profiles_are_replay_grounded_subset_and_decks_are_exact_60():
     root = Path(__file__).resolve().parents[1]
     profiles = json.loads((root / "red_team" / "profiles.json").read_text(encoding="utf-8"))
     sources = json.loads((root / "red_team" / "replay_sources.json").read_text(encoding="utf-8"))
     manifest = json.loads((root / "red_team" / "manifest.json").read_text(encoding="utf-8"))
-    assert set(profiles) == set(sources) == set(manifest["matchups"])
+    assert set(profiles) == set(sources)
+    assert set(profiles).issubset(set(manifest["matchups"]))
     for slug in profiles:
         deck = [int(value) for value in (root / "red_team" / "decks" / f"{slug}.csv").read_text().splitlines() if value]
         assert len(deck) == 60
