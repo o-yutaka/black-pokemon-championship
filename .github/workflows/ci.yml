@@ -23,6 +23,7 @@ jobs:
           red_team/replay_grounded_agent.py
           scripts/run_official_red_team.py
           scripts/judge_replays.py
+          scripts/mine_loss_modes.py
           scripts/promotion_gate.py
           scripts/build_red_team_bundles.py
           scripts/audit_red_team_fidelity.py
