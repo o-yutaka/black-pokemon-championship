@@ -22,11 +22,7 @@ def legal_selection(obs: dict, action: Any) -> bool:
         return False
     if any(type(value) is not int for value in action):
         return False
-    return (
-        minimum <= len(action) <= maximum
-        and len(action) == len(set(action))
-        and all(0 <= value < len(options) for value in action)
-    )
+    return minimum <= len(action) <= maximum and len(action) == len(set(action)) and all(0 <= value < len(options) for value in action)
 
 
 def _result(obs: dict | None) -> int:
@@ -83,7 +79,16 @@ def run_game(
                 break
             started = time.perf_counter()
             try:
-                action = seat_bundles[actor].agent(obs, None)
+                bundle = seat_bundles[actor]
+                if bundle.decide is not None:
+                    decision = bundle.decide(obs, None)
+                    action = decision.selection
+                    decision_source = str(getattr(decision, "source", "unknown"))
+                    if decision_source == "fallback":
+                        runtime.fallback += 1
+                        error = error or f"agent fallback seat={actor}: {getattr(decision, 'error', None)}"
+                else:
+                    action = bundle.agent(obs, None)
             except Exception as exc:
                 runtime.crash += 1
                 error = f"agent crash seat={actor}: {type(exc).__name__}: {exc}"
@@ -221,8 +226,5 @@ def run_matchup(
         "".join(json.dumps(record.to_dict(), ensure_ascii=False) + "\n" for record in records),
         encoding="utf-8",
     )
-    (out / "summary.json").write_text(
-        json.dumps(summary.to_dict(), ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    (out / "summary.json").write_text(json.dumps(summary.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
     return summary
