@@ -7,7 +7,14 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from black_engine.championship_policy import ChampionshipRocketMewtwoPolicy
-from black_engine.rocket_mewtwo_worldline import T_ATTACK, T_END, T_ENERGY
+from black_engine.prize_truth import prize_value
+from black_engine.rocket_mewtwo_worldline import (
+    CTX_SWITCH,
+    CTX_TO_ACTIVE,
+    T_ATTACK,
+    T_END,
+    T_ENERGY,
+)
 
 from .models import DecisionFinding, EpisodeAudit
 from .replay_judge import audit_episode
@@ -217,9 +224,6 @@ def _closing_setup_delay_cases(path: Path, agent_name: str, audit: EpisodeAudit)
                 target
                 and policy._attack_option_damage(chosen, context) >= target.current_hp > 0
             )
-            # A nonterminal KO still permits the setup attachment before attacking.
-            # Keep the finding, but record it so later analysis can separate tempo
-            # trades from attacks that made no Prize progress.
 
         current = obs.get("current") if isinstance(obs.get("current"), dict) else {}
         turn = int(current.get("turn", 0) or 0)
@@ -252,13 +256,138 @@ def _closing_setup_delay_cases(path: Path, agent_name: str, audit: EpisodeAudit)
     return result
 
 
+def _scan_observed_attack_damage(logs: Any, seat: int, known: dict[int, int]) -> None:
+    if not isinstance(logs, list):
+        return
+    opponent = 1 - seat
+    last_attacker_card: int | None = None
+    for value in logs:
+        if not isinstance(value, dict):
+            continue
+        if value.get("type") == 15 and value.get("playerIndex") == opponent:
+            card = value.get("cardId")
+            last_attacker_card = card if type(card) is int else None
+            continue
+        if (
+            value.get("type") == 16
+            and value.get("playerIndex") == seat
+            and value.get("putDamageCounter") is False
+            and last_attacker_card is not None
+        ):
+            raw = value.get("value")
+            if type(raw) in (int, float):
+                damage = abs(int(raw))
+                known[last_attacker_card] = max(damage, known.get(last_attacker_card, 0))
+
+
+def _unready_ex_exposure_cases(path: Path, agent_name: str, audit: EpisodeAudit) -> list[LossModeCase]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    agents = _agents(payload)
+    if agent_name not in agents:
+        return []
+    seat = agents.index(agent_name)
+    policy = ChampionshipRocketMewtwoPolicy()
+    known_damage: dict[int, int] = {}
+    cases: list[LossModeCase] = []
+    steps = payload.get("steps") if isinstance(payload.get("steps"), list) else []
+
+    for step_index, pair in enumerate(steps[:-1]):
+        if not isinstance(pair, list) or seat >= len(pair) or not isinstance(pair[seat], dict):
+            continue
+        row = pair[seat]
+        obs = row.get("observation") if isinstance(row.get("observation"), dict) else None
+        if not isinstance(obs, dict):
+            continue
+        _scan_observed_attack_damage(obs.get("logs"), seat, known_damage)
+        if row.get("status") != "ACTIVE" or not isinstance(obs.get("select"), dict):
+            continue
+        next_pair = steps[step_index + 1]
+        next_row = (
+            next_pair[seat]
+            if isinstance(next_pair, list) and seat < len(next_pair) and isinstance(next_pair[seat], dict)
+            else {}
+        )
+        recorded = next_row.get("action")
+        if not isinstance(recorded, list) or len(recorded) != 1:
+            continue
+
+        select = obs["select"]
+        context_id = int(select.get("context", -1) or -1)
+        if context_id not in {CTX_SWITCH, CTX_TO_ACTIVE}:
+            continue
+
+        current = obs.get("current") if isinstance(obs.get("current"), dict) else {}
+        players = current.get("players") if isinstance(current.get("players"), list) else []
+        their_active = []
+        if 0 <= 1 - seat < len(players) and isinstance(players[1 - seat], dict):
+            their_active = players[1 - seat].get("active") or []
+        attacker_card = None
+        if their_active and isinstance(their_active[0], dict) and type(their_active[0].get("id")) is int:
+            attacker_card = their_active[0]["id"]
+        observed = known_damage.get(attacker_card, 0) if attacker_card is not None else 0
+        if observed <= 0:
+            continue
+
+        if attacker_card is not None:
+            policy.observed_damage_by_attacker[attacker_card] = observed
+        context = policy.build_context(obs)
+        truth = context["truth"]
+        actual = recorded[0]
+        if not (0 <= actual < len(truth.options)):
+            continue
+        current_active = truth.active
+        candidate = policy._promotion_candidate(truth.options[actual], context)
+        if current_active is None or candidate is None:
+            continue
+        if prize_value(current_active.card_id) != 1 or prize_value(candidate.card_id) <= 1:
+            continue
+        if policy._pokemon_attack_ready(candidate, context):
+            continue
+        if observed < candidate.current_hp:
+            continue
+
+        expected = policy._promotion_choice(context)
+        terminal_loss = truth.opponent_prizes > 0 and prize_value(candidate.card_id) >= truth.opponent_prizes
+        contract = REPAIR_CONTRACTS["UNREADY_EX_EXPOSED"]
+        cases.append(
+            LossModeCase(
+                episode_id=audit.episode_id,
+                agent_name=agent_name,
+                loss_mode="UNREADY_EX_EXPOSED",
+                detail_code="KNOWN_LETHAL_UNREADY_EX_SWITCH",
+                step=step_index,
+                turn=int(current.get("turn", 0) or 0),
+                severity="FATAL" if terminal_loss else "MAJOR",
+                recorded=list(recorded),
+                expected=[expected] if expected is not None and expected != actual else None,
+                evidence={
+                    "source": "official_attack_and_damage_logs",
+                    "opponent_attacker_card_id": attacker_card,
+                    "observed_damage": observed,
+                    "current_active_card_id": current_active.card_id,
+                    "current_active_prize_value": prize_value(current_active.card_id),
+                    "candidate_card_id": candidate.card_id,
+                    "candidate_hp": candidate.current_hp,
+                    "candidate_prize_value": prize_value(candidate.card_id),
+                    "candidate_attack_ready": False,
+                    "opponent_remaining_prizes": truth.opponent_prizes,
+                    "terminal_loss": terminal_loss,
+                },
+                policy_hook=contract["policy_hook"],
+                acceptance=contract["acceptance"],
+                confidence=1.0,
+            )
+        )
+    return cases
+
+
 def mine_episode(path: str | Path, agent_name: str) -> LossModeReport:
     replay = Path(path)
     audit = audit_episode(replay, agent_name)
     cases = [case for finding in audit.findings if (case := _finding_case(audit, finding)) is not None]
     cases.extend(_closing_setup_delay_cases(replay, agent_name, audit))
+    cases.extend(_unready_ex_exposure_cases(replay, agent_name, audit))
 
-    # One root-cause case per episode/step/loss mode is enough for the repair queue.
     unique: dict[tuple[int, str], LossModeCase] = {}
     for case in cases:
         key = (case.step, case.loss_mode)
