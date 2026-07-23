@@ -16,5 +16,7 @@ export async function uploadKaggleBundle(baseUrl: string, file: File): Promise<B
   if (typeof value.bundleId !== "string" || !Array.isArray(value.deck) || value.deck.length !== 60) {
     throw new Error("Bridge returned an invalid bundle result");
   }
-  return value as unknown as BundleInfo;
+  const info = value as unknown as BundleInfo;
+  window.dispatchEvent(new CustomEvent<number[]>("black:bundle-deck", { detail: info.deck }));
+  return info;
 }
