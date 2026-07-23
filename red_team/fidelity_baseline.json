@@ -1,17 +1,18 @@
 {
-  "source_head": "04a397ddc604f9a6058a43f7d21692433b4e7172",
-  "tested_source_digest": "sha256:59a38e4c065939434ff546414dfc8fef554ae169f3f81077cccf55545f5b47f2",
+  "source_head": "6004171bc7ac5f5e67fb9197836af6a0460a9ac2",
+  "tested_source_digest": "sha256:35bd33a44ce64a2a53718f1a1ca209a5afdb7353b14372baf3d6f827ee2efb53",
   "verdict": "PASS",
   "thresholds": {"minimum_overall": 0.35, "minimum_attack": 0.95},
   "evidence_identity": "REPLAY_GROUNDED_RECONSTRUCTION",
   "matchups": {
-    "grimmsnarl": {"episode_id": 87658435, "decisions": 58, "matches": 25, "overall_fidelity": 0.43103448275862066, "attack_decisions": 6, "attack_matches": 6, "attack_fidelity": 1.0, "passed": true},
-    "crustle_ogerpon": {"episode_id": 87655215, "decisions": 77, "matches": 31, "overall_fidelity": 0.4025974025974026, "attack_decisions": 6, "attack_matches": 6, "attack_fidelity": 1.0, "passed": true},
-    "mega_starmie_cinderace": {"episode_id": 87654188, "decisions": 62, "matches": 26, "overall_fidelity": 0.41935483870967744, "attack_decisions": 7, "attack_matches": 7, "attack_fidelity": 1.0, "passed": true},
-    "alakazam": {"episode_id": 87654157, "decisions": 113, "matches": 57, "overall_fidelity": 0.504424778761062, "attack_decisions": 17, "attack_matches": 17, "attack_fidelity": 1.0, "passed": true},
-    "mega_abomasnow": {"episode_id": 87653638, "decisions": 69, "matches": 26, "overall_fidelity": 0.37681159420289856, "attack_decisions": 11, "attack_matches": 11, "attack_fidelity": 1.0, "passed": true},
-    "mewtwo_mirror": {"episode_id": 87654027, "decisions": 52, "matches": 31, "overall_fidelity": 0.5961538461538461, "attack_decisions": 0, "attack_matches": 0, "attack_fidelity": 1.0, "passed": true}
+    "grimmsnarl": {"episode_id": 87658435, "replay_sha256": "34621763c3ab617f888fa552dcd2cbc1d1bbc80098d7ab884d6df2a99147b4cc", "decisions": 58, "matches": 25, "overall_fidelity": 0.43103448275862066, "attack_decisions": 6, "attack_matches": 6, "attack_fidelity": 1.0, "passed": true},
+    "crustle_ogerpon": {"episode_id": 87655215, "replay_sha256": "221d2138336c654f2ad011a2b3b81c04892a8e7bfa1970d59aaafed46b088945", "decisions": 77, "matches": 31, "overall_fidelity": 0.4025974025974026, "attack_decisions": 6, "attack_matches": 6, "attack_fidelity": 1.0, "passed": true},
+    "mega_starmie_cinderace": {"episode_id": 87654188, "replay_sha256": "d51176daa15bb35ae09c7b2c4a57d4e8f0b549e4157e848e9a4e07d69ea2dbb9", "decisions": 62, "matches": 26, "overall_fidelity": 0.41935483870967744, "attack_decisions": 7, "attack_matches": 7, "attack_fidelity": 1.0, "passed": true},
+    "alakazam": {"episode_id": 87654157, "replay_sha256": "0760a330756d0748df340cf999281b4d8eead779ed88bfe69e60d3f14ffbf661", "decisions": 113, "matches": 57, "overall_fidelity": 0.504424778761062, "attack_decisions": 17, "attack_matches": 17, "attack_fidelity": 1.0, "passed": true},
+    "mega_abomasnow": {"episode_id": 87653638, "replay_sha256": "35b1e8940bf03470c4be16e492fa3bb1a448e4049c892b291d5ef6783bd33c48", "decisions": 69, "matches": 26, "overall_fidelity": 0.37681159420289856, "attack_decisions": 11, "attack_matches": 11, "attack_fidelity": 1.0, "passed": true},
+    "mewtwo_mirror": {"episode_id": 87654027, "replay_sha256": "d858a38e6071ddbcb23e431f0416683877d522588b68bf342b4a015f3b79f897", "decisions": 52, "matches": 31, "overall_fidelity": 0.5961538461538461, "attack_decisions": 0, "attack_matches": 0, "attack_fidelity": 1.0, "passed": true}
   },
+  "totals": {"decisions": 431, "matches": 196, "attack_decisions": 47, "attack_matches": 47},
   "skipped": {
     "cynthia_garchomp": "No mounted exact official replay; frozen BLACK candidate evidence only.",
     "dragapult_cinderace": "Official replay deck and frozen BLACK-C deck are different 60-card identities; exact-action fidelity comparison prohibited."
