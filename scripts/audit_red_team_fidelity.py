@@ -23,8 +23,11 @@ def main() -> int:
     sources = json.loads((ROOT / "red_team" / "replay_sources.json").read_text(encoding="utf-8"))
     report = {"verdict": "PASS", "evidence_identity": "REPLAY_GROUNDED_RECONSTRUCTION", "matchups": {}, "skipped": {}}
     for slug, source in sources.items():
-        if "filename" not in source:
-            report["skipped"][slug] = {"reason": "no mounted official replay", "source": source}
+        if source.get("source_type") != "official_replay":
+            report["skipped"][slug] = {
+                "reason": "fidelity requires an exact official-replay deck/policy identity",
+                "source": source,
+            }
             continue
         replay_path = args.replay_dir / source["filename"]
         if not replay_path.is_file():
