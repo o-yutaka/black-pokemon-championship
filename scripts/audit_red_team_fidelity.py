@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -10,6 +11,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from red_team.replay_grounded_agent import ReplayGroundedPolicy, read_deck
+
+
+def sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def main() -> int:
@@ -33,6 +38,17 @@ def main() -> int:
         if not replay_path.is_file():
             report["verdict"] = "HOLD"
             report["matchups"][slug] = {"passed": False, "error": f"missing replay {replay_path}"}
+            continue
+        actual_sha = sha256(replay_path)
+        expected_sha = source.get("sha256")
+        if actual_sha != expected_sha:
+            report["verdict"] = "HOLD"
+            report["matchups"][slug] = {
+                "passed": False,
+                "error": "official replay hash mismatch",
+                "expected_sha256": expected_sha,
+                "actual_sha256": actual_sha,
+            }
             continue
         payload = json.loads(replay_path.read_text(encoding="utf-8"))
         seat = int(source["seat"])
@@ -67,6 +83,7 @@ def main() -> int:
             report["verdict"] = "HOLD"
         report["matchups"][slug] = {
             "episode_id": source["episode_id"],
+            "replay_sha256": actual_sha,
             "decisions": total,
             "matches": matched,
             "overall_fidelity": overall,
