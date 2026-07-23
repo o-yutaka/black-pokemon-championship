@@ -116,7 +116,7 @@ Each case has a separate evidence tier:
 
 ### Current 14-replay baseline
 
-At source head `8a60d9aaffb0ee8670fea2b0d987e4afb6814c50`:
+Baseline implementation head: `c65590fc5072edd6abd1896311f03119ec4c7bb2`.
 
 - 14 episodes: 11 losses, 3 wins;
 - 68 mined cases;
