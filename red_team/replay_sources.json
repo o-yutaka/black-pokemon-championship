@@ -1,8 +1,10 @@
 {
-  "grimmsnarl": {"episode_id": 87658435, "filename": "87658435.json", "seat": 1},
-  "crustle_ogerpon": {"episode_id": 87655215, "filename": "87655215.json", "seat": 1},
-  "mega_starmie_cinderace": {"episode_id": 87654188, "filename": "87654188.json", "seat": 1},
-  "alakazam": {"episode_id": 87654157, "filename": "87654157.json", "seat": 0},
-  "mega_abomasnow": {"episode_id": 87653638, "filename": "87653638.json", "seat": 1},
-  "mewtwo_mirror": {"episode_id": 87654027, "filename": "87654027.json", "seat": 1}
+  "grimmsnarl": {"source_type": "official_replay", "episode_id": 87658435, "filename": "87658435.json", "seat": 1},
+  "crustle_ogerpon": {"source_type": "official_replay", "episode_id": 87655215, "filename": "87655215.json", "seat": 1},
+  "mega_starmie_cinderace": {"source_type": "official_replay", "episode_id": 87654188, "filename": "87654188.json", "seat": 1},
+  "alakazam": {"source_type": "official_replay", "episode_id": 87654157, "filename": "87654157.json", "seat": 0},
+  "mega_abomasnow": {"source_type": "official_replay", "episode_id": 87653638, "filename": "87653638.json", "seat": 1},
+  "mewtwo_mirror": {"source_type": "official_replay", "episode_id": 87654027, "filename": "87654027.json", "seat": 1},
+  "cynthia_garchomp": {"source_type": "frozen_black_candidate", "repository_ref": "black/hybrid-intelligence-v1", "deck_path": "candidates/garchomp_spiritomb/deck.csv", "note": "No mounted source replay; deck is frozen from the prior BLACK candidate."},
+  "dragapult_cinderace": {"source_type": "official_replay_and_frozen_black_candidate", "episode_id": 87652044, "filename": "87652044.json", "seat": 0, "repository_ref": "feature/dragapult-worldline-runners", "deck_path": "deck.csv"}
 }
