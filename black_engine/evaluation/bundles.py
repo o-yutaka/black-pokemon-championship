@@ -14,6 +14,7 @@ class LoadedBundle:
     agent: Callable[[dict, Any], list[int]]
     deck: list[int]
     sha256: str
+    decide: Callable[[dict, Any], Any] | None = None
 
 
 def tree_sha256(root: Path) -> str:
@@ -45,7 +46,6 @@ def load_bundle(root: str | Path) -> LoadedBundle:
     missing = [str(path) for path in required if not path.is_file()]
     if missing:
         raise FileNotFoundError(f"bundle missing required files: {missing}")
-
     code = (bundle / "main.py").read_text(encoding="utf-8")
     old_cwd = Path.cwd()
     old_path = list(sys.path)
@@ -66,7 +66,15 @@ def load_bundle(root: str | Path) -> LoadedBundle:
         deck = agent({"current": None, "select": None, "logs": [], "step": 0}, None)
         if not isinstance(deck, list) or len(deck) != 60 or any(type(value) is not int for value in deck):
             raise RuntimeError("bundle agent did not return an exact 60-card integer deck")
-        return LoadedBundle(bundle, agent, list(deck), tree_sha256(bundle))
+        runtime = namespace.get("RUNTIME")
+        decide = getattr(runtime, "decide", None)
+        return LoadedBundle(
+            bundle,
+            agent,
+            list(deck),
+            tree_sha256(bundle),
+            decide if callable(decide) else None,
+        )
     finally:
         os.chdir(old_cwd)
         sys.path[:] = old_path
