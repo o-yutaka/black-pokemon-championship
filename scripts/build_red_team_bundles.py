@@ -64,6 +64,17 @@ def validate_runtime_layout(root):
 '''
 
 
+def evidence_identity(source: dict) -> str:
+    source_type = source.get("source_type")
+    if source_type == "official_replay":
+        return "REPLAY_GROUNDED_RECONSTRUCTION"
+    if source_type == "official_replay_and_frozen_black_candidate":
+        return "REPLAY_AND_FROZEN_BLACK_RECONSTRUCTION"
+    if source_type == "frozen_black_candidate":
+        return "FROZEN_BLACK_CANDIDATE_RECONSTRUCTION"
+    raise ValueError(f"unknown Red Team source_type={source_type!r}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build fixed replay-grounded Red Team Bundles with official cg files.")
     parser.add_argument("--cg-dir", required=True, type=Path)
@@ -71,7 +82,10 @@ def main() -> int:
     parser.add_argument("--lock-out", default=ROOT / "artifacts" / "red_team_manifest.lock.json", type=Path)
     args = parser.parse_args()
     profiles = json.loads((ROOT / "red_team" / "profiles.json").read_text(encoding="utf-8"))
+    sources = json.loads((ROOT / "red_team" / "replay_sources.json").read_text(encoding="utf-8"))
     manifest = json.loads((ROOT / "red_team" / "manifest.json").read_text(encoding="utf-8"))
+    if set(profiles) != set(sources) or set(profiles) != set(manifest["matchups"]):
+        raise RuntimeError("profiles, sources, and manifest matchup sets must match exactly")
     for name in REQUIRED_CG:
         if not (args.cg_dir / name).is_file():
             raise FileNotFoundError(args.cg_dir / name)
@@ -95,7 +109,8 @@ def main() -> int:
             bundle_path = str(bundle)
         manifest["matchups"][slug]["bundle_path"] = bundle_path
         manifest["matchups"][slug]["bundle_sha256"] = digest
-        manifest["matchups"][slug]["evidence_identity"] = "REPLAY_GROUNDED_RECONSTRUCTION"
+        manifest["matchups"][slug]["evidence_identity"] = evidence_identity(sources[slug])
+        manifest["matchups"][slug]["source"] = sources[slug]
         print(f"{slug} {digest}")
     args.lock_out.parent.mkdir(parents=True, exist_ok=True)
     args.lock_out.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
