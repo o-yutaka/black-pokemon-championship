@@ -28,6 +28,7 @@ LOSS_MODES = (
 )
 
 SEVERITY_WEIGHT = {"FATAL": 100, "MAJOR": 25, "MINOR": 5}
+EVIDENCE_WEIGHT = {"CAUSAL": 3, "DIRECT": 2, "CANDIDATE": 1}
 
 FINDING_TO_LOSS_MODE = {
     "ATTACK_WITHOUT_BACKUP": "NO_BACKUP_AFTER_SPIDOPS",
@@ -89,10 +90,11 @@ class LossModeCase:
     policy_hook: str
     acceptance: str
     confidence: float
+    evidence_level: str = "DIRECT"
 
     @property
     def priority(self) -> int:
-        return SEVERITY_WEIGHT.get(self.severity, 0)
+        return SEVERITY_WEIGHT.get(self.severity, 0) * EVIDENCE_WEIGHT.get(self.evidence_level, 1)
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -109,11 +111,13 @@ class LossModeReport:
 
     def to_dict(self) -> dict[str, Any]:
         counts = Counter(case.loss_mode for case in self.cases)
+        levels = Counter(case.evidence_level for case in self.cases)
         return {
             "episode_id": self.episode_id,
             "agent_name": self.agent_name,
             "result": self.result,
             "counts": {mode: counts.get(mode, 0) for mode in LOSS_MODES},
+            "evidence_levels": dict(levels),
             "priority": sum(case.priority for case in self.cases),
             "cases": [case.to_dict() for case in self.cases],
         }
@@ -127,10 +131,14 @@ def _agents(payload: dict) -> list[str]:
 
 def _finding_case(audit: EpisodeAudit, finding: DecisionFinding) -> LossModeCase | None:
     loss_mode = FINDING_TO_LOSS_MODE.get(finding.code)
+    evidence_level = "DIRECT"
     if finding.code == "ENERGY_ATTACH_SUBOPTIMAL":
         best_plan = str(finding.evidence.get("best_plan", ""))
         if best_plan in {"FIRST_MEWTWO_READY", "SECOND_MEWTWO_DEVELOPMENT"}:
             loss_mode = "MEWTWO_SETUP_DELAY"
+            # This is a counterfactual ranking against the current policy. It is a
+            # repair candidate until same-seed official-engine A/B proves causality.
+            evidence_level = "CANDIDATE"
     if loss_mode is None:
         return None
     contract = REPAIR_CONTRACTS[loss_mode]
@@ -147,7 +155,8 @@ def _finding_case(audit: EpisodeAudit, finding: DecisionFinding) -> LossModeCase
         evidence={**finding.evidence, "source": "replay_judge"},
         policy_hook=contract["policy_hook"],
         acceptance=contract["acceptance"],
-        confidence=1.0,
+        confidence=1.0 if evidence_level == "DIRECT" else 0.75,
+        evidence_level=evidence_level,
     )
 
 
@@ -248,7 +257,8 @@ def _closing_setup_delay_cases(path: Path, agent_name: str, audit: EpisodeAudit)
                 },
                 policy_hook=contract["policy_hook"],
                 acceptance=contract["acceptance"],
-                confidence=0.98,
+                confidence=0.90,
+                evidence_level="DIRECT",
             )
         )
     return result
@@ -374,6 +384,7 @@ def _unready_ex_exposure_cases(path: Path, agent_name: str, audit: EpisodeAudit)
                 policy_hook=contract["policy_hook"],
                 acceptance=contract["acceptance"],
                 confidence=1.0,
+                evidence_level="CAUSAL" if terminal_loss else "DIRECT",
             )
         )
     return cases
@@ -390,7 +401,14 @@ def mine_episode(path: str | Path, agent_name: str) -> LossModeReport:
     for case in cases:
         key = (case.step, case.loss_mode)
         existing = unique.get(key)
-        if existing is None or case.priority > existing.priority or case.confidence > existing.confidence:
+        if (
+            existing is None
+            or case.priority > existing.priority
+            or (
+                case.priority == existing.priority
+                and case.confidence > existing.confidence
+            )
+        ):
             unique[key] = case
     ordered = tuple(sorted(unique.values(), key=lambda case: (-case.priority, case.step, case.loss_mode)))
     return LossModeReport(audit.episode_id, agent_name, audit.result, ordered)
@@ -400,6 +418,7 @@ def aggregate_reports(reports: Iterable[LossModeReport]) -> dict[str, Any]:
     values = list(reports)
     counts: Counter[str] = Counter()
     priority: Counter[str] = Counter()
+    evidence_levels: Counter[str] = Counter()
     episodes: dict[str, set[str]] = {mode: set() for mode in LOSS_MODES}
     examples: dict[str, list[dict[str, Any]]] = {mode: [] for mode in LOSS_MODES}
 
@@ -407,6 +426,7 @@ def aggregate_reports(reports: Iterable[LossModeReport]) -> dict[str, Any]:
         for case in report.cases:
             counts[case.loss_mode] += 1
             priority[case.loss_mode] += case.priority
+            evidence_levels[case.evidence_level] += 1
             episodes[case.loss_mode].add(str(case.episode_id))
             if len(examples[case.loss_mode]) < 5:
                 examples[case.loss_mode].append(case.to_dict())
@@ -414,11 +434,13 @@ def aggregate_reports(reports: Iterable[LossModeReport]) -> dict[str, Any]:
     queue = []
     for mode in LOSS_MODES:
         contract = REPAIR_CONTRACTS[mode]
+        mode_cases = [case for report in values for case in report.cases if case.loss_mode == mode]
         queue.append(
             {
                 "loss_mode": mode,
                 "count": counts.get(mode, 0),
                 "priority": priority.get(mode, 0),
+                "evidence_levels": dict(Counter(case.evidence_level for case in mode_cases)),
                 "episodes": sorted(episodes[mode]),
                 "policy_hook": contract["policy_hook"],
                 "acceptance": contract["acceptance"],
@@ -432,5 +454,6 @@ def aggregate_reports(reports: Iterable[LossModeReport]) -> dict[str, Any]:
         "wins": sum(report.result == "WIN" for report in values),
         "total_cases": sum(counts.values()),
         "counts": {mode: counts.get(mode, 0) for mode in LOSS_MODES},
+        "evidence_levels": dict(evidence_levels),
         "repair_queue": queue,
     }
