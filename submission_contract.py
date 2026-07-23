@@ -5,7 +5,7 @@ from typing import Any
 
 from black_engine.support import read_deck, validate_deck
 
-CANDIDATE = "rocket_mewtwo_xerosic2"
+CANDIDATE = "rocket_mewtwo_championship_v1"
 ACE_SPEC_IDS = {1159}
 
 ROOT_FILE_ORDER = (
@@ -21,6 +21,7 @@ BLACK_ENGINE_FILE_ORDER = (
     "mewtwo_truth.py",
     "rocket_mewtwo_worldline.py",
     "rocket_mewtwo_worldline_v2.py",
+    "championship_policy.py",
     "worldline/__init__.py",
     "worldline/model.py",
     "worldline/judge.py",
@@ -94,6 +95,8 @@ def validate_source_layout(root: str | Path) -> dict:
     ]
     if forbidden:
         raise SubmissionContractError(f"non-canonical main.py tokens: {forbidden}")
+    if "ChampionshipRocketMewtwoPolicy" not in main_text:
+        raise SubmissionContractError("main.py is not wired to championship policy")
 
     return {"root": str(root), "candidate": CANDIDATE, "deck": report}
 
