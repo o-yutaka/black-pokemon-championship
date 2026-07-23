@@ -16,8 +16,16 @@ ROOT_FILE_ORDER = (
 BLACK_ENGINE_FILE_ORDER = (
     "__init__.py",
     "policy.py",
+    "prize_truth.py",
+    "dragapult_worldline.py",
+    "dragapult_worldline_v2.py",
     "runtime.py",
     "support.py",
+    "worldline/__init__.py",
+    "worldline/model.py",
+    "worldline/judge.py",
+    "worldline/vision.py",
+    "worldline/pending.py",
 )
 REQUIRED_CG_FILES = (
     "__init__.py",
@@ -81,7 +89,7 @@ def validate_source_layout(root: str | Path) -> dict:
     main_text = (root / "main.py").read_text(encoding="utf-8")
     forbidden = [
         token
-        for token in ("candidates/", "build_hybrid", "candidate router")
+        for token in ("candidates/", "build_hybrid", "candidate router", "RocketMewtwo")
         if token.lower() in main_text.lower()
     ]
     if forbidden:

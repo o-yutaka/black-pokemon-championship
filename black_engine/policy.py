@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
+from .prize_truth import prize_value
 from .support import (
     ScoredPolicy, active, bench, card_id, damage_points, energy_count, in_play,
     my_index, option_attack_id, option_card_id, remaining_hp, zone_cards,
@@ -79,8 +80,7 @@ def _effect_id(select: dict) -> int:
 
 
 def _prize_value(pokemon: dict[str, Any]) -> int:
-    maximum = pokemon.get("maxHp") or pokemon.get("maxHP") or 0
-    return 3 if type(maximum) in (int, float) and maximum >= 330 else 2 if type(maximum) in (int, float) and maximum >= 210 else 1
+    return prize_value(pokemon)
 
 
 class DragapultPolicy(ScoredPolicy):
