@@ -117,13 +117,7 @@ def test_terminal_action_freeze_attacks_instead_of_searching():
         options=(
             {"type": 7, "cardId": 1134},
             {"type": 7, "cardId": 1219},
-            {
-                "type": 13,
-                "attackId": SPIDOPS_ROCKET_RUSH,
-                "playerIndex": 0,
-                "inPlayArea": 4,
-                "inPlayIndex": 0,
-            },
+            {"type": 13, "attackId": SPIDOPS_ROCKET_RUSH, "playerIndex": 0, "inPlayArea": 4, "inPlayIndex": 0},
             {"type": 14},
         ),
     )
@@ -166,13 +160,7 @@ def test_observed_nonpersistent_attack_pair_is_not_repeated():
         bench=rocket_bench_with_spidops((1,)),
         opponent_active=opponent,
         options=(
-            {
-                "type": 13,
-                "attackId": MEWTWO_ERASURE_BALL,
-                "playerIndex": 0,
-                "inPlayArea": 4,
-                "inPlayIndex": 0,
-            },
+            {"type": 13, "attackId": MEWTWO_ERASURE_BALL, "playerIndex": 0, "inPlayArea": 4, "inPlayIndex": 0},
             {"type": 14},
         ),
     )
@@ -189,12 +177,30 @@ def test_deck_clock_suppresses_optional_search_action():
         opponent_active=pokemon(GRIMMSNARL_EX, 900, 320, 320),
         our_prizes=4,
         deck_count=5,
-        options=(
-            {"type": 7, "cardId": 1134},
-            {"type": 14},
-        ),
+        options=({"type": 7, "cardId": 1134}, {"type": 14}),
     )
     policy = ChampionshipRocketMewtwoPolicy()
     ctx = policy.build_context(obs)
     assert ctx["deck_clock_critical"]
     assert policy.choose_single(obs["select"]["option"], ctx) == 1
+
+
+def test_reset_episode_clears_cross_game_memory():
+    policy = ChampionshipRocketMewtwoPolicy()
+    policy.observed_damage_by_attacker[999] = 180
+    policy.nonpersistent_attack_pairs.add((431, 608, 999))
+    policy._pending_attack = (431, 608, 900, 999, 200, 4)
+    policy._previous_mine_hp[10] = 100
+    policy._previous_opponent_active_id = 999
+    policy.desired_active_serial = 10
+    policy.desired_opponent_serial = 900
+    policy.last_runner_id = "DIRTY"
+    policy.reset_episode()
+    assert policy.observed_damage_by_attacker == {}
+    assert policy.nonpersistent_attack_pairs == set()
+    assert policy._pending_attack is None
+    assert policy._previous_mine_hp == {}
+    assert policy._previous_opponent_active_id is None
+    assert policy.desired_active_serial is None
+    assert policy.desired_opponent_serial is None
+    assert policy.last_runner_id == "BOOT"
