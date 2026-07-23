@@ -1,20 +1,25 @@
 {
-  "schema_version": "1.1",
+  "schema_version": "1.2",
   "candidate": "rocket_mewtwo_championship_v1",
   "evidence_law": {
-    "engine": "official cg/libcg.so only",
+    "engine": "official cg/libcg.so only; exact SHA required before run",
     "opponents": "real fixed opponent Bundles only",
     "seat_balance": true,
     "paired_seed_claim": false,
+    "search_api": "absent from current production bundle; enforced by static gate",
     "forbidden": [
       "deterministic_fallback opponent",
       "GenericHeuristicPolicy as promotion evidence",
       "FLM win rate",
       "pre-fix or mixed-head aggregation",
-      "oracle evidence reported as production"
+      "oracle evidence reported as production",
+      "unlocked candidate or engine identity",
+      "training replay reused as post-fix holdout"
     ]
   },
   "promotion": {
+    "candidate_bundle_sha256": "REQUIRED_BEFORE_RUN",
+    "engine_sha256": "REQUIRED_BEFORE_RUN",
     "minimum_runtime_completed": 1000,
     "minimum_games_per_matchup": 200,
     "required_matchups": [
@@ -41,7 +46,8 @@
       "PROMOTION_ERROR"
     ],
     "minimum_postfix_replay_episodes": 5,
-    "require_zero_fatal_replay_findings": true
+    "require_zero_fatal_replay_findings": true,
+    "required_replay_corpus_kind": "POST_FIX_HOLDOUT"
   },
   "matchups": {
     "crustle_ogerpon": {
