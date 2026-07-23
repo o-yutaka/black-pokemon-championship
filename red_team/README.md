@@ -1,130 +1,109 @@
 # BLACK Official Red Team
 
-Promotion evidence is accepted only when every opponent directory is a complete, fixed, executable CABT Bundle and both agents run on the official `cg/libcg.so` engine.
+Promotion evidence is accepted only when every opponent directory is a complete fixed CABT Bundle, the candidate/opponents use the same exact official `cg/libcg.so`, and all identities are frozen in one lock manifest.
 
-```text
-main.py
-deck.csv
-profile.json
-red_agent.py
-submission_contract.py
-cg/__init__.py
-cg/api.py
-cg/game.py
-cg/libcg.so
-cg/sim.py
-cg/utils.py
-```
+## Evidence classes
 
-The evaluator never substitutes `deterministic_fallback`, FLM, or `GenericHeuristicPolicy`. The legacy fallback evaluation scripts are intentionally disabled.
+- `PROMOTION`: a frozen executable BLACK challenger Bundle accepted as strength evidence.
+- `STRESS_ONLY`: a replay-grounded reconstruction useful for regression and failure discovery, but not accepted as leaderboard-strength proof.
 
-## Evidence identity
+The policies reconstructed from official replays are not the original competitors' private source code. Replay action fidelity is reconstruction agreement, not opponent strength.
 
-The opponent policies in this repository are reconstructions. They are not represented as the original competitors' private source code.
+## Required five-matchup pool
 
-- `REPLAY_GROUNDED_RECONSTRUCTION`: exact 60-card official replay deck plus deck-specific action priorities checked against the source replay.
-- `REPLAY_AND_FROZEN_BLACK_RECONSTRUCTION`: official replay evidence combined with a frozen BLACK challenger deck.
-- `FROZEN_BLACK_CANDIDATE_RECONSTRUCTION`: frozen prior BLACK candidate when the source replay is not mounted.
+Each block is exactly 200 games, candidate seat 0/1 exactly 100 times:
 
-`audit_red_team_fidelity.py` reports exact-action and attack-action agreement only for sources with a mounted official replay. It never converts reconstruction fidelity into a claimed ladder win rate.
-
-## Matchups
-
-Required promotion core, 200 seat-balanced games each:
-
-- Crustle/Cornerstone Ogerpon
+- Crustle / Cornerstone Ogerpon
 - Cynthia's Garchomp
-- Grimmsnarl/Froslass
-- Dragapult/Cinderace
+- Grimmsnarl / Froslass
+- Dragapult / Cinderace
 - Rocket Mewtwo mirror
 
-Additional diagnostic blocks:
+Current strength status:
 
-- Mega Starmie/Cinderace
-- Alakazam/Dunsparce
-- Mega Abomasnow/Kyogre
+- `Cynthia's Garchomp`: `PROMOTION`
+- `Dragapult / Cinderace`: `PROMOTION`
+- `Crustle / Ogerpon`: `STRESS_ONLY`
+- `Grimmsnarl / Froslass`: `STRESS_ONLY`
+- `Mewtwo mirror`: `STRESS_ONLY`
 
-Total promotion runtime minimum: 1,000 completed games with crash, runtime error, illegal action, mandatory-empty, timeout, fallback, and Search leak all equal to zero.
+The championship gate therefore remains `HOLD` until the three stress-only opponents are replaced or independently promoted to frozen strong challenger Bundles.
 
-## Build fixed Bundles
+## Build one identity lock
 
 ```bash
 python scripts/build_red_team_bundles.py \
-  --cg-dir /home/user/HROS/submission/cg \
+  --cg-dir /ABSOLUTE/OFFICIAL/cg \
+  --candidate-bundle /ABSOLUTE/EXTRACTED/CANDIDATE \
   --lock-out artifacts/red_team_manifest.lock.json
 ```
 
-This copies the official `cg` files into each generated Bundle and writes exact directory-tree SHA-256 values into the lock manifest. Generated Bundles are research artifacts; source decks, profiles, and evidence identities remain versioned.
+The lock binds:
 
-## Verify replay fidelity
+- one candidate tree SHA-256;
+- one `libcg.so` SHA-256;
+- every opponent tree SHA-256.
 
-```bash
-python scripts/audit_red_team_fidelity.py \
-  --replay-dir /path/to/official-replays
-```
+Missing, mixed, or placeholder identities fail closed.
 
-Default acceptance for replay-grounded reconstruction is overall action agreement at least 35% and attack agreement at least 95%. This is a reconstruction-quality gate, not matchup promotion evidence.
-
-## Run the official Red Team
+## Official evaluation
 
 ```bash
 python scripts/run_official_red_team.py \
-  --cg-dir /home/user/HROS/submission/cg \
-  --candidate-bundle /path/to/extracted-candidate \
+  --cg-dir /ABSOLUTE/OFFICIAL/cg \
+  --candidate-bundle /ABSOLUTE/EXTRACTED/CANDIDATE \
   --manifest artifacts/red_team_manifest.lock.json
 ```
 
-Every matchup alternates candidate seat 0/1. Results include Wilson intervals, seat-specific records, decision timing, Bundle hashes, and separate runtime fault counters.
+The runner verifies the actual imported `cg.game` directory, checks every bundled `libcg.so` against the locked engine, reloads both agents for every game, measures internal submission fallback, and uses a hard Python-decision watchdog. Runtime counters remain separate from wins.
+
+The current production Bundle does not use Search API. `scripts/static_gate.py` enforces that absence; `search_resource_leak=0` is not accepted merely by leaving an uninstrumented counter at zero.
+
+## Replay Mining training corpus
+
+The 14 Replay Mining inputs are frozen by exact SHA-256 in `training_replay_corpus.json`. They cannot be reused as post-fix holdout evidence.
+
+Corrected training baseline:
+
+- 14 episodes: 11 losses / 3 wins;
+- 54 cases: 1 causal / 17 direct / 36 candidate;
+- `MEWTWO_SETUP_DELAY`: 43 — 7 direct and 36 candidate;
+- `NO_BACKUP_AFTER_SPIDOPS`: 3 direct;
+- `UNREADY_EX_EXPOSED`: 2 — one direct and one causal/FATAL;
+- `NONPERSISTENT_DAMAGE_LOOP`: 3 direct;
+- `DECK_OUT_CLOCK`: 3 direct.
+
+Winning episodes and immediate Prize-taking KOs are excluded from loss-mode counts.
+
+## Post-fix holdout Replay gate
+
+```bash
+python scripts/judge_replays.py NEW_1.json NEW_2.json NEW_3.json NEW_4.json NEW_5.json \
+  --agent-name ジェニファー \
+  --candidate-sha256 <LOCKED_CANDIDATE_TREE_SHA256> \
+  --corpus-id postfix-holdout-001 \
+  --corpus-kind POST_FIX_HOLDOUT
+```
+
+Promotion requires:
+
+- at least five unique post-fix Replay files and episode IDs;
+- candidate SHA matching the official run;
+- zero overlap with the frozen training corpus;
+- zero fatal findings;
+- zero applicable canonical failure counts.
+
+`BAD_SPREAD_TARGET` is explicitly not applicable to the current fixed Rocket Mewtwo deck because it has no spread-target action contract. It is not reported as supported merely because its count is zero.
 
 ## Promotion verdict
 
 ```bash
 python scripts/promotion_gate.py \
   --manifest artifacts/red_team_manifest.lock.json \
-  --results artifacts/official_red_team
+  --results artifacts/official_red_team \
+  --replay-summary artifacts/replay_judge/summary.json
 ```
 
-The command returns nonzero and `HOLD` unless every required matchup, seat count, performance threshold, Bundle identity, and runtime condition passes.
+The verdict stays `HOLD` unless all required opponent Bundles are promotion-grade, all exact identities match, all five blocks pass, at least 1,000 games complete, every runtime fault counter is zero, and the candidate-bound post-fix holdout gate passes.
 
-## Evidence levels
-
-- `PROMOTION`: current-head candidate, fixed hashes, official engine, seat-balanced, all runtime counters included.
-- `ILLUSTRATIVE`: debugging only; cannot promote or reject the candidate.
-- `ORACLE`: research-only and never production evidence.
-
-## Replay loss mining
-
-```bash
-python scripts/mine_loss_modes.py /path/to/replays/*.json \
-  --agent-name ジェニファー \
-  --out-dir artifacts/loss_mining
-```
-
-The miner emits per-episode evidence, `repair_queue.json`, and `REPAIR_QUEUE.md` for five championship loss modes:
-
-- `MEWTWO_SETUP_DELAY`
-- `NO_BACKUP_AFTER_SPIDOPS`
-- `UNREADY_EX_EXPOSED`
-- `NONPERSISTENT_DAMAGE_LOOP`
-- `DECK_OUT_CLOCK`
-
-Each case has a separate evidence tier:
-
-- `CAUSAL`: the recorded action directly completes the demonstrated loss path.
-- `DIRECT`: official legal options, board state, damage logs, or persistent-HP evidence directly establish the violated contract; same-seed A/B is still required before claiming win-rate gain.
-- `CANDIDATE`: the current policy ranks another legal action higher. This enters the repair queue but is never automatically converted into a hard rule.
-
-### Current 14-replay baseline
-
-Baseline implementation head: `c65590fc5072edd6abd1896311f03119ec4c7bb2`.
-
-- 14 episodes: 11 losses, 3 wins;
-- 68 mined cases;
-- evidence levels: 1 causal, 23 direct, 44 candidate;
-- `MEWTWO_SETUP_DELAY`: 55 — 11 direct turn-close cases and 44 policy-ranked candidates;
-- `NO_BACKUP_AFTER_SPIDOPS`: 3 direct;
-- `UNREADY_EX_EXPOSED`: 2 — one direct and one causal/FATAL;
-- `NONPERSISTENT_DAMAGE_LOOP`: 4 direct;
-- `DECK_OUT_CLOCK`: 4 direct.
-
-The causal/FATAL case is official episode `87658435`, step 106, turn 11: Mimikyu was replaced by an unready Mewtwo ex at 170 HP after Grimmsnarl ex had demonstrated 180 damage, while the opponent had two Prizes remaining.
+No same-seed claim is made because the public CABT `battle_start` contract does not expose a controllable seed in this runner. Performance improvement still requires official execution and appropriately designed A/B evidence.
