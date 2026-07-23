@@ -199,6 +199,19 @@ def _resolve_in_play_serial(current: dict, player_index: int, raw: dict) -> int 
     return _serial(value)
 
 
+def _resolve_area_index_serial(current: dict, player_index: int, raw: dict) -> int | None:
+    """Resolve official SELECT_POKEMON options that use area/index.
+
+    CABT promotion and switch contexts frequently expose legal choices as
+    ``{"type": 3, "area": 5, "index": N}`` rather than inPlayArea/inPlayIndex
+    or explicit serial fields.  Only Active/Bench zones resolve here, so hand,
+    deck, discard and Prize selections remain untouched.
+    """
+
+    value = _in_play_value(current, player_index, raw.get("area"), raw.get("index"))
+    return _serial(value)
+
+
 def _resolve_energy_selection(
     current: dict,
     actor: int,
@@ -247,6 +260,7 @@ def _option(raw_value: Any, action_index: int, current: dict, select: dict, acto
     source_serial = _explicit_int(raw, ("sourceSerial",))
     target_serial = _explicit_int(raw, ("targetSerial", "pokemonSerial", "toSerial"))
     in_play_serial = _resolve_in_play_serial(current, player_index, raw)
+    area_index_serial = _resolve_area_index_serial(current, player_index, raw)
 
     if action_type in {T_ATTACK, T_ABILITY, T_RETREAT}:
         source_serial = source_serial if source_serial is not None else _explicit_int(raw, ("serial",))
@@ -260,6 +274,7 @@ def _option(raw_value: Any, action_index: int, current: dict, select: dict, acto
     else:
         target_serial = target_serial if target_serial is not None else _explicit_int(raw, ("serial",))
         target_serial = target_serial if target_serial is not None else in_play_serial
+        target_serial = target_serial if target_serial is not None else area_index_serial
 
     energy_card_id, energy_source_serial = _resolve_energy_selection(current, actor, raw)
     if cid < 0 and energy_card_id is not None:
