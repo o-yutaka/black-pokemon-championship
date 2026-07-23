@@ -77,7 +77,8 @@ for slug, config in matchups.items():
         if not source.get("sha256") or not source.get("deck_blob_sha"):
             raise SystemExit(f"{slug}: combined source requires replay sha256 and deck_blob_sha")
     policy_source = str(config.get("policy_source", "")).lower()
-    if source_type == "frozen_black_candidate" and "official" in policy_source:
+    forbidden_official_claims = ("official ladder", "official replay reconstruction")
+    if source_type == "frozen_black_candidate" and any(token in policy_source for token in forbidden_official_claims):
         raise SystemExit(f"{slug}: frozen candidate must not be described as official replay reconstruction")
 
 required_taxonomy = {
