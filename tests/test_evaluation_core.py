@@ -24,7 +24,12 @@ def pokemon(cid, serial, hp, max_hp, energies=()):
 
 def clean_replay_summary():
     return {
+        "candidate_bundle_sha256": "candidate",
+        "corpus_id": "postfix-holdout-001",
+        "corpus_kind": "POST_FIX_HOLDOUT",
         "episodes": 5,
+        "episode_ids": [1, 2, 3, 4, 5],
+        "source_sha256": [f"{value:064x}" for value in range(1, 6)],
         "fatal": 0,
         "canonical_failure_counts": {
             "LETHAL_MISS": 0,
@@ -40,6 +45,27 @@ def clean_replay_summary():
             "TERMINAL_MISS": "BUILT_IN",
             "PROMOTION_ERROR": "BUILT_IN",
         },
+    }
+
+
+def promotion_config(**extra):
+    value = {
+        "candidate_bundle_sha256": "candidate",
+        "engine_sha256": "engine",
+        "minimum_runtime_completed": 2,
+        "required_replay_taxonomy": list(clean_replay_summary()["canonical_failure_counts"]),
+        "required_replay_corpus_kind": "POST_FIX_HOLDOUT",
+    }
+    value.update(extra)
+    return value
+
+
+def matchup_config():
+    return {
+        "minimum_games": 2,
+        "minimum_win_rate": 0.5,
+        "minimum_wilson_low": 0.0,
+        "bundle_sha256": "opponent",
     }
 
 
@@ -73,20 +99,18 @@ def test_matchup_summary_is_seat_balanced_and_includes_runtime():
                 runtime=RuntimeCounters(completed=1),
             )
         )
-    summary = summarize("mirror", records)
+    summary = summarize("mirror", records, engine_sha256="engine")
     assert summary.games == 4
     assert summary.seat0_games == summary.seat1_games == 2
     assert summary.wins == summary.losses == 2
     assert summary.runtime.completed == 4
     assert summary.candidate_bundle_sha256 == "a"
     assert summary.opponent_bundle_sha256 == "b"
+    assert summary.engine_sha256 == "engine"
 
 
 def test_promotion_gate_fails_closed_when_matchup_missing():
-    manifest = {
-        "promotion": {"minimum_runtime_completed": 2, "required_replay_taxonomy": list(clean_replay_summary()["canonical_failure_counts"])},
-        "matchups": {"grim": {"minimum_games": 2, "minimum_win_rate": 0.5, "minimum_wilson_low": 0.0, "bundle_sha256": "opponent"}},
-    }
+    manifest = {"promotion": promotion_config(), "matchups": {"grim": matchup_config()}}
     assert evaluate_promotion(manifest, {}).verdict == "HOLD"
 
 
@@ -107,10 +131,7 @@ def _clean_summary(matchup: str = "grim"):
 
 
 def test_promotion_gate_passes_only_clean_promotion_evidence():
-    manifest = {
-        "promotion": {"minimum_runtime_completed": 2, "required_replay_taxonomy": list(clean_replay_summary()["canonical_failure_counts"])},
-        "matchups": {"grim": {"minimum_games": 2, "minimum_win_rate": 0.5, "minimum_wilson_low": 0.0, "bundle_sha256": "opponent"}},
-    }
+    manifest = {"promotion": promotion_config(), "matchups": {"grim": matchup_config()}}
     verdict = evaluate_promotion(manifest, {"grim": _clean_summary()}, clean_replay_summary())
     assert verdict.verdict == "PROMOTE"
     assert verdict.passed
@@ -118,17 +139,27 @@ def test_promotion_gate_passes_only_clean_promotion_evidence():
 
 def test_promotion_gate_requires_only_explicit_core_pool():
     manifest = {
-        "promotion": {
-            "minimum_runtime_completed": 2,
-            "required_matchups": ["core"],
-            "required_replay_taxonomy": list(clean_replay_summary()["canonical_failure_counts"]),
-        },
+        "promotion": promotion_config(required_matchups=["core"]),
         "matchups": {
-            "core": {"minimum_games": 2, "minimum_win_rate": 0.5, "minimum_wilson_low": 0.0, "bundle_sha256": "opponent"},
+            "core": matchup_config(),
             "optional": {"minimum_games": 200, "minimum_win_rate": 1.0, "minimum_wilson_low": 1.0},
         },
     }
     assert evaluate_promotion(manifest, {"core": _clean_summary("core")}, clean_replay_summary()).verdict == "PROMOTE"
+
+
+def test_promotion_gate_rejects_training_replay_as_holdout():
+    manifest = {"promotion": promotion_config(), "matchups": {"grim": matchup_config()}}
+    replay = clean_replay_summary()
+    replay["corpus_kind"] = "TRAINING_REPLAY"
+    assert evaluate_promotion(manifest, {"grim": _clean_summary()}, replay).verdict == "HOLD"
+
+
+def test_promotion_gate_rejects_replay_from_different_candidate():
+    manifest = {"promotion": promotion_config(), "matchups": {"grim": matchup_config()}}
+    replay = clean_replay_summary()
+    replay["candidate_bundle_sha256"] = "different"
+    assert evaluate_promotion(manifest, {"grim": _clean_summary()}, replay).verdict == "HOLD"
 
 
 def _episode_for_observation(obs: dict, action: list[int]) -> dict:
@@ -250,11 +281,5 @@ def test_bundle_tree_hash_ignores_python_cache(tmp_path: Path):
 
 
 def test_promotion_gate_fails_closed_without_postfix_replay_summary():
-    manifest = {
-        "promotion": {
-            "minimum_runtime_completed": 2,
-            "required_replay_taxonomy": list(clean_replay_summary()["canonical_failure_counts"]),
-        },
-        "matchups": {"grim": {"minimum_games": 2, "minimum_win_rate": 0.5, "minimum_wilson_low": 0.0, "bundle_sha256": "opponent"}},
-    }
+    manifest = {"promotion": promotion_config(), "matchups": {"grim": matchup_config()}}
     assert evaluate_promotion(manifest, {"grim": _clean_summary()}, None).verdict == "HOLD"
