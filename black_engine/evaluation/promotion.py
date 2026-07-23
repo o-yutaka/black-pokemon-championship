@@ -54,9 +54,35 @@ def _replay_checks(manifest: dict, replay_summary: dict | None) -> list[GateChec
     checks = [GateCheck("postfix_replay.present", isinstance(replay_summary, dict), bool(replay_summary), True)]
     if not isinstance(replay_summary, dict):
         return checks
+
+    expected_candidate = str(promotion.get("candidate_bundle_sha256", ""))
+    replay_candidate = str(replay_summary.get("candidate_bundle_sha256", ""))
+    required_kind = str(promotion.get("required_replay_corpus_kind", "POST_FIX_HOLDOUT"))
+    corpus_kind = str(replay_summary.get("corpus_kind", ""))
+    source_hashes = replay_summary.get("source_sha256") if isinstance(replay_summary.get("source_sha256"), list) else []
+    episode_ids = replay_summary.get("episode_ids") if isinstance(replay_summary.get("episode_ids"), list) else []
+    corpus_id = str(replay_summary.get("corpus_id", ""))
     episodes = int(replay_summary.get("episodes", 0))
     minimum = int(promotion.get("minimum_postfix_replay_episodes", 1))
-    checks.append(GateCheck("postfix_replay.episodes", episodes >= minimum, episodes, minimum))
+
+    checks.extend(
+        [
+            GateCheck(
+                "postfix_replay.candidate_sha",
+                bool(expected_candidate)
+                and expected_candidate != "REQUIRED_BEFORE_RUN"
+                and replay_candidate == expected_candidate,
+                replay_candidate,
+                expected_candidate,
+            ),
+            GateCheck("postfix_replay.corpus_kind", corpus_kind == required_kind, corpus_kind, required_kind),
+            GateCheck("postfix_replay.corpus_id", bool(corpus_id), corpus_id, "non-empty"),
+            GateCheck("postfix_replay.episodes", episodes >= minimum, episodes, minimum),
+            GateCheck("postfix_replay.source_hashes", len(source_hashes) == episodes and all(isinstance(value, str) and len(value) == 64 for value in source_hashes), len(source_hashes), episodes),
+            GateCheck("postfix_replay.unique_sources", len(set(source_hashes)) == episodes, len(set(source_hashes)), episodes),
+            GateCheck("postfix_replay.unique_episode_ids", len(episode_ids) == episodes and len(set(map(str, episode_ids))) == episodes, len(set(map(str, episode_ids))), episodes),
+        ]
+    )
     if promotion.get("require_zero_fatal_replay_findings", True):
         fatal = int(replay_summary.get("fatal", 0))
         checks.append(GateCheck("postfix_replay.fatal", fatal == 0, fatal, 0))
@@ -123,11 +149,26 @@ def evaluate_promotion(manifest: dict, summaries: dict[str, dict], replay_summar
         for key in total_runtime:
             total_runtime[key] += int(runtime.get(key, 0))
 
-    checks.append(GateCheck("candidate_sha_consistent", len(candidate_hashes) == 1, sorted(candidate_hashes), "one exact SHA"))
-    checks.append(GateCheck("engine_sha_consistent", len(engine_hashes) == 1, sorted(engine_hashes), "one exact SHA"))
     expected_candidate = str(promotion.get("candidate_bundle_sha256", ""))
-    if expected_candidate:
-        checks.append(GateCheck("candidate_sha_frozen", expected_candidate != "REQUIRED_BEFORE_RUN" and candidate_hashes == {expected_candidate}, sorted(candidate_hashes), expected_candidate))
+    expected_engine = str(promotion.get("engine_sha256", ""))
+    checks.extend(
+        [
+            GateCheck("candidate_sha_consistent", len(candidate_hashes) == 1, sorted(candidate_hashes), "one exact SHA"),
+            GateCheck("engine_sha_consistent", len(engine_hashes) == 1, sorted(engine_hashes), "one exact SHA"),
+            GateCheck(
+                "candidate_sha_frozen",
+                bool(expected_candidate) and expected_candidate != "REQUIRED_BEFORE_RUN" and candidate_hashes == {expected_candidate},
+                sorted(candidate_hashes),
+                expected_candidate,
+            ),
+            GateCheck(
+                "engine_sha_frozen",
+                bool(expected_engine) and expected_engine != "REQUIRED_BEFORE_RUN" and engine_hashes == {expected_engine},
+                sorted(engine_hashes),
+                expected_engine,
+            ),
+        ]
+    )
     checks.extend(_runtime_checks(total_runtime, int(promotion.get("minimum_runtime_completed", 400))))
     checks.extend(_replay_checks(manifest, replay_summary))
     return PromotionVerdict("PROMOTE" if all(value.passed for value in checks) else "HOLD", checks)
