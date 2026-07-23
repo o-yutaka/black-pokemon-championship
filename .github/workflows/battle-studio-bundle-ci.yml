@@ -1,0 +1,55 @@
+name: Battle Studio Kaggle Bundle Gate
+
+on:
+  pull_request:
+    paths:
+      - "tools/battle_studio/**"
+      - ".github/workflows/battle-studio-bundle-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bundle-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install backend test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r tools/battle_studio/backend/requirements-live.txt pytest
+      - name: Python compile gate
+        run: python -m py_compile tools/battle_studio/backend/*.py
+      - name: Archive and card ingestion tests
+        working-directory: tools/battle_studio/backend
+        run: pytest -q test_artifact_store.py test_replay_converter.py
+      - name: Protected competition paths unchanged
+        run: |
+          git diff --name-only origin/${{ github.base_ref || 'main' }}...HEAD > /tmp/changed.txt
+          if grep -E '^(submission/|deck\.csv$|black_engine/|cg/)' /tmp/changed.txt; then
+            echo "protected competition runtime changed" >&2
+            exit 1
+          fi
+      - name: No restricted engine or card data committed
+        run: |
+          if grep -E '(^|/)(Export\.cpp|CardImpl\.h|libcg\.so|EN_Card_Data\.csv|card_id_list\.csv|attack_id_mapping\.json)$' /tmp/changed.txt; then
+            echo "restricted competition artifacts must stay upload-only" >&2
+            exit 1
+          fi
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - name: Frontend install
+        working-directory: tools/battle_studio/frontend
+        run: npm install
+      - name: Frontend tests and build
+        working-directory: tools/battle_studio/frontend
+        run: |
+          npm test
+          npm run build
