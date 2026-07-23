@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from bundle_manager import BundleError, BundleStore
+from card_catalog import get_catalog
 from emulator_engine import CabtShapeEmulator
 from official_engine import OfficialEngineError, OfficialProcessEngine
 
@@ -39,7 +40,7 @@ class Session:
     frame: dict[str, Any] | None = None
 
 
-app = FastAPI(title="BLACK Battle Studio Live Bridge", version="2.0")
+app = FastAPI(title="BLACK Battle Studio Live Bridge", version="2.1")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:5173", "http://localhost:5173", "https://o-yutaka.github.io"],
@@ -55,9 +56,36 @@ def _official_available() -> bool:
     return bool(os.environ.get("BLACK_OFFICIAL_RUNNER"))
 
 
+def _card_catalog_available() -> bool:
+    try:
+        get_catalog()
+        return True
+    except (FileNotFoundError, OSError, ValueError):
+        return False
+
+
 @app.get("/api/health")
 async def health() -> dict[str, Any]:
-    return {"ok": True, "service": "black-battle-studio-live-bridge", "emulator": True, "officialCabt": _official_available(), "frontendDist": FRONTEND_DIST.is_dir(), "pid": os.getpid()}
+    return {
+        "ok": True,
+        "service": "black-battle-studio-live-bridge",
+        "emulator": True,
+        "officialCabt": _official_available(),
+        "cardCatalog": _card_catalog_available(),
+        "frontendDist": FRONTEND_DIST.is_dir(),
+        "pid": os.getpid(),
+    }
+
+
+@app.get("/api/cards")
+async def card_catalog() -> dict[str, Any]:
+    try:
+        cards, sources = get_catalog()
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=500, detail=f"card catalog failed: {exc}") from exc
+    return {"ok": True, "count": len(cards), "sources": [path.name for path in sources], "cards": cards}
 
 
 @app.post("/api/bundles")
