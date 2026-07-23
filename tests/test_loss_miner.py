@@ -47,7 +47,7 @@ def test_loss_mode_contract_covers_all_five_known_routes():
         "DECK_OUT_CLOCK",
     }
     assert FINDING_TO_LOSS_MODE["ATTACK_WITHOUT_BACKUP"] == "NO_BACKUP_AFTER_SPIDOPS"
-    assert FINDING_TO_LOSS_MODE["PRIZE_AWARE_ACTIVE_MISS"] == "UNREADY_EX_EXPOSED"
+    assert "PRIZE_AWARE_ACTIVE_MISS" not in FINDING_TO_LOSS_MODE
     assert FINDING_TO_LOSS_MODE["NONPERSISTENT_DAMAGE_REPEAT"] == "NONPERSISTENT_DAMAGE_LOOP"
     assert FINDING_TO_LOSS_MODE["DECK_CLOCK_VIOLATION"] == "DECK_OUT_CLOCK"
 
@@ -241,7 +241,7 @@ def test_repair_queue_orders_by_accumulated_severity():
     fatal = LossModeCase(
         **common,
         loss_mode="UNREADY_EX_EXPOSED",
-        detail_code="PRIZE_AWARE_ACTIVE_MISS",
+        detail_code="KNOWN_LETHAL_UNREADY_EX_SWITCH",
         severity="FATAL",
         policy_hook="FORBID_VOLUNTARY_SWITCH_TO_UNREADY_EX",
     )
