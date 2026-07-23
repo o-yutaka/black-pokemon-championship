@@ -11,7 +11,8 @@ ID_FILE = "card_id_list.csv"
 
 
 def _candidate_roots() -> list[Path]:
-    repo = Path(__file__).resolve().parents[3]
+    resolved = Path(__file__).resolve()
+    repo = resolved.parents[3] if len(resolved.parents) > 3 else resolved.parent
     roots = [
         Path.cwd(), repo, repo / "data", repo / "assets", repo / "submission",
         Path("/home/user/HROS"), Path("/home/user/HROS/data"), Path("/home/user/HROS/submission"),
