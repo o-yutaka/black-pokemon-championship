@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from typing import Any
-
-from .mewtwo_truth import AREA_ACTIVE, AREA_BENCH, MewtwoOption, MewtwoTruth, PokemonInstance
+from .mewtwo_truth import AREA_BENCH, MewtwoOption, MewtwoTruth, PokemonInstance
 from .prize_truth import prize_value
 from .rocket_mewtwo_worldline import (
     ARTICUNO,
@@ -12,7 +9,6 @@ from .rocket_mewtwo_worldline import (
     MEWTWO_ERASURE_BALL,
     MEWTWO_EX,
     MURKROW,
-    ROCKET_POKEMON,
     SPIDOPS,
     SPIDOPS_ROCKET_RUSH,
     TEAM_ROCKET_ENERGY,
@@ -51,7 +47,7 @@ class ChampionshipRocketMewtwoPolicy(RocketMewtwoWorldlinePolicy):
     """Official-observation championship layer for Rocket Mewtwo.
 
     The layer does not invent actions, mutate the official engine, or remap option
-    indices.  It only ranks the legal options supplied by CABT and persists small,
+    indices. It only ranks the legal options supplied by CABT and persists small,
     directly observed facts between decisions.
 
     Hard priorities:
@@ -67,7 +63,7 @@ class ChampionshipRocketMewtwoPolicy(RocketMewtwoWorldlinePolicy):
         super().__init__()
         self.observed_damage_by_attacker: dict[int, int] = {}
         self.nonpersistent_attack_pairs: set[tuple[int, int, int]] = set()
-        self._pending_attack: tuple[int, int, int, int] | None = None
+        self._pending_attack: tuple[int, int, int, int, int, int] | None = None
         self._previous_mine_hp: dict[int, int] = {}
         self._previous_opponent_active_id: int | None = None
 
@@ -137,17 +133,27 @@ class ChampionshipRocketMewtwoPolicy(RocketMewtwoWorldlinePolicy):
         pending = self._pending_attack
         if pending is None:
             return
-        attacker_id, attack_id, target_serial, hp_before = pending
+        attacker_id, attack_id, target_serial, target_card_id, hp_before, attack_turn = pending
         target = truth.by_serial(truth.opponent, target_serial)
-        if target is not None:
-            key = (attacker_id, attack_id, target.card_id)
-            if target.current_hp >= hp_before:
-                # Covers both true immunity and full-heal/reset loops. In either
-                # case, repeating the same non-lethal line without a material
-                # board change has zero persistent Prize progress.
-                self.nonpersistent_attack_pairs.add(key)
-            elif target.current_hp < hp_before:
-                self.nonpersistent_attack_pairs.discard(key)
+        key = (attacker_id, attack_id, target_card_id)
+
+        # The official engine may ask effect-follow-up selections before damage is
+        # applied. Never classify that intermediate observation as zero damage.
+        if target is not None and target.current_hp < hp_before:
+            self.nonpersistent_attack_pairs.discard(key)
+            self._pending_attack = None
+            return
+        if target is None:
+            # The exact instance left play (usually a KO). This is not a zero-value
+            # attack and must not poison future decisions against the same card ID.
+            self._pending_attack = None
+            return
+        if truth.turn == attack_turn:
+            return
+
+        # The turn advanced and the same instance retained all prior HP. This
+        # covers immunity, prevention, complete healing, and reset loops.
+        self.nonpersistent_attack_pairs.add(key)
         self._pending_attack = None
 
     def _observe_incoming_damage(self, truth: MewtwoTruth) -> None:
@@ -225,9 +231,11 @@ class ChampionshipRocketMewtwoPolicy(RocketMewtwoWorldlinePolicy):
 
     def _promotion_candidate(self, option: MewtwoOption, ctx: dict) -> PokemonInstance | None:
         truth: MewtwoTruth = ctx["truth"]
-        if option.target_serial is None:
-            return None
-        return truth.by_serial(truth.actor, option.target_serial)
+        # Official SWITCH/TO_ACTIVE options are normalized as the selected
+        # in-play Pokemon's source serial because action type 12 is also used by
+        # retreat. Accept either field; the legal option index remains unchanged.
+        serial = option.target_serial if option.target_serial is not None else option.source_serial
+        return truth.by_serial(truth.actor, serial)
 
     def _promotion_choice(self, ctx: dict) -> int | None:
         truth: MewtwoTruth = ctx["truth"]
@@ -325,7 +333,10 @@ class ChampionshipRocketMewtwoPolicy(RocketMewtwoWorldlinePolicy):
 
         if option.action_type == T_END:
             # Ending is still legal, but it must never outrank a winning attack.
-            result.regret = max(result.regret, 2500.0 if self._terminal_attack(ctx) is not None else result.regret)
+            result.regret = max(
+                result.regret,
+                2500.0 if self._terminal_attack(ctx) is not None else result.regret,
+            )
 
         return result
 
@@ -349,6 +360,8 @@ class ChampionshipRocketMewtwoPolicy(RocketMewtwoWorldlinePolicy):
                         active.card_id,
                         option.attack_id,
                         target.serial,
+                        target.card_id,
                         target.current_hp,
+                        truth.turn,
                     )
         return chosen
