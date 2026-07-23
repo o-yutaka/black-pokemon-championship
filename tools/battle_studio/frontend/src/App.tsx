@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type MouseEvent } from "react";
+import { BattleCanvas, type CanvasRenderStats } from "./canvas/BattleCanvas";
+import { ReplayTelemetryCanvas } from "./canvas/ReplayTelemetryCanvas";
 import { demoReplay } from "./demo";
 import { connectLiveEmulator, type LiveConnection, type LiveSnapshot, type LiveStatus } from "./live";
 import { readReplayFile } from "./replay";
@@ -6,6 +8,7 @@ import { cardKey, type BattleFrame, type BattleReplay, type CardInstance } from 
 import "./styles.css";
 
 const SPEEDS = [0.25, 0.5, 1, 2, 4] as const;
+type RenderMode = "canvas" | "dom";
 
 function CardFace({ card, compact = false, onSelect }: { card: CardInstance | null; compact?: boolean; onSelect?: (card: CardInstance) => void }) {
   if (!card) return <div className={`card-face empty ${compact ? "compact" : ""}`}>EMPTY</div>;
@@ -78,6 +81,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [liveStatus, setLiveStatus] = useState<LiveStatus>("disconnected");
   const [legalSelections, setLegalSelections] = useState<number[][]>([]);
+  const [renderMode, setRenderMode] = useState<RenderMode>("canvas");
+  const [canvasStats, setCanvasStats] = useState<CanvasRenderStats | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const liveRef = useRef<LiveConnection | null>(null);
 
@@ -103,6 +108,9 @@ export default function App() {
   useEffect(() => () => liveRef.current?.close(), []);
 
   const frameLabel = useMemo(() => `Turn ${frame.turn} · ${frame.phase} · Action ${frame.actionCount}`, [frame]);
+  const updateCanvasStats = useCallback((next: CanvasRenderStats) => {
+    setCanvasStats((current) => current && current.width === next.width && current.height === next.height && current.cardCount === next.cardCount && Math.abs(current.frameMs - next.frameMs) < 0.05 ? current : next);
+  }, []);
 
   const applyLiveSnapshot = (snapshot: LiveSnapshot) => {
     setLegalSelections(snapshot.legalSelections);
@@ -156,12 +164,17 @@ export default function App() {
     }
   };
 
+  const seek = (value: number) => {
+    setPlaying(false);
+    setFrameIndex(Math.max(0, Math.min(replay.frames.length - 1, value)));
+  };
+
   return (
     <main className="app-shell">
       <header className="topbar">
         <div><h1>BLACK Battle Studio</h1><p>{replay.replayId} · {frameLabel} · LIVE {liveStatus.toUpperCase()}</p></div>
         <div className="top-actions">
-          <input ref={fileRef} className="file-input" type="file" accept="application/json,.json" onChange={(event) => void loadFile(event.target.files?.[0])} />
+          <input ref={fileRef} className="file-input" type="file" accept="application/json,.json" onChange={(event: ChangeEvent<HTMLInputElement>) => void loadFile(event.target.files?.[0])} />
           <button type="button" onClick={() => fileRef.current?.click()}>Open Replay</button>
           <button type="button" onClick={() => void connectEmulator()} disabled={liveStatus === "connecting" || liveStatus === "connected"}>Connect Emulator</button>
           <button type="button" onClick={() => liveRef.current?.step(legalSelections[0] ?? [0])} disabled={liveStatus !== "connected" || legalSelections.length === 0}>Live Step</button>
@@ -174,31 +187,47 @@ export default function App() {
 
       <div className="workspace">
         <div className="battle-column">
-          <PlayerBoard frame={frame} playerIndex={1} onSelect={setSelectedCard} />
-          <div className="center-line"><span>{frame.stadium ? `Stadium: ${frame.stadium.name}` : "No Stadium"}</span><strong>TURN {frame.turn}</strong></div>
-          <PlayerBoard frame={frame} playerIndex={0} onSelect={setSelectedCard} />
+          <div className="visualizer-toolbar">
+            <div className="mode-switch" role="group" aria-label="Battle renderer">
+              <button className={renderMode === "canvas" ? "active" : ""} type="button" onClick={() => setRenderMode("canvas")}>Canvas</button>
+              <button className={renderMode === "dom" ? "active" : ""} type="button" onClick={() => setRenderMode("dom")}>DOM fallback</button>
+            </div>
+            <div className="canvas-stats">
+              {renderMode === "canvas" && canvasStats ? `${canvasStats.frameMs.toFixed(2)} ms · ${canvasStats.cardCount} cards · DPR ${canvasStats.dpr.toFixed(1)}` : "Snapshot Truth · read only"}
+            </div>
+          </div>
+          {renderMode === "canvas"
+            ? <BattleCanvas frame={frame} onSelect={setSelectedCard} onRenderStats={updateCanvasStats} />
+            : <div className="dom-board">
+                <PlayerBoard frame={frame} playerIndex={1} onSelect={setSelectedCard} />
+                <div className="center-line"><span>{frame.stadium ? `Stadium: ${frame.stadium.name}` : "No Stadium"}</span><strong>TURN {frame.turn}</strong></div>
+                <PlayerBoard frame={frame} playerIndex={0} onSelect={setSelectedCard} />
+              </div>}
         </div>
         <DecisionInspector frame={frame} />
       </div>
 
       <section className="controls" aria-label="Replay controls">
         <div className="control-buttons">
-          <button type="button" onClick={() => setFrameIndex(0)} disabled={frameIndex === 0}>⏮</button>
-          <button type="button" onClick={() => setFrameIndex((value) => Math.max(0, value - 1))} disabled={frameIndex === 0}>◀</button>
+          <button type="button" onClick={() => seek(0)} disabled={frameIndex === 0}>⏮</button>
+          <button type="button" onClick={() => seek(frameIndex - 1)} disabled={frameIndex === 0}>◀</button>
           <button className="primary" type="button" onClick={() => setPlaying((value) => !value)}>{playing ? "Pause" : "Play"}</button>
-          <button type="button" onClick={() => setFrameIndex((value) => Math.min(replay.frames.length - 1, value + 1))} disabled={frameIndex === replay.frames.length - 1}>▶</button>
-          <button type="button" onClick={() => setFrameIndex(replay.frames.length - 1)} disabled={frameIndex === replay.frames.length - 1}>⏭</button>
+          <button type="button" onClick={() => seek(frameIndex + 1)} disabled={frameIndex === replay.frames.length - 1}>▶</button>
+          <button type="button" onClick={() => seek(replay.frames.length - 1)} disabled={frameIndex === replay.frames.length - 1}>⏭</button>
         </div>
-        <label className="timeline-label">Frame {frameIndex + 1}/{replay.frames.length}
-          <input type="range" min="0" max={replay.frames.length - 1} value={frameIndex} onChange={(event) => { setPlaying(false); setFrameIndex(Number(event.target.value)); }} style={{ "--progress": `${progress}%` } as React.CSSProperties} />
-        </label>
+        <div className="timeline-stack">
+          <ReplayTelemetryCanvas replay={replay} frameIndex={frameIndex} onSeek={seek} />
+          <label className="timeline-label">Frame {frameIndex + 1}/{replay.frames.length}
+            <input type="range" min="0" max={replay.frames.length - 1} value={frameIndex} onChange={(event: ChangeEvent<HTMLInputElement>) => seek(Number(event.target.value))} style={{ "--progress": `${progress}%` } as CSSProperties} />
+          </label>
+        </div>
         <label className="speed-label">Speed
-          <select value={speed} onChange={(event) => setSpeed(Number(event.target.value) as (typeof SPEEDS)[number])}>{SPEEDS.map((value) => <option key={value} value={value}>{value}×</option>)}</select>
+          <select value={speed} onChange={(event: ChangeEvent<HTMLSelectElement>) => setSpeed(Number(event.target.value) as (typeof SPEEDS)[number])}>{SPEEDS.map((value) => <option key={value} value={value}>{value}×</option>)}</select>
         </label>
       </section>
 
       {selectedCard && <div className="modal-backdrop" role="presentation" onMouseDown={() => setSelectedCard(null)}>
-        <section className="card-modal" role="dialog" aria-modal="true" aria-label={selectedCard.name} onMouseDown={(event) => event.stopPropagation()}>
+        <section className="card-modal" role="dialog" aria-modal="true" aria-label={selectedCard.name} onMouseDown={(event: MouseEvent<HTMLElement>) => event.stopPropagation()}>
           <button className="close-button" type="button" onClick={() => setSelectedCard(null)}>Close</button>
           <CardFace card={selectedCard} />
           <dl>
