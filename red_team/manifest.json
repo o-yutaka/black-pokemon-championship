@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.3",
+  "schema_version": "1.4",
   "candidate": "rocket_mewtwo_championship_v1",
   "evidence_law": {
     "engine": "official cg/libcg.so only; exact SHA required before run",
@@ -16,7 +16,8 @@
       "unlocked candidate or engine identity",
       "training replay reused as post-fix holdout",
       "replay-only reconstructed opponent reported as leaderboard-strength proof"
-    ]
+    ],
+    "opponent_builder": "current builder emits ReplayGroundedPolicy reconstructions only; all generated Bundles are STRESS_ONLY until an exact external executable Bundle is supplied and frozen"
   },
   "promotion": {
     "candidate_bundle_sha256": "REQUIRED_BEFORE_RUN",
@@ -55,7 +56,8 @@
     },
     "minimum_postfix_replay_episodes": 5,
     "require_zero_fatal_replay_findings": true,
-    "required_replay_corpus_kind": "POST_FIX_HOLDOUT"
+    "required_replay_corpus_kind": "POST_FIX_HOLDOUT",
+    "training_corpus_sha256": "0727bd19deed5f0779408d4b41c057225bc2331ecd8ff698a92c7f45caccf731"
   },
   "matchups": {
     "crustle_ogerpon": {
@@ -73,8 +75,8 @@
       "display_name": "Cynthia's Garchomp",
       "bundle_path": "red_team/bundles/cynthia_garchomp",
       "bundle_sha256": "REQUIRED_BEFORE_RUN",
-      "policy_source": "frozen BLACK candidate reconstruction; no mounted official replay",
-      "strength_evidence": "PROMOTION",
+      "policy_source": "frozen BLACK candidate reconstruction; no mounted official replay; executable policy is still generic ReplayGroundedPolicy reconstruction",
+      "strength_evidence": "STRESS_ONLY",
       "required_for_promotion": true,
       "minimum_games": 200,
       "minimum_win_rate": 0.5,
@@ -95,8 +97,8 @@
       "display_name": "Dragapult / Cinderace",
       "bundle_path": "red_team/bundles/dragapult_cinderace",
       "bundle_sha256": "REQUIRED_BEFORE_RUN",
-      "policy_source": "official ladder replay reconstruction and frozen BLACK challenger",
-      "strength_evidence": "PROMOTION",
+      "policy_source": "official ladder replay reconstruction and frozen BLACK challenger; executable policy is still generic ReplayGroundedPolicy reconstruction",
+      "strength_evidence": "STRESS_ONLY",
       "required_for_promotion": true,
       "minimum_games": 200,
       "minimum_win_rate": 0.5,

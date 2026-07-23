@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -7,7 +8,8 @@ ROOT = Path(__file__).resolve().parents[1]
 payload = json.loads((ROOT / "red_team" / "manifest.json").read_text(encoding="utf-8"))
 profiles = json.loads((ROOT / "red_team" / "profiles.json").read_text(encoding="utf-8"))
 sources = json.loads((ROOT / "red_team" / "replay_sources.json").read_text(encoding="utf-8"))
-training = json.loads((ROOT / "red_team" / "training_replay_corpus.json").read_text(encoding="utf-8"))
+training_path = ROOT / "red_team" / "training_replay_corpus.json"
+training = json.loads(training_path.read_text(encoding="utf-8"))
 matchups = payload.get("matchups") if isinstance(payload.get("matchups"), dict) else {}
 promotion = payload.get("promotion") if isinstance(payload.get("promotion"), dict) else {}
 
@@ -42,6 +44,12 @@ if int(promotion.get("minimum_postfix_replay_episodes", 0)) <= 0:
     raise SystemExit("minimum_postfix_replay_episodes must be positive")
 if promotion.get("required_replay_corpus_kind") != "POST_FIX_HOLDOUT":
     raise SystemExit("required_replay_corpus_kind must be POST_FIX_HOLDOUT")
+training_corpus_sha = hashlib.sha256(training_path.read_bytes()).hexdigest()
+if promotion.get("training_corpus_sha256") != training_corpus_sha:
+    raise SystemExit(
+        "promotion.training_corpus_sha256 must equal the exact frozen training corpus bytes: "
+        f"expected={training_corpus_sha} actual={promotion.get('training_corpus_sha256')}"
+    )
 for field in ("candidate_bundle_sha256", "engine_sha256"):
     value = promotion.get(field)
     if not isinstance(value, str) or not value:
@@ -72,6 +80,11 @@ for slug, config in matchups.items():
             raise SystemExit(f"{slug}: missing {field}")
     if config["strength_evidence"] not in {"PROMOTION", "STRESS_ONLY"}:
         raise SystemExit(f"{slug}: invalid strength_evidence={config['strength_evidence']!r}")
+    if config["strength_evidence"] != "STRESS_ONLY":
+        raise SystemExit(
+            f"{slug}: current builder executes generic ReplayGroundedPolicy; "
+            "an exact external executable Bundle is required before PROMOTION strength evidence"
+        )
     if int(config["minimum_games"]) <= 0 or int(config["minimum_games"]) % 2:
         raise SystemExit(f"{slug}: minimum_games must be positive and even")
     if slug in required and config["required_for_promotion"] is not True:

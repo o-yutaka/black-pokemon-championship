@@ -21,13 +21,13 @@ Each block is exactly 200 games, candidate seat 0/1 exactly 100 times:
 
 Current strength status:
 
-- `Cynthia's Garchomp`: `PROMOTION`
-- `Dragapult / Cinderace`: `PROMOTION`
+- `Cynthia's Garchomp`: `STRESS_ONLY`
+- `Dragapult / Cinderace`: `STRESS_ONLY`
 - `Crustle / Ogerpon`: `STRESS_ONLY`
 - `Grimmsnarl / Froslass`: `STRESS_ONLY`
 - `Mewtwo mirror`: `STRESS_ONLY`
 
-The championship gate therefore remains `HOLD` until the three stress-only opponents are replaced or independently promoted to frozen strong challenger Bundles.
+The current builder emits the same `ReplayGroundedPolicy` implementation for every generated opponent Bundle. Therefore all five current generated opponents are `STRESS_ONLY`. The championship gate remains `HOLD` until each required matchup is supplied as an independently frozen, executable promotion-grade challenger Bundle.
 
 ## Build one identity lock
 

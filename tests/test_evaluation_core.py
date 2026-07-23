@@ -53,6 +53,7 @@ def promotion_config(**extra):
     value = {
         "candidate_bundle_sha256": "candidate",
         "engine_sha256": "engine",
+        "training_corpus_sha256": "a" * 64,
         "minimum_runtime_completed": 2,
         "required_replay_taxonomy": list(clean_replay_summary()["canonical_failure_counts"]),
         "replay_taxonomy_applicability": {

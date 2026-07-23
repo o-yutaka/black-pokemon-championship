@@ -79,13 +79,18 @@ def _hard_timeout(timeout_ms: float) -> Iterator[None]:
             signal.setitimer(signal.ITIMER_REAL, previous_timer[0], previous_timer[1])
 
 
+def _purge_cg_modules() -> None:
+    for name in list(sys.modules):
+        if name == "cg" or name.startswith("cg."):
+            sys.modules.pop(name, None)
+
+
 def _load_game(cg_dir: Path):
     resolved = cg_dir.resolve()
     parent = str(resolved.parent)
     sys.path[:] = [value for value in sys.path if value != parent]
     sys.path.insert(0, parent)
-    sys.modules.pop("cg.game", None)
-    sys.modules.pop("cg", None)
+    _purge_cg_modules()
     module = importlib.import_module("cg.game")
     module_path = Path(module.__file__).resolve().parent
     if module_path != resolved:
@@ -185,6 +190,8 @@ def run_game(
         except Exception as exc:
             runtime.runtime_error += 1
             error = error or f"battle_finish: {type(exc).__name__}: {exc}"
+        finally:
+            _purge_cg_modules()
     return GameRecord(
         matchup=matchup,
         candidate_bundle_sha256=seat_bundles[candidate_seat].sha256,

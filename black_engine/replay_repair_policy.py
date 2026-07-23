@@ -1,7 +1,16 @@
 from __future__ import annotations
 
 from .championship_policy import ChampionshipRocketMewtwoPolicy as BaseChampionshipPolicy
-from .rocket_mewtwo_worldline import MEWTWO_EX, SPIDOPS, T_ATTACK, T_END, T_ENERGY
+from .rocket_mewtwo_worldline import (
+    CTX_DISCARD,
+    CTX_DISCARD_ENERGY_CARD,
+    CTX_SETUP_BENCH,
+    MEWTWO_EX,
+    SPIDOPS,
+    T_ATTACK,
+    T_END,
+    T_ENERGY,
+)
 
 
 class ChampionshipRocketMewtwoPolicy(BaseChampionshipPolicy):
@@ -63,6 +72,50 @@ class ChampionshipRocketMewtwoPolicy(BaseChampionshipPolicy):
         if not candidates:
             return None
         return self.judge.choose(candidates).plan.root_action_index
+
+    def choose_multi(self, options: list, context: dict, minimum: int, maximum: int) -> list[int]:
+        truth = context["truth"]
+        special = truth.context == CTX_SETUP_BENCH or (
+            truth.context in {CTX_DISCARD, CTX_DISCARD_ENERGY_CARD}
+            and truth.effect_card_id == MEWTWO_EX
+        )
+        ranked = super().choose_multi(options, context, minimum, maximum)
+        if special:
+            return ranked
+        # Optional generic selections are resource commitments. Choose only the
+        # mandatory minimum; card-specific effects above retain exact counts.
+        return ranked[:minimum] if minimum > 0 else []
+
+    def agent(self, obs: dict | None, configuration=None):
+        if obs is None or not isinstance(obs, dict) or obs.get("select") is None:
+            return list(self.deck)
+        select = obs.get("select") or {}
+        options = select.get("option") if isinstance(select.get("option"), list) else []
+        if not options:
+            return []
+        minimum = max(0, int(select.get("minCount", 1) or 0))
+        maximum_raw = select.get("maxCount", minimum)
+        maximum = minimum if maximum_raw is None else max(0, int(maximum_raw))
+        context = self.build_context(obs)
+        raw = (
+            self.choose_single(options, context)
+            if minimum == maximum == 1
+            else self.choose_multi(options, context, minimum, maximum)
+        )
+        values = list(raw) if isinstance(raw, (list, tuple)) else [raw]
+        chosen: list[int] = []
+        capacity = min(maximum, len(options))
+        for value in values:
+            if type(value) is int and 0 <= value < len(options) and value not in chosen:
+                chosen.append(value)
+                if len(chosen) >= capacity:
+                    break
+        for index in range(len(options)):
+            if len(chosen) >= minimum:
+                break
+            if index not in chosen and len(chosen) < capacity:
+                chosen.append(index)
+        return chosen[:capacity]
 
     def choose_single(self, options: list, context: dict) -> int:
         # Never delay a verified game-winning attack.

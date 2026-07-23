@@ -63,6 +63,7 @@ def _replay_checks(manifest: dict, replay_summary: dict | None) -> list[GateChec
     episode_ids = replay_summary.get("episode_ids") if isinstance(replay_summary.get("episode_ids"), list) else []
     corpus_id = str(replay_summary.get("corpus_id", ""))
     training_corpus_sha = str(replay_summary.get("training_corpus_sha256", ""))
+    expected_training_corpus_sha = str(promotion.get("training_corpus_sha256", ""))
     training_overlap = replay_summary.get("training_overlap") if isinstance(replay_summary.get("training_overlap"), list) else None
     episodes = int(replay_summary.get("episodes", 0))
     minimum = int(promotion.get("minimum_postfix_replay_episodes", 1))
@@ -77,7 +78,14 @@ def _replay_checks(manifest: dict, replay_summary: dict | None) -> list[GateChec
             ),
             GateCheck("postfix_replay.corpus_kind", corpus_kind == required_kind, corpus_kind, required_kind),
             GateCheck("postfix_replay.corpus_id", bool(corpus_id), corpus_id, "non-empty"),
-            GateCheck("postfix_replay.training_corpus_sha", len(training_corpus_sha) == 64, training_corpus_sha, "SHA-256"),
+            GateCheck(
+                "postfix_replay.training_corpus_sha",
+                bool(expected_training_corpus_sha)
+                and len(expected_training_corpus_sha) == 64
+                and training_corpus_sha == expected_training_corpus_sha,
+                training_corpus_sha,
+                expected_training_corpus_sha,
+            ),
             GateCheck("postfix_replay.training_overlap", training_overlap == [], training_overlap, []),
             GateCheck("postfix_replay.episodes", episodes >= minimum, episodes, minimum),
             GateCheck("postfix_replay.source_hashes", len(source_hashes) == episodes and all(isinstance(value, str) and len(value) == 64 for value in source_hashes), len(source_hashes), episodes),
