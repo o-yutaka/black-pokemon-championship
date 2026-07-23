@@ -21,9 +21,17 @@ def main() -> int:
     args = parser.parse_args()
     profiles = json.loads((ROOT / "red_team" / "profiles.json").read_text(encoding="utf-8"))
     sources = json.loads((ROOT / "red_team" / "replay_sources.json").read_text(encoding="utf-8"))
-    report = {"verdict": "PASS", "evidence_identity": "REPLAY_GROUNDED_RECONSTRUCTION", "matchups": {}}
+    report = {"verdict": "PASS", "evidence_identity": "REPLAY_GROUNDED_RECONSTRUCTION", "matchups": {}, "skipped": {}}
     for slug, source in sources.items():
-        payload = json.loads((args.replay_dir / source["filename"]).read_text(encoding="utf-8"))
+        if "filename" not in source:
+            report["skipped"][slug] = {"reason": "no mounted official replay", "source": source}
+            continue
+        replay_path = args.replay_dir / source["filename"]
+        if not replay_path.is_file():
+            report["verdict"] = "HOLD"
+            report["matchups"][slug] = {"passed": false, "error": f"missing replay {replay_path}"}
+            continue
+        payload = json.loads(replay_path.read_text(encoding="utf-8"))
         seat = int(source["seat"])
         policy = ReplayGroundedPolicy(read_deck(ROOT / "red_team" / "decks" / f"{slug}.csv"), profiles[slug])
         total = matched = attacks = attacks_matched = 0
