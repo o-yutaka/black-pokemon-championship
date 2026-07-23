@@ -12,7 +12,39 @@ Replay-first, iPhone-ready battle viewer and decision analysis PWA for the Poké
 - CABT-shaped deterministic emulator
 - FastAPI HTTP/WebSocket live bridge
 - Browser Connect Emulator / Live Step / Disconnect controls
+- Canvas battle surface, decision-time heatmap, and replay issue timeline
+- DOM fallback for accessibility, comparison, and regression diagnosis
 - No changes to `submission/`, root `deck.csv`, policy runtime, or official engine binaries
+
+## Canvas visualizer architecture
+
+React remains the management and state-orchestration layer. Rendering-heavy views use a zero-dependency HTML Canvas surface:
+
+```text
+React / DOM
+├── file import and live controls
+├── Decision Inspector
+├── card detail modal
+├── DOM fallback renderer
+└── Canvas surfaces
+    ├── battle board
+    ├── HP / Energy / damage overlays
+    ├── replay timeline
+    ├── decision-time heatmap
+    └── issue markers
+```
+
+The Canvas renderer:
+
+- scales to the current device pixel ratio, capped at 3;
+- uses `ResizeObserver` instead of assuming a desktop viewport;
+- keeps card identity as `playerIndex:serial`;
+- hit-tests exact card instances and opens the existing DOM card inspector;
+- reports render time, canvas size, DPR, and visible-card count;
+- never infers hidden cards or mutates replay state;
+- keeps a DOM fallback selectable from the toolbar.
+
+The telemetry surface maps recorded `decision.elapsedMs` values into a p95-normalized heatmap. Events matching failure/error markers are shown separately. Missing telemetry stays unknown instead of being invented.
 
 ## Replay commands
 
