@@ -265,8 +265,10 @@ def test_red_team_profiles_are_replay_grounded_subset_and_decks_are_exact_60():
     profiles = json.loads((root / "red_team" / "profiles.json").read_text(encoding="utf-8"))
     sources = json.loads((root / "red_team" / "replay_sources.json").read_text(encoding="utf-8"))
     manifest = json.loads((root / "red_team" / "manifest.json").read_text(encoding="utf-8"))
+    fidelity = json.loads((root / "red_team" / "fidelity_baseline.json").read_text(encoding="utf-8"))
     assert set(profiles) == set(sources)
     assert set(profiles).issubset(set(manifest["matchups"]))
+    assert fidelity["strength_evidence"] == "STRESS_ONLY"
     for slug in profiles:
         deck = [int(value) for value in (root / "red_team" / "decks" / f"{slug}.csv").read_text().splitlines() if value]
         assert len(deck) == 60
