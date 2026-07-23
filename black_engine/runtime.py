@@ -70,6 +70,8 @@ class SubmissionRuntime:
     def decide(self, obs: dict | None, configuration=None) -> RuntimeDecision:
         started = time.perf_counter()
         if _is_deck_request(obs):
+            if hasattr(self.policy, "reset_episode"):
+                self.policy.reset_episode()
             return RuntimeDecision(
                 list(self.deck),
                 "deck",
