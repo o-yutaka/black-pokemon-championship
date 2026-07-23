@@ -22,6 +22,27 @@ def pokemon(cid, serial, hp, max_hp, energies=()):
     }
 
 
+def clean_replay_summary():
+    return {
+        "episodes": 5,
+        "fatal": 0,
+        "canonical_failure_counts": {
+            "LETHAL_MISS": 0,
+            "BAD_SPREAD_TARGET": 0,
+            "ENERGY_ATTACH_ERROR": 0,
+            "TERMINAL_MISS": 0,
+            "PROMOTION_ERROR": 0,
+        },
+        "classifier_support": {
+            "LETHAL_MISS": "BUILT_IN",
+            "BAD_SPREAD_TARGET": "DECK_SPECIFIC_TRACE_REQUIRED",
+            "ENERGY_ATTACH_ERROR": "BUILT_IN_ROCKET_MEWTWO",
+            "TERMINAL_MISS": "BUILT_IN",
+            "PROMOTION_ERROR": "BUILT_IN",
+        },
+    }
+
+
 def test_wilson_interval_is_bounded_and_nontrivial():
     low, high = wilson_interval(50, 100)
     assert 0.39 < low < 0.41
@@ -61,7 +82,7 @@ def test_matchup_summary_is_seat_balanced_and_includes_runtime():
 
 def test_promotion_gate_fails_closed_when_matchup_missing():
     manifest = {
-        "promotion": {"minimum_runtime_completed": 2},
+        "promotion": {"minimum_runtime_completed": 2, "required_replay_taxonomy": list(clean_replay_summary()["canonical_failure_counts"])},
         "matchups": {"grim": {"minimum_games": 2, "minimum_win_rate": 0.5, "minimum_wilson_low": 0.0}},
     }
     assert evaluate_promotion(manifest, {}).verdict == "HOLD"
@@ -69,7 +90,7 @@ def test_promotion_gate_fails_closed_when_matchup_missing():
 
 def test_promotion_gate_passes_only_clean_promotion_evidence():
     manifest = {
-        "promotion": {"minimum_runtime_completed": 2},
+        "promotion": {"minimum_runtime_completed": 2, "required_replay_taxonomy": list(clean_replay_summary()["canonical_failure_counts"])},
         "matchups": {"grim": {"minimum_games": 2, "minimum_win_rate": 0.5, "minimum_wilson_low": 0.0}},
     }
     summary = {
@@ -81,14 +102,18 @@ def test_promotion_gate_passes_only_clean_promotion_evidence():
         "evidence_mode": "PROMOTION",
         "runtime": RuntimeCounters(completed=2).__dict__,
     }
-    verdict = evaluate_promotion(manifest, {"grim": summary})
+    verdict = evaluate_promotion(manifest, {"grim": summary}, clean_replay_summary())
     assert verdict.verdict == "PROMOTE"
     assert verdict.passed
 
 
 def test_promotion_gate_requires_only_explicit_core_pool():
     manifest = {
-        "promotion": {"minimum_runtime_completed": 2, "required_matchups": ["core"]},
+        "promotion": {
+            "minimum_runtime_completed": 2,
+            "required_matchups": ["core"],
+            "required_replay_taxonomy": list(clean_replay_summary()["canonical_failure_counts"]),
+        },
         "matchups": {
             "core": {"minimum_games": 2, "minimum_win_rate": 0.5, "minimum_wilson_low": 0.0},
             "optional": {"minimum_games": 200, "minimum_win_rate": 1.0, "minimum_wilson_low": 1.0},
@@ -103,7 +128,7 @@ def test_promotion_gate_requires_only_explicit_core_pool():
         "evidence_mode": "PROMOTION",
         "runtime": RuntimeCounters(completed=2).__dict__,
     }
-    assert evaluate_promotion(manifest, {"core": summary}).verdict == "PROMOTE"
+    assert evaluate_promotion(manifest, {"core": summary}, clean_replay_summary()).verdict == "PROMOTE"
 
 
 def _episode_for_observation(obs: dict, action: list[int]) -> dict:
@@ -173,13 +198,7 @@ def test_replay_judge_detects_nonterminal_lethal_miss(tmp_path: Path):
 
 def test_canonical_taxonomy_preserves_required_zero_categories():
     counts = canonical_failure_counts(
-        [
-            "LETHAL_ACTION_MISS",
-            "TERMINAL_ACTION_MISS",
-            "PRIZE_AWARE_ACTIVE_MISS",
-            "ENERGY_ATTACH_SUBOPTIMAL",
-            "SPREAD_TARGET_REGRET",
-        ]
+        ["LETHAL_ACTION_MISS", "TERMINAL_ACTION_MISS", "PRIZE_AWARE_ACTIVE_MISS", "ENERGY_ATTACH_SUBOPTIMAL", "SPREAD_TARGET_REGRET"]
     )
     assert counts == {
         "LETHAL_MISS": 1,
@@ -204,7 +223,6 @@ def test_red_team_profiles_are_replay_grounded_subset_and_decks_are_exact_60():
 
 def test_replay_grounded_grimmsnarl_prefers_shadow_bullet():
     from red_team.replay_grounded_agent import ReplayGroundedPolicy
-
     root = Path(__file__).resolve().parents[1]
     profiles = json.loads((root / "red_team" / "profiles.json").read_text(encoding="utf-8"))
     deck = [int(value) for value in (root / "red_team" / "decks" / "grimmsnarl.csv").read_text().splitlines() if value]
@@ -218,22 +236,36 @@ def test_replay_grounded_grimmsnarl_prefers_shadow_bullet():
                 {"active": [pokemon(648, 2, 320, 320, (7, 7))], "bench": [], "prize": [None] * 6},
             ],
         },
-        "select": {
-            "context": 0,
-            "minCount": 1,
-            "maxCount": 1,
-            "option": [{"type": 14}, {"type": 13, "attackId": 937}],
-        },
+        "select": {"context": 0, "minCount": 1, "maxCount": 1, "option": [{"type": 14}, {"type": 13, "attackId": 937}]},
     }
     assert policy.agent(obs) == [1]
 
 
 def test_bundle_tree_hash_ignores_python_cache(tmp_path: Path):
     from black_engine.evaluation.bundles import tree_sha256
-
     (tmp_path / "main.py").write_text("x=1\n")
     before = tree_sha256(tmp_path)
     cache = tmp_path / "__pycache__"
     cache.mkdir()
     (cache / "main.cpython-312.pyc").write_bytes(b"generated")
     assert tree_sha256(tmp_path) == before
+
+
+def test_promotion_gate_fails_closed_without_postfix_replay_summary():
+    manifest = {
+        "promotion": {
+            "minimum_runtime_completed": 2,
+            "required_replay_taxonomy": list(clean_replay_summary()["canonical_failure_counts"]),
+        },
+        "matchups": {"grim": {"minimum_games": 2, "minimum_win_rate": 0.5, "minimum_wilson_low": 0.0}},
+    }
+    summary = {
+        "games": 2,
+        "seat0_games": 1,
+        "seat1_games": 1,
+        "win_rate": 1.0,
+        "wilson_low": 0.34,
+        "evidence_mode": "PROMOTION",
+        "runtime": RuntimeCounters(completed=2).__dict__,
+    }
+    assert evaluate_promotion(manifest, {"grim": summary}, None).verdict == "HOLD"
