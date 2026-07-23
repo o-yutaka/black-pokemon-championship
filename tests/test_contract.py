@@ -56,7 +56,7 @@ def test_only_final_rocket_mewtwo_championship_deck_is_present():
     assert counts[1175] == 0
 
 
-def test_source_layout_is_championship_rocket_mewtwo_only():
+def test_source_layout_is_replay_repair_rocket_mewtwo_only():
     report = validate_source_layout(ROOT)
-    assert report["candidate"] == "rocket_mewtwo_championship_v1"
+    assert report["candidate"] == "rocket_mewtwo_championship_replay_repair_v1"
     assert not (ROOT / "candidates").exists()
