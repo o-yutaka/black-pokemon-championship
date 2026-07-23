@@ -8,51 +8,55 @@ ROOT = Path(__file__).resolve().parents[1]
 
 EXPECTED_DECK_COUNTS = Counter(
     {
-        151: 1,
-        666: 4,
-        119: 4,
-        120: 4,
-        121: 3,
-        131: 3,
-        132: 2,
-        133: 2,
-        217: 2,
-        2: 6,
-        5: 7,
-        1086: 4,
-        1079: 3,
-        1127: 2,
-        1152: 1,
-        1097: 2,
-        1123: 1,
-        1088: 1,
-        1231: 3,
-        1198: 2,
+        400: 4,
+        401: 4,
+        414: 2,
+        431: 2,
+        432: 1,
+        463: 2,
+        1094: 3,
+        1097: 1,
+        1119: 1,
+        1134: 4,
+        1152: 3,
+        1159: 1,
+        1197: 2,
+        1216: 4,
+        1217: 1,
+        1218: 3,
+        1220: 3,
         1227: 2,
-        1182: 1,
+        1257: 3,
+        1: 7,
+        3: 1,
+        5: 2,
+        15: 4,
     }
 )
 
-POKEMON_IDS = {151, 666, 119, 120, 121, 131, 132, 133, 217}
-ENERGY_IDS = {2, 5}
+POKEMON_IDS = {400, 401, 414, 431, 432, 463}
+ENERGY_IDS = {1, 3, 5, 15}
 TRAINER_IDS = set(EXPECTED_DECK_COUNTS) - POKEMON_IDS - ENERGY_IDS
 
 
-def test_only_final_dragapult_deck_is_present():
+def test_only_final_rocket_mewtwo_championship_deck_is_present():
     deck = read_deck(ROOT / "deck.csv")
     counts = Counter(deck)
-    report = validate_deck(deck, {1088})
+    report = validate_deck(deck, {1159})
 
     assert report["ok"]
     assert len(deck) == 60
     assert counts == EXPECTED_DECK_COUNTS
-    assert sum(counts[cid] for cid in POKEMON_IDS) == 25
-    assert sum(counts[cid] for cid in TRAINER_IDS) == 22
-    assert sum(counts[cid] for cid in ENERGY_IDS) == 13
-    assert counts[1088] == 1
+    assert sum(counts[cid] for cid in POKEMON_IDS) == 15
+    assert sum(counts[cid] for cid in TRAINER_IDS) == 31
+    assert sum(counts[cid] for cid in ENERGY_IDS) == 14
+    assert counts[1159] == 1
+    assert counts[1197] == 2
+    assert counts[1152] == 3
+    assert counts[1175] == 0
 
 
-def test_source_layout_is_dragapult_only():
+def test_source_layout_is_replay_repair_rocket_mewtwo_only():
     report = validate_source_layout(ROOT)
-    assert report["candidate"] == "dragapult_cinderace"
+    assert report["candidate"] == "rocket_mewtwo_championship_replay_repair_v1"
     assert not (ROOT / "candidates").exists()

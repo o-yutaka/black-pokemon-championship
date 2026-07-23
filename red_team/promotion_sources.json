@@ -1,0 +1,20 @@
+{
+  "dragapult_cinderace": {
+    "source_type": "git_submission_commit",
+    "commit_sha": "51a98e353abf257e91c3dccbd14a188baddf73f6",
+    "repository_ref": "feature/dragapult-worldline-runners",
+    "builder_path": "scripts/build_submission.py",
+    "evidence_identity": "FROZEN_BLACK_EXECUTABLE_BUNDLE",
+    "policy_identity": "DragapultWorldlinePolicy",
+    "source_pr": 8
+  },
+  "mewtwo_mirror": {
+    "source_type": "git_submission_commit",
+    "commit_sha": "db4eb14b881e96b3f9b2599ea4c9a5e31c1dbc20",
+    "repository_ref": "feature/rocket-mewtwo-worldline-runners",
+    "builder_path": "scripts/build_submission.py",
+    "evidence_identity": "FROZEN_BLACK_EXECUTABLE_BUNDLE",
+    "policy_identity": "RocketMewtwoWorldlinePolicyV2",
+    "source_pr": 9
+  }
+}

@@ -1,0 +1,171 @@
+{
+  "schema_version": "1.5",
+  "candidate": "rocket_mewtwo_championship_v1",
+  "evidence_law": {
+    "engine": "official cg/libcg.so only; exact SHA required before run",
+    "opponents": "fixed executable Bundles; replay-only reconstructions are stress evidence, not promotion evidence",
+    "seat_balance": true,
+    "paired_seed_claim": false,
+    "search_api": "absent from current production bundle; enforced by static gate",
+    "forbidden": [
+      "deterministic_fallback opponent",
+      "GenericHeuristicPolicy as promotion evidence",
+      "FLM win rate",
+      "pre-fix or mixed-head aggregation",
+      "oracle evidence reported as production",
+      "unlocked candidate or engine identity",
+      "training replay reused as post-fix holdout",
+      "replay-only reconstructed opponent reported as leaderboard-strength proof"
+    ],
+    "opponent_builder": "current builder emits ReplayGroundedPolicy reconstructions only; all generated Bundles are STRESS_ONLY until an exact external executable Bundle is supplied and frozen",
+    "promotion_bundle_sources": "git commit SHA + commit-owned submission builder + exact official cg; current working tree policy is not substituted"
+  },
+  "promotion": {
+    "candidate_bundle_sha256": "REQUIRED_BEFORE_RUN",
+    "engine_sha256": "REQUIRED_BEFORE_RUN",
+    "minimum_runtime_completed": 1000,
+    "minimum_games_per_matchup": 200,
+    "required_matchups": [
+      "crustle_ogerpon",
+      "cynthia_garchomp",
+      "grimmsnarl",
+      "dragapult_cinderace",
+      "mewtwo_mirror"
+    ],
+    "required_zero_counters": [
+      "crash",
+      "runtime_error",
+      "illegal_action",
+      "mandatory_empty",
+      "timeout",
+      "fallback",
+      "search_resource_leak"
+    ],
+    "required_replay_taxonomy": [
+      "LETHAL_MISS",
+      "BAD_SPREAD_TARGET",
+      "ENERGY_ATTACH_ERROR",
+      "TERMINAL_MISS",
+      "PROMOTION_ERROR"
+    ],
+    "replay_taxonomy_applicability": {
+      "LETHAL_MISS": "REQUIRED",
+      "BAD_SPREAD_TARGET": "NOT_APPLICABLE_ROCKET_MEWTWO_FIXED_DECK_HAS_NO_SPREAD_TARGET_ACTION",
+      "ENERGY_ATTACH_ERROR": "REQUIRED",
+      "TERMINAL_MISS": "REQUIRED",
+      "PROMOTION_ERROR": "REQUIRED"
+    },
+    "minimum_postfix_replay_episodes": 5,
+    "require_zero_fatal_replay_findings": true,
+    "required_replay_corpus_kind": "POST_FIX_HOLDOUT",
+    "training_corpus_sha256": "0727bd19deed5f0779408d4b41c057225bc2331ecd8ff698a92c7f45caccf731"
+  },
+  "matchups": {
+    "crustle_ogerpon": {
+      "display_name": "Crustle / Cornerstone Ogerpon control",
+      "bundle_path": "red_team/bundles/crustle_ogerpon",
+      "bundle_sha256": "REQUIRED_BEFORE_RUN",
+      "policy_source": "official ladder replay reconstruction",
+      "strength_evidence": "STRESS_ONLY",
+      "required_for_promotion": true,
+      "minimum_games": 200,
+      "minimum_win_rate": 0.45,
+      "minimum_wilson_low": 0.38
+    },
+    "cynthia_garchomp": {
+      "display_name": "Cynthia's Garchomp",
+      "bundle_path": "red_team/bundles/cynthia_garchomp",
+      "bundle_sha256": "REQUIRED_BEFORE_RUN",
+      "policy_source": "frozen BLACK candidate reconstruction; no mounted official replay; executable policy is still generic ReplayGroundedPolicy reconstruction",
+      "strength_evidence": "STRESS_ONLY",
+      "required_for_promotion": true,
+      "minimum_games": 200,
+      "minimum_win_rate": 0.5,
+      "minimum_wilson_low": 0.43
+    },
+    "grimmsnarl": {
+      "display_name": "Marnie's Grimmsnarl / Froslass",
+      "bundle_path": "red_team/bundles/grimmsnarl",
+      "bundle_sha256": "REQUIRED_BEFORE_RUN",
+      "policy_source": "official ladder replay reconstruction",
+      "strength_evidence": "STRESS_ONLY",
+      "required_for_promotion": true,
+      "minimum_games": 200,
+      "minimum_win_rate": 0.45,
+      "minimum_wilson_low": 0.38
+    },
+    "dragapult_cinderace": {
+      "display_name": "Dragapult / Cinderace",
+      "bundle_path": "red_team/bundles/dragapult_cinderace",
+      "bundle_sha256": "REQUIRED_BEFORE_RUN",
+      "policy_source": "frozen standalone BLACK executable submission commit rebuilt with its own package contract",
+      "strength_evidence": "PROMOTION",
+      "required_for_promotion": true,
+      "minimum_games": 200,
+      "minimum_win_rate": 0.5,
+      "minimum_wilson_low": 0.43,
+      "promotion_source": {
+        "source_type": "git_submission_commit",
+        "commit_sha": "51a98e353abf257e91c3dccbd14a188baddf73f6",
+        "repository_ref": "feature/dragapult-worldline-runners",
+        "builder_path": "scripts/build_submission.py",
+        "evidence_identity": "FROZEN_BLACK_EXECUTABLE_BUNDLE",
+        "policy_identity": "DragapultWorldlinePolicy",
+        "source_pr": 8
+      }
+    },
+    "mewtwo_mirror": {
+      "display_name": "Rocket Mewtwo mirror",
+      "bundle_path": "red_team/bundles/mewtwo_mirror",
+      "bundle_sha256": "REQUIRED_BEFORE_RUN",
+      "policy_source": "frozen standalone BLACK executable submission commit rebuilt with its own package contract",
+      "strength_evidence": "PROMOTION",
+      "required_for_promotion": true,
+      "minimum_games": 200,
+      "minimum_win_rate": 0.5,
+      "minimum_wilson_low": 0.43,
+      "promotion_source": {
+        "source_type": "git_submission_commit",
+        "commit_sha": "db4eb14b881e96b3f9b2599ea4c9a5e31c1dbc20",
+        "repository_ref": "feature/rocket-mewtwo-worldline-runners",
+        "builder_path": "scripts/build_submission.py",
+        "evidence_identity": "FROZEN_BLACK_EXECUTABLE_BUNDLE",
+        "policy_identity": "RocketMewtwoWorldlinePolicyV2",
+        "source_pr": 9
+      }
+    },
+    "mega_starmie_cinderace": {
+      "display_name": "Mega Starmie / Cinderace",
+      "bundle_path": "red_team/bundles/mega_starmie_cinderace",
+      "bundle_sha256": "REQUIRED_BEFORE_RUN",
+      "policy_source": "official replay reconstruction",
+      "strength_evidence": "STRESS_ONLY",
+      "required_for_promotion": false,
+      "minimum_games": 200,
+      "minimum_win_rate": 0.45,
+      "minimum_wilson_low": 0.38
+    },
+    "alakazam": {
+      "display_name": "Alakazam / Dunsparce",
+      "bundle_path": "red_team/bundles/alakazam",
+      "bundle_sha256": "REQUIRED_BEFORE_RUN",
+      "policy_source": "official replay reconstruction",
+      "strength_evidence": "STRESS_ONLY",
+      "required_for_promotion": false,
+      "minimum_games": 200,
+      "minimum_win_rate": 0.5,
+      "minimum_wilson_low": 0.43
+    },
+    "mega_abomasnow": {
+      "display_name": "Mega Abomasnow / Kyogre",
+      "bundle_path": "red_team/bundles/mega_abomasnow",
+      "bundle_sha256": "REQUIRED_BEFORE_RUN",
+      "policy_source": "official replay reconstruction",
+      "strength_evidence": "STRESS_ONLY",
+      "required_for_promotion": false,
+      "minimum_games": 200,
+      "minimum_win_rate": 0.5,
+      "minimum_wilson_low": 0.43
+    }
+  }
+}

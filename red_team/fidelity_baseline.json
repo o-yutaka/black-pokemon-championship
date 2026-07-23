@@ -1,0 +1,20 @@
+{
+  "verdict": "HISTORICAL_STRESS_ONLY",
+  "thresholds": {"minimum_overall": 0.35, "minimum_attack": 0.95},
+  "evidence_identity": "REPLAY_GROUNDED_RECONSTRUCTION",
+  "strength_evidence": "STRESS_ONLY",
+  "warning": "Action fidelity is reconstruction agreement, not opponent strength or promotion evidence.",
+  "matchups": {
+    "grimmsnarl": {"episode_id": 87658435, "decisions": 58, "matches": 25, "overall_fidelity": 0.43103448275862066, "attack_decisions": 6, "attack_matches": 6, "attack_fidelity": 1.0, "passed": true},
+    "crustle_ogerpon": {"episode_id": 87655215, "decisions": 77, "matches": 31, "overall_fidelity": 0.4025974025974026, "attack_decisions": 6, "attack_matches": 6, "attack_fidelity": 1.0, "passed": true},
+    "mega_starmie_cinderace": {"episode_id": 87654188, "decisions": 62, "matches": 26, "overall_fidelity": 0.41935483870967744, "attack_decisions": 7, "attack_matches": 7, "attack_fidelity": 1.0, "passed": true},
+    "alakazam": {"episode_id": 87654157, "decisions": 113, "matches": 57, "overall_fidelity": 0.504424778761062, "attack_decisions": 17, "attack_matches": 17, "attack_fidelity": 1.0, "passed": true},
+    "mega_abomasnow": {"episode_id": 87653638, "decisions": 69, "matches": 26, "overall_fidelity": 0.37681159420289856, "attack_decisions": 11, "attack_matches": 11, "attack_fidelity": 1.0, "passed": true},
+    "mewtwo_mirror": {"episode_id": 87654027, "decisions": 52, "matches": 31, "overall_fidelity": 0.5961538461538461, "attack_decisions": 0, "attack_matches": 0, "attack_fidelity": 1.0, "passed": true}
+  },
+  "skipped": {
+    "cynthia_garchomp": "No mounted exact official replay; frozen BLACK candidate evidence only.",
+    "dragapult_cinderace": "Official replay deck and frozen BLACK-C deck are different 60-card identities; exact-action fidelity comparison prohibited."
+  },
+  "interpretation": "Fidelity measures reconstruction agreement with source actions. It is not a matchup win-rate or promotion claim. Replay-only reconstructions remain STRESS_ONLY."
+}

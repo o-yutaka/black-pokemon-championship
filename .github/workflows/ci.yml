@@ -1,16 +1,116 @@
-name: dragapult-clean-gate
+name: black-worldline-gate
 on:
   pull_request:
   push:
-    branches: [black/dragapult-clean-v1]
+    branches:
+      - feature/dragapult-worldline-runners
+      - feature/rocket-mewtwo-worldline-runners
+      - black/official-championship-rebuild-v1
 jobs:
   test:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - run: python -m pip install --upgrade pip pytest
       - run: python scripts/static_gate.py
-      - run: python -m pytest -q
+      - run: python scripts/validate_red_team_manifest.py
+      - run: >-
+          python -m py_compile
+          black_engine/evaluation/*.py
+          red_team/replay_grounded_agent.py
+          scripts/run_official_red_team.py
+          scripts/judge_replays.py
+          scripts/mine_loss_modes.py
+          scripts/promotion_gate.py
+          scripts/build_red_team_bundles.py
+          scripts/audit_red_team_fidelity.py
+      - name: Frozen promotion challenger package smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > promotion-bundle-smoke.log
+          exec > >(tee -a promotion-bundle-smoke.log) 2>&1
+          git fetch --no-tags origin feature/dragapult-worldline-runners feature/rocket-mewtwo-worldline-runners
+          git cat-file -e 51a98e353abf257e91c3dccbd14a188baddf73f6^{commit}
+          git cat-file -e db4eb14b881e96b3f9b2599ea4c9a5e31c1dbc20^{commit}
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          mkdir -p "$work/cg"
+          for name in __init__.py api.py game.py sim.py utils.py; do
+            printf '# package-smoke fixture\n' > "$work/cg/$name"
+          done
+          printf '\177ELFpackage-smoke-only' > "$work/cg/libcg.so"
+          python scripts/build_submission.py --cg-dir "$work/cg" --out "$work/candidate.tar.gz"
+          mkdir -p "$work/candidate"
+          tar -xzf "$work/candidate.tar.gz" -C "$work/candidate"
+          python scripts/build_red_team_bundles.py \
+            --cg-dir "$work/cg" \
+            --candidate-bundle "$work/candidate" \
+            --out-dir "$work/bundles" \
+            --lock-out "$work/red_team_manifest.lock.json"
+          python - "$work/red_team_manifest.lock.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          lock = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          for slug in ("dragapult_cinderace", "mewtwo_mirror"):
+              config = lock["matchups"][slug]
+              assert config["strength_evidence"] == "PROMOTION"
+              assert config["build_mode"] == "GIT_SUBMISSION_COMMIT"
+              assert config["evidence_identity"] == "FROZEN_BLACK_EXECUTABLE_BUNDLE"
+              assert len(config["bundle_sha256"]) == 64
+          for slug in ("crustle_ogerpon", "cynthia_garchomp", "grimmsnarl"):
+              config = lock["matchups"][slug]
+              assert config["strength_evidence"] == "STRESS_ONLY"
+              assert config["build_mode"] == "REPLAY_GROUNDED_RECONSTRUCTION"
+          print("FROZEN_PROMOTION_BUNDLE_PACKAGE_SMOKE PASS")
+          PY
+      - name: Capture exact test collection
+        run: python -m pytest --collect-only -q | tee pytest-collection.log
+      - name: Run pytest with captured log
+        shell: bash
+        run: |
+          set +e
+          python -m pytest -q 2>&1 | tee pytest.log
+          status=${PIPESTATUS[0]}
+          exit "$status"
+      - name: Freeze exact tested git tree
+        if: always()
+        run: git archive --format=tar.gz --output=tested-tree.tar.gz HEAD
+      - name: Upload pytest evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-evidence
+          path: |
+            pytest.log
+            pytest-collection.log
+            promotion-bundle-smoke.log
+          if-no-files-found: error
+      - name: Upload exact tested tree
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: exact-tested-tree
+          path: tested-tree.tar.gz
+          if-no-files-found: error
+      - name: Upload tested source snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tested-source
+          path: |
+            main.py
+            deck.csv
+            submission_contract.py
+            black_engine
+            red_team
+            scripts
+            tests
+          if-no-files-found: error

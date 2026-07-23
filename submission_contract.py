@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Any
 
 from black_engine.support import read_deck, validate_deck
 
-CANDIDATE = "dragapult_cinderace"
-ACE_SPEC_IDS = {1088}
+CANDIDATE = "rocket_mewtwo_championship_replay_repair_v1"
+ACE_SPEC_IDS = {1159}
 
 ROOT_FILE_ORDER = (
     "main.py",
@@ -15,9 +16,19 @@ ROOT_FILE_ORDER = (
 )
 BLACK_ENGINE_FILE_ORDER = (
     "__init__.py",
-    "policy.py",
     "runtime.py",
     "support.py",
+    "prize_truth.py",
+    "mewtwo_truth.py",
+    "rocket_mewtwo_worldline.py",
+    "rocket_mewtwo_worldline_v2.py",
+    "championship_policy.py",
+    "replay_repair_policy.py",
+    "worldline/__init__.py",
+    "worldline/model.py",
+    "worldline/judge.py",
+    "worldline/vision.py",
+    "worldline/pending.py",
 )
 REQUIRED_CG_FILES = (
     "__init__.py",
@@ -81,11 +92,17 @@ def validate_source_layout(root: str | Path) -> dict:
     main_text = (root / "main.py").read_text(encoding="utf-8")
     forbidden = [
         token
-        for token in ("candidates/", "build_hybrid", "candidate router")
+        for token in ("candidates/", "build_hybrid", "candidate router", "DragapultPolicy")
         if token.lower() in main_text.lower()
     ]
     if forbidden:
         raise SubmissionContractError(f"non-canonical main.py tokens: {forbidden}")
+    if "ChampionshipRocketMewtwoPolicy" not in main_text:
+        raise SubmissionContractError("main.py is not wired to championship policy")
+
+    init_text = (root / "black_engine" / "__init__.py").read_text(encoding="utf-8")
+    if "replay_repair_policy" not in init_text:
+        raise SubmissionContractError("black_engine export is not wired to replay repair policy")
 
     return {"root": str(root), "candidate": CANDIDATE, "deck": report}
 
@@ -97,12 +114,17 @@ def validate_runtime_layout(root: str | Path) -> dict:
     missing = [name for name in REQUIRED_CG_FILES if not (cg / name).is_file()]
     if missing:
         raise SubmissionContractError(f"runtime cg missing: {sorted(missing)}")
-    if (cg / "libcg.so").stat().st_size <= 0:
+    libcg = cg / "libcg.so"
+    if libcg.stat().st_size <= 0:
         raise SubmissionContractError("cg/libcg.so is empty")
+    if not libcg.read_bytes().startswith(b"\x7fELF"):
+        raise SubmissionContractError("cg/libcg.so is not an ELF shared object")
+    libcg_sha = hashlib.sha256(libcg.read_bytes()).hexdigest()
     return {
         **source,
         "runtime": "PASS",
-        "libcg_size": (cg / "libcg.so").stat().st_size,
+        "libcg_size": libcg.stat().st_size,
+        "libcg_sha256": libcg_sha,
     }
 
 
