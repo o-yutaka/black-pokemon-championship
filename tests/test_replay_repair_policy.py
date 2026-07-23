@@ -84,7 +84,6 @@ def test_replay_repair_finishes_mewtwo_setup_before_nonterminal_attack():
     obs = observation(opponent_hp=320, our_prizes=6)
     policy = ChampionshipRocketMewtwoPolicy()
     context = policy.build_context(obs)
-
     assert policy.choose_single(obs["select"]["option"], context) == 0
     assert policy.last_runner_id == "MEWTWO_SETUP_BEFORE_TURN_CLOSE"
 
@@ -93,6 +92,30 @@ def test_terminal_attack_remains_above_mewtwo_setup():
     obs = observation(opponent_hp=30, our_prizes=2)
     policy = ChampionshipRocketMewtwoPolicy()
     context = policy.build_context(obs)
-
     assert policy.choose_single(obs["select"]["option"], context) == 1
     assert policy.last_runner_id == "TERMINAL_ACTION_FREEZE"
+
+
+def test_nonterminal_immediate_ko_is_not_delayed_for_setup():
+    obs = observation(opponent_hp=120, our_prizes=6)
+    policy = ChampionshipRocketMewtwoPolicy()
+    context = policy.build_context(obs)
+    assert policy.choose_single(obs["select"]["option"], context) == 1
+    assert policy.last_runner_id != "MEWTWO_SETUP_BEFORE_TURN_CLOSE"
+
+
+def test_replay_repair_can_develop_second_mewtwo_when_active_is_known_to_fall():
+    obs = observation(opponent_hp=320, our_prizes=6)
+    obs["current"]["players"][0]["active"] = [
+        pokemon(MEWTWO_EX, 10, 170, 280, (TEAM_ROCKET_ENERGY, TEAM_ROCKET_ENERGY))
+    ]
+    obs["current"]["players"][0]["bench"][0] = pokemon(MEWTWO_EX, 20, 280, 280)
+    obs["select"]["option"][0]["inPlayArea"] = 5
+    obs["select"]["option"][0]["inPlayIndex"] = 0
+    policy = ChampionshipRocketMewtwoPolicy()
+    policy.observed_damage_by_attacker[GRIMMSNARL_EX] = 180
+    context = policy.build_context(obs)
+    assert context["ready_mewtwo"]
+    assert not context["backup_attacker_ready"]
+    assert policy.choose_single(obs["select"]["option"], context) == 0
+    assert policy.last_runner_id == "MEWTWO_SETUP_BEFORE_TURN_CLOSE"
