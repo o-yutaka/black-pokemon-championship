@@ -39,7 +39,9 @@
       "ENERGY_ATTACH_ERROR",
       "TERMINAL_MISS",
       "PROMOTION_ERROR"
-    ]
+    ],
+    "minimum_postfix_replay_episodes": 5,
+    "require_zero_fatal_replay_findings": true
   },
   "matchups": {
     "crustle_ogerpon": {
@@ -56,10 +58,10 @@
       "display_name": "Cynthia's Garchomp",
       "bundle_path": "red_team/bundles/cynthia_garchomp",
       "bundle_sha256": "REQUIRED_BEFORE_RUN",
-      "policy_source": "official ladder replay reconstruction",
+      "policy_source": "frozen BLACK candidate reconstruction; no mounted official replay",
       "required_for_promotion": true,
       "minimum_games": 200,
-      "minimum_win_rate": 0.50,
+      "minimum_win_rate": 0.5,
       "minimum_wilson_low": 0.43
     },
     "grimmsnarl": {
@@ -79,7 +81,7 @@
       "policy_source": "official ladder replay reconstruction and frozen BLACK challenger",
       "required_for_promotion": true,
       "minimum_games": 200,
-      "minimum_win_rate": 0.50,
+      "minimum_win_rate": 0.5,
       "minimum_wilson_low": 0.43
     },
     "mewtwo_mirror": {
@@ -89,7 +91,7 @@
       "policy_source": "frozen prior current-head-equivalent opponent Bundle",
       "required_for_promotion": true,
       "minimum_games": 200,
-      "minimum_win_rate": 0.50,
+      "minimum_win_rate": 0.5,
       "minimum_wilson_low": 0.43
     },
     "mega_starmie_cinderace": {
@@ -109,7 +111,7 @@
       "policy_source": "official replay reconstruction and search-agent benchmark",
       "required_for_promotion": false,
       "minimum_games": 200,
-      "minimum_win_rate": 0.50,
+      "minimum_win_rate": 0.5,
       "minimum_wilson_low": 0.43
     },
     "mega_abomasnow": {
@@ -119,7 +121,7 @@
       "policy_source": "official replay reconstruction",
       "required_for_promotion": false,
       "minimum_games": 200,
-      "minimum_win_rate": 0.50,
+      "minimum_win_rate": 0.5,
       "minimum_wilson_low": 0.43
     }
   }
