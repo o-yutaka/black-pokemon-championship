@@ -19,7 +19,11 @@ class LoadedBundle:
 def tree_sha256(root: Path) -> str:
     root = root.resolve()
     digest = hashlib.sha256()
-    for path in sorted(value for value in root.rglob("*") if value.is_file()):
+    for path in sorted(
+        value
+        for value in root.rglob("*")
+        if value.is_file() and "__pycache__" not in value.parts and value.suffix != ".pyc"
+    ):
         relative = path.relative_to(root).as_posix().encode()
         digest.update(len(relative).to_bytes(4, "big"))
         digest.update(relative)
@@ -31,7 +35,7 @@ def tree_sha256(root: Path) -> str:
 
 def _purge_bundle_modules() -> None:
     for name in list(sys.modules):
-        if name == "submission_contract" or name == "black_engine" or name.startswith("black_engine."):
+        if name in {"submission_contract", "red_agent"} or name == "black_engine" or name.startswith("black_engine."):
             sys.modules.pop(name, None)
 
 
