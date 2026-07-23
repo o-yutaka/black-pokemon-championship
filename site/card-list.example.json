@@ -1,0 +1,30 @@
+[
+  {
+    "card_id": "151",
+    "card_name": "Scorbunny",
+    "category": "Pokémon",
+    "stage": "Basic",
+    "hp": 70,
+    "energy_type": "Fire",
+    "quantity": 2,
+    "text": "Example schema record. Replace with the competition card database."
+  },
+  {
+    "card_id": "666",
+    "card_name": "Cinderace",
+    "category": "Pokémon",
+    "stage": "Stage 2",
+    "hp": 170,
+    "energy_type": "Fire",
+    "quantity": 4,
+    "attack_name": "Example attack"
+  },
+  {
+    "card_id": "example-trainer",
+    "card_name": "Example Trainer",
+    "category": "Trainer",
+    "subtype": "Item",
+    "quantity": 3,
+    "effect": "Example only."
+  }
+]
