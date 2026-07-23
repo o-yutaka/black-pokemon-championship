@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - "site/**"
+      - "docs/**"
+      - "index.html"
       - ".github/workflows/black-battle-studio-pages.yml"
   workflow_dispatch:
 
