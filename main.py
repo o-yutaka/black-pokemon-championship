@@ -53,3 +53,8 @@ RUNTIME = SubmissionRuntime(
 
 def agent(obs, configuration=None):
     return RUNTIME.agent(obs, configuration)
+
+
+def get_black_decision_overlay():
+    """Local Battle Studio side-channel; ignored by Kaggle submission runtime."""
+    return RUNTIME.get_decision_overlay()
