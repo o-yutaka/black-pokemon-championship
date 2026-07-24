@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { getInitialBridgeUrl, persistBridgeUrl } from "./bridge-url";
+import { inspectAgentAnalysis, type AgentAnalysisContext } from "./deck-analysis";
 import { APPLY_PLAYER_DECK_EVENT, dispatchBundleDeck, dispatchPlayerBundleSelected, dispatchPlayerBundleUpdated, type ApplyPlayerDeckDetail, type BundleSummary } from "./deck-easy";
 import { appendFolder, chooseFolder, findEngineFile, folderFromInput, replaceAgentDeck, type PickedFolder } from "./folderPicker";
 import type { LiveStatus } from "./live";
@@ -54,13 +55,23 @@ export function NativeRuntimePanel({ liveStatus, onStart, onError }: Props) {
     finally { setBusy(null); }
   };
 
-  const publishPlayer = (bundle: BundleArtifact, deck: number[], sourceFolder: PickedFolder | null, updated = false) => {
+  const publishPlayer = (bundle: BundleArtifact, deck: number[], sourceFolder: PickedFolder | null, analysis: AgentAnalysisContext | null, updated = false) => {
     setPlayer(bundle);
     setPlayerSourceFolder(sourceFolder);
     dispatchBundleDeck(deck);
-    const detail = { bundle, deck, canApplyDirectly: Boolean(sourceFolder) };
+    const detail = { bundle, deck, canApplyDirectly: Boolean(sourceFolder), analysis };
     if (updated) dispatchPlayerBundleUpdated(detail); else dispatchPlayerBundleSelected(detail);
   };
+
+  const emptyAnalysis = (bundle: BundleArtifact): AgentAnalysisContext => ({
+    report: null,
+    reportSource: null,
+    policySha: null,
+    freezeSha: null,
+    engineSha: engine?.sha256 ?? null,
+    bundleSha: bundle.sha256,
+    bundledEngineSha: bundle.bundledEngineSha256 ?? null,
+  });
 
   const uploadEngine = (file?: File, displayName?: string) => file && void run("engine", async () => {
     const body = new FormData();
@@ -78,7 +89,7 @@ export function NativeRuntimePanel({ liveStatus, onStart, onError }: Props) {
     const url = new URL("/api/native/bundles", bridgeUrl());
     if (engine) url.searchParams.set("engine_id", engine.id);
     const payload = await responseJson<{ bundle: BundleArtifact; deck: number[] }>(await fetch(url, { method: "POST", body }));
-    if (role === "player") publishPlayer(payload.bundle, payload.deck, null); else setOpponent(payload.bundle);
+    if (role === "player") publishPlayer(payload.bundle, payload.deck, null, emptyAnalysis(payload.bundle)); else setOpponent(payload.bundle);
   });
 
   const uploadAgentFolder = async (role: "player" | "opponent", folder: PickedFolder, updated = false) => {
@@ -86,7 +97,10 @@ export function NativeRuntimePanel({ liveStatus, onStart, onError }: Props) {
     appendFolder(body, folder);
     if (engine) body.append("engine_id", engine.id);
     const payload = await responseJson<{ bundle: BundleArtifact; deck: number[] }>(await fetch(new URL("/api/native/bundle-folder", bridgeUrl()), { method: "POST", body }));
-    if (role === "player") publishPlayer(payload.bundle, payload.deck, folder, updated); else setOpponent(payload.bundle);
+    if (role === "player") {
+      const analysis = await inspectAgentAnalysis(folder, { engineSha: engine?.sha256 ?? null, bundleSha: payload.bundle.sha256, bundledEngineSha: payload.bundle.bundledEngineSha256 });
+      publishPlayer(payload.bundle, payload.deck, folder, analysis, updated);
+    } else setOpponent(payload.bundle);
   };
 
   const uploadFolder = (role: FolderRole, folder: PickedFolder) => {
@@ -150,7 +164,7 @@ export function NativeRuntimePanel({ liveStatus, onStart, onError }: Props) {
       <div className="native-grid folder-grid">
         <article className={cards ? "folder-ready" : ""}><strong>0. カード情報と画像</strong><p>{cards ? `${cards.count}枚 · ${cards.sources.join(" + ")}` : "カードDBの2つのCSV"}</p><small>{cards ? "実カード画像とカード名を使用中" : "CSVが入ったフォルダーを選ぶ"}</small><button className="folder-primary" type="button" onClick={() => void choose("cards")} disabled={Boolean(busy)}>{busy === "cards" ? "読み込み中…" : "フォルダーを選ぶ"}</button></article>
         <article className={engine ? "folder-ready" : ""}><strong>1. 公式対戦エンジン</strong><p>{engine?.filename || "libcg.so または公式ZIP"}</p><small>{engine ? `${engine.sourceKind} · ${shortSha(engine.sha256)}` : "中から自動で見つけます"}</small><button className="folder-primary" type="button" onClick={() => void choose("engine")} disabled={Boolean(busy)}>{busy === "engine" ? "準備中…" : "フォルダーを選ぶ"}</button><button className="minor-picker" type="button" onClick={() => engineFileRef.current?.click()} disabled={Boolean(busy)}>ファイルを直接選ぶ</button></article>
-        <article className={player ? "folder-ready" : ""}><strong>2. 自分の対戦AI</strong><p>{player?.filename || "main.pyとdeck.csvのフォルダー"}</p><small>{player ? `${player.deckCount}枚 · ${playerSourceFolder ? "デッキを画面から変更可能" : "圧縮ファイル読込"}` : "選ぶとデッキも自動で読み込みます"}</small><button className="folder-primary" type="button" onClick={() => void choose("player")} disabled={!engine || Boolean(busy)}>{busy === "player" ? "確認中…" : "フォルダーを選ぶ"}</button><button className="minor-picker" type="button" onClick={() => playerFileRef.current?.click()} disabled={!engine || Boolean(busy)}>圧縮ファイルを選ぶ</button></article>
+        <article className={player ? "folder-ready" : ""}><strong>2. 自分の対戦AI</strong><p>{player?.filename || "main.pyとdeck.csvのフォルダー"}</p><small>{player ? `${player.deckCount}枚 · ${playerSourceFolder ? "分析・デッキ変更可能" : "圧縮ファイル読込"}` : "選ぶとデッキと分析情報を自動読込"}</small><button className="folder-primary" type="button" onClick={() => void choose("player")} disabled={!engine || Boolean(busy)}>{busy === "player" ? "確認中…" : "フォルダーを選ぶ"}</button><button className="minor-picker" type="button" onClick={() => playerFileRef.current?.click()} disabled={!engine || Boolean(busy)}>圧縮ファイルを選ぶ</button></article>
         <article className={opponent ? "folder-ready" : ""}><strong>3. 相手の対戦AI</strong><p>{opponent?.filename || "相手のmain.pyとdeck.csv"}</p><small>{opponent ? `${opponent.deckCount}枚 · ${shortSha(opponent.sha256)}` : "別の対戦AIをそのまま選択"}</small><button className="folder-primary" type="button" onClick={() => void choose("opponent")} disabled={!engine || Boolean(busy)}>{busy === "opponent" ? "確認中…" : "フォルダーを選ぶ"}</button><button className="minor-picker" type="button" onClick={() => opponentFileRef.current?.click()} disabled={!engine || Boolean(busy)}>圧縮ファイルを選ぶ</button></article>
       </div>
       <button className="native-start primary" type="button" disabled={!ready} onClick={() => engine && player && opponent && onStart({ bridgeUrl: bridgeUrl(), engine: "official-native", engineId: engine.id, playerBundleId: player.id, nativeOpponentBundleId: opponent.id })}>この2つの対戦AIで公式対戦を始める</button>
