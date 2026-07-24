@@ -48,13 +48,13 @@ export const decisionCandidateSchema = z.object({
 });
 
 export const selectedActionSchema = z.object({
-  arrayIndex: z.number().int().nonnegative().nullable().default(null),
+  arrayIndex: z.number().int().nonnegative().nullable().optional(),
   optionIndex: z.number().int().nonnegative(),
-  kind: z.string().default("UNKNOWN"),
-  cardId: z.number().int().nonnegative().nullable().default(null),
-  serial: z.number().int().nonnegative().nullable().default(null),
-  effectSource: z.string().default(""),
-  label: z.string().default(""),
+  kind: z.string().optional(),
+  cardId: z.number().int().nonnegative().nullable().optional(),
+  serial: z.number().int().nonnegative().nullable().optional(),
+  effectSource: z.string().optional(),
+  label: z.string().optional(),
 });
 
 export const decisionSchema = z.object({
@@ -64,15 +64,15 @@ export const decisionSchema = z.object({
   confidence: z.number().min(0).max(1).nullable().default(null),
   elapsedMs: z.number().nonnegative().nullable().default(null),
   candidates: z.array(decisionCandidateSchema).default([]),
-  overlayVersion: z.string().default("1.0"),
-  selectedAction: selectedActionSchema.nullable().default(null),
-  selectedActions: z.array(selectedActionSchema).default([]),
-  scores: z.record(z.string(), z.number()).default({}),
-  flags: z.record(z.string(), z.boolean()).default({}),
-  warnings: z.array(z.string()).default([]),
-  alternatives: z.array(decisionCandidateSchema).default([]),
-  boardDiff: z.array(z.string()).default([]),
-  scoreSource: z.string().default("unknown"),
+  overlayVersion: z.string().optional(),
+  selectedAction: selectedActionSchema.nullable().optional(),
+  selectedActions: z.array(selectedActionSchema).optional(),
+  scores: z.record(z.string(), z.number()).optional(),
+  flags: z.record(z.string(), z.boolean()).optional(),
+  warnings: z.array(z.string()).optional(),
+  alternatives: z.array(decisionCandidateSchema).optional(),
+  boardDiff: z.array(z.string()).optional(),
+  scoreSource: z.string().optional(),
 });
 
 export const battleFrameSchema = z.object({
