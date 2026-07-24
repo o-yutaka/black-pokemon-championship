@@ -16,7 +16,7 @@ type Props = {
   hasBasic: boolean;
   aceOk: boolean;
   onReport(report: AnalysisReport, source: string): void;
-  onReportError(message: string): void;
+  onReportError?(message: string): void;
   onPromoteBaseline(): void;
 };
 
@@ -48,7 +48,7 @@ export function DeckAnalysisPanel(props: Props) {
   const importReport = async (file?: File) => {
     if (!file) return;
     try { props.onReport(parseAnalysisReport(JSON.parse(await file.text())), file.name); }
-    catch (error) { props.onReportError(error instanceof Error ? error.message : "分析JSONを読み込めませんでした"); }
+    catch (error) { props.onReportError?.(error instanceof Error ? error.message : "分析JSONを読み込めませんでした"); }
   };
 
   return <aside className="deck-analysis-panel" aria-label="BLACKデッキ分析">
