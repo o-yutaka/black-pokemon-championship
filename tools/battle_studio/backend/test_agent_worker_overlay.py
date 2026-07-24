@@ -63,6 +63,9 @@ class AgentWorkerOverlayTest(unittest.TestCase):
             finally:
                 process.terminate()
                 process.wait(timeout=2)
+                for stream in (process.stdin, process.stdout, process.stderr):
+                    if stream is not None:
+                        stream.close()
 
 
 if __name__ == "__main__":
