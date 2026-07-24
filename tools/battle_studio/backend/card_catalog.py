@@ -4,7 +4,7 @@ import csv
 import os
 import re
 from collections import defaultdict
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
 CARD_FILE = "EN_Card_Data.csv"
@@ -73,6 +73,8 @@ def _walk_directories(root: Path, max_depth: int = _MAX_DISCOVERY_DEPTH) -> Iter
 
 
 def discover_card_files(roots: list[Path] | None = None) -> tuple[Path, Path]:
+    if _active_paths is not None and roots is None:
+        return _active_paths
     searched: list[str] = []
     for root in roots or _candidate_roots():
         root = root.expanduser().resolve()
@@ -145,6 +147,29 @@ def load_catalog(card_path: Path, id_path: Path) -> list[dict[str, Any]]:
 
 _cache_key: tuple[str, int, str, int] | None = None
 _cache_value: list[dict[str, Any]] | None = None
+_active_paths: tuple[Path, Path] | None = None
+
+
+def activate_catalog_paths(card_path: Path, id_path: Path) -> tuple[list[dict[str, Any]], tuple[Path, Path]]:
+    global _active_paths, _cache_key, _cache_value
+    cards = load_catalog(card_path, id_path)
+    _active_paths = (card_path.resolve(), id_path.resolve())
+    _cache_key = None
+    _cache_value = cards
+    return cards, _active_paths
+
+
+def install_catalog_folder(root: Path, entries: list[tuple[str, bytes]]) -> tuple[list[dict[str, Any]], tuple[Path, Path]]:
+    root.mkdir(parents=True, exist_ok=True)
+    for name, data in entries:
+        pure = PurePosixPath(name.replace("\\", "/"))
+        if pure.is_absolute() or any(part in {"", ".", ".."} for part in pure.parts):
+            raise ValueError(f"unsafe card data path: {name}")
+        target = root.joinpath(*pure.parts)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+    card_path, id_path = discover_card_files([root])
+    return activate_catalog_paths(card_path, id_path)
 
 
 def get_catalog() -> tuple[list[dict[str, Any]], tuple[Path, Path]]:
