@@ -8,6 +8,10 @@ import traceback
 from pathlib import Path
 from typing import Any
 
+WORKER_DIRECTORY = Path(__file__).resolve().parent
+if str(WORKER_DIRECTORY) not in sys.path:
+    sys.path.insert(0, str(WORKER_DIRECTORY))
+
 from decision_overlay import json_safe, split_agent_result
 
 
