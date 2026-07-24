@@ -7,6 +7,7 @@ import { initializeJapaneseUi } from "./locale";
 import { installJapaneseNetworkErrors } from "./network";
 import "./bridge-launch.css";
 import "./mobile.css";
+import "./layout-repair.css";
 
 initializeJapaneseUi();
 getInitialBridgeUrl();
