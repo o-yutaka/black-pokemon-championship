@@ -1,0 +1,309 @@
+html,
+body,
+#root {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+body,
+button,
+input,
+select,
+textarea {
+  -webkit-text-size-adjust: 100%;
+}
+
+.app-shell,
+.topbar,
+.topbar > div,
+.top-actions,
+.engine-console,
+.engine-console-head,
+.bridge-launch,
+.bridge-row,
+.bundle-grid,
+.bundle-slot,
+.engine-runbar,
+.engine-run-actions,
+.native-runtime,
+.decision-ide,
+.layer-content,
+.pocket-board,
+.player-board,
+.player-strip,
+.counts,
+.controls {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.topbar {
+  flex-wrap: wrap;
+}
+
+.topbar > div:first-child {
+  flex: 1 1 360px;
+  min-width: 0;
+}
+
+.topbar h1,
+.topbar p {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.top-actions {
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.top-actions > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.motion-picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 42px;
+  color: #a9bed0;
+  font-size: .74rem;
+}
+
+.motion-picker select {
+  min-width: 0;
+  max-width: 112px;
+}
+
+.bridge-launch code,
+.engine-warning,
+.bundle-slot p,
+.bundle-meta dd {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.bridge-launch code {
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
+
+.bridge-row {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.bridge-row > * {
+  min-width: 0;
+}
+
+.bundle-slot-head {
+  flex-wrap: wrap;
+}
+
+.engine-runbar {
+  flex-wrap: wrap;
+}
+
+.engine-run-actions {
+  min-width: 0;
+}
+
+.engine-run-actions button {
+  min-width: 0;
+  white-space: normal;
+}
+
+.layer-tabs {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
+}
+
+.layer-tabs button {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-art.has-card-image {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 0;
+  aspect-ratio: 63 / 88;
+  overflow: hidden;
+  background: #05080d;
+}
+
+.card-art.has-card-image > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.card-face.compact .card-art.has-card-image {
+  min-height: 0;
+  aspect-ratio: 63 / 88;
+}
+
+.active-ring .card-art.has-card-image {
+  max-height: min(43vh, 300px);
+}
+
+.card-modal {
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.card-modal .card-art.has-card-image {
+  max-height: min(62dvh, 520px);
+}
+
+.controls {
+  width: 100%;
+}
+
+@media (max-width: 900px) {
+  .topbar,
+  .layer-tabs {
+    position: static !important;
+    top: auto !important;
+  }
+
+  .bridge-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .bridge-row > a {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .app-shell {
+    width: 100%;
+    padding-inline: max(8px, env(safe-area-inset-left)) max(8px, env(safe-area-inset-right));
+  }
+
+  .topbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .top-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .top-actions .motion-picker {
+    grid-column: 1 / -1;
+    justify-content: space-between;
+  }
+
+  .top-actions button {
+    width: 100%;
+    min-width: 0;
+    white-space: normal;
+  }
+
+  .bridge-row {
+    grid-template-columns: 1fr;
+  }
+
+  .bridge-row > a {
+    grid-column: auto;
+  }
+
+  .engine-runbar {
+    position: static !important;
+    bottom: auto !important;
+    margin-inline: 0 !important;
+  }
+
+  .engine-run-actions {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .layer-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    overflow: visible;
+  }
+
+  .layer-tabs button {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .player-strip {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .counts {
+    flex-wrap: nowrap;
+  }
+
+  .count-orb {
+    min-width: 38px;
+    width: 38px;
+    height: 38px;
+  }
+
+  .bench-row {
+    overflow: hidden;
+  }
+
+  .card-face.compact {
+    min-width: 0;
+  }
+
+  .card-face.compact .card-art.has-card-image {
+    aspect-ratio: 63 / 88;
+  }
+
+  .active-ring {
+    width: min(178px, 50vw);
+  }
+
+  .controls {
+    position: sticky;
+    bottom: max(6px, env(safe-area-inset-bottom));
+    max-width: calc(100vw - 16px);
+    margin-inline: auto;
+  }
+
+  .control-buttons {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .control-buttons button {
+    min-width: 0;
+    padding-inline: 6px;
+  }
+}
+
+@supports not (overflow: clip) {
+  html,
+  body,
+  #root {
+    overflow-x: hidden;
+  }
+}

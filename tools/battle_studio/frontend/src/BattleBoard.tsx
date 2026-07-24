@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { cardArtUrl, type CardArtCatalog } from "./cardArt";
 import { cardKey, type BattleFrame, type CardInstance } from "./types";
 
@@ -66,15 +67,21 @@ function inferActionFx(previous: BattleFrame | null, frame: BattleFrame): Action
 }
 
 export function CardFace({ card, compact = false, onSelect, catalog, highlight = false }: { card: CardInstance | null; compact?: boolean; onSelect?: (card: CardInstance) => void; catalog: CardArtCatalog; highlight?: boolean }) {
+  const resolvedImageUrl = card ? cardArtUrl(card.cardId, card.imageUrl, catalog) : null;
+  const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (resolvedImageUrl !== failedImageUrl) setFailedImageUrl(null);
+  }, [resolvedImageUrl]);
+
   if (!card) return <div className={`card-face empty ${compact ? "compact" : ""}`}><span>＋</span><small>空き枠</small></div>;
   const hpText = card.hp === null || card.maxHp === null ? "HP 不明" : `${card.hp}/${card.maxHp}`;
   const ratio = hpRatio(card);
   const critical = ratio > 0 && ratio <= 0.3;
-  const imageUrl = cardArtUrl(card.cardId, card.imageUrl, catalog);
+  const showImage = Boolean(resolvedImageUrl && resolvedImageUrl !== failedImageUrl);
   return <button className={`card-face ${compact ? "compact" : ""} ${critical ? "critical" : ""} ${highlight ? "action-target" : ""}`} type="button" onClick={() => onSelect?.(card)} aria-label={`${card.name}、HP ${hpText}`} data-card-key={cardKey(card)}>
-    <div className="card-art" style={imageUrl ? { backgroundImage: `url(${imageUrl})` } : undefined}>
-      {!imageUrl && <span>{card.name.slice(0, 2)}</span>}
-      <div className="card-glass"><span>#{card.cardId}</span><b>{card.name}</b></div>
+    <div className={`card-art ${showImage ? "has-card-image" : "fallback-card-art"}`}>
+      {showImage && <img src={resolvedImageUrl!} alt={`${card.name}のカード画像`} loading="lazy" decoding="async" draggable={false} onError={() => setFailedImageUrl(resolvedImageUrl)} />}
+      {!showImage && <><span>{card.name.slice(0, 2)}</span><div className="card-glass"><span>#{card.cardId}</span><b>{card.name}</b></div></>}
     </div>
     <div className="card-readout">
       <div className="hp-readout"><strong>HP {hpText}</strong><span>{card.damage > 0 ? `${card.damage} DMG` : "READY"}</span></div>
@@ -100,7 +107,7 @@ function PlayerBoard({ frame, playerIndex, onSelect, catalog, fx }: { frame: Bat
       <div className="counts"><CountOrb label="手札" value={player.handCount} /><CountOrb label="山札" value={player.deckCount} /><CountOrb label="サイド" value={player.prizeCount} /></div>
     </div>
     <div className="bench-label">BENCH</div>
-    <div className="bench-row">{Array.from({ length: 5 }, (_, index) => { const card = player.bench[index] ?? null; return <CardFace key={index} card={card} compact onSelect={onSelect} catalog={catalog} highlight={card ? cardKey(card) === targetKey : false} />; })}</div>
+    <div className="bench-row">{Array.from({ length: 5 }, (_, index) => { const boardCard = player.bench[index] ?? null; return <CardFace key={index} card={boardCard} compact onSelect={onSelect} catalog={catalog} highlight={boardCard ? cardKey(boardCard) === targetKey : false} />; })}</div>
     <div className="active-stage"><div className="active-ring"><span>ACTIVE</span><CardFace card={player.active} onSelect={onSelect} catalog={catalog} highlight={player.active ? cardKey(player.active) === targetKey : false} /></div></div>
   </section>;
 }
