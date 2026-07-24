@@ -1,3 +1,5 @@
+import { deckCsv } from "./deck-easy";
+
 export type FolderFile = { file: File; path: string };
 export type PickedFolder = { name: string; files: FolderFile[] };
 
@@ -59,5 +61,23 @@ export function findEngineFile(folder: PickedFolder): FolderFile {
   const archives = folder.files.filter((entry) => entry.file.name.toLowerCase().endsWith(".zip"))
     .sort((left, right) => left.path.split("/").length - right.path.split("/").length);
   if (archives.length) return archives[0];
-  throw new Error("選択フォルダー内に libcg.so または公式Engine ZIPがありません");
+  throw new Error("選択フォルダー内に libcg.so または公式エンジンZIPがありません");
+}
+
+function parentPath(path: string): string {
+  const parts = path.replace(/\\/g, "/").split("/");
+  parts.pop();
+  return parts.join("/");
+}
+
+export function replaceAgentDeck(folder: PickedFolder, ids: number[]): PickedFolder {
+  const mainParents = new Set(folder.files.filter((entry) => entry.file.name.toLowerCase() === "main.py").map((entry) => parentPath(entry.path)));
+  const deckCandidates = folder.files.filter((entry) => entry.file.name.toLowerCase() === "deck.csv" && mainParents.has(parentPath(entry.path)));
+  if (deckCandidates.length !== 1) throw new Error(`main.pyと同じ場所のdeck.csvを1つだけ含めてください（検出${deckCandidates.length}件）`);
+  const targetPath = deckCandidates[0].path;
+  const replacement = new File([deckCsv(ids)], "deck.csv", { type: "text/csv;charset=utf-8", lastModified: Date.now() });
+  return {
+    name: folder.name,
+    files: folder.files.map((entry) => entry.path === targetPath ? { file: replacement, path: targetPath } : entry),
+  };
 }
