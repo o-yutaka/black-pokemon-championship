@@ -42,3 +42,13 @@ def test_discovery_prefers_exact_names_over_numbered_copies(tmp_path: Path) -> N
     cards, ids = discover_card_files([tmp_path])
     assert cards == exact_cards
     assert ids == exact_ids
+
+
+def test_discovery_prefers_matching_numbered_pair_over_mixed_names(tmp_path: Path) -> None:
+    exact_cards, exact_ids = _write_minimal_pair(tmp_path)
+    numbered_cards, numbered_ids = _write_minimal_pair(tmp_path, "(5)")
+    exact_ids.unlink()
+    cards, ids = discover_card_files([tmp_path])
+    assert cards == numbered_cards
+    assert ids == numbered_ids
+    assert cards != exact_cards
