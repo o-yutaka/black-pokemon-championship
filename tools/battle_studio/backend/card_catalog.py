@@ -2,20 +2,30 @@ from __future__ import annotations
 
 import csv
 import os
+import re
 from collections import defaultdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 CARD_FILE = "EN_Card_Data.csv"
 ID_FILE = "card_id_list.csv"
+_SKIP_DIRECTORIES = {".git", "node_modules", "__pycache__", ".venv", ".venv-battle-studio"}
+_MAX_DISCOVERY_DEPTH = 6
 
 
 def _candidate_roots() -> list[Path]:
     resolved = Path(__file__).resolve()
     repo = resolved.parents[3] if len(resolved.parents) > 3 else resolved.parent
     roots = [
-        Path.cwd(), repo, repo / "data", repo / "assets", repo / "submission",
-        Path("/home/user/HROS"), Path("/home/user/HROS/data"), Path("/home/user/HROS/submission"),
+        Path.cwd(),
+        repo,
+        repo / "data",
+        repo / "assets",
+        repo / "submission",
+        Path("/home/user/HROS"),
+        Path("/home/user/HROS/data"),
+        Path("/home/user/HROS/submission"),
+        Path.home(),
     ]
     configured = os.environ.get("BLACK_CARD_DATA_DIR")
     if configured:
@@ -28,14 +38,75 @@ def _candidate_roots() -> list[Path]:
     return result
 
 
-def discover_card_files() -> tuple[Path, Path]:
-    for root in _candidate_roots():
-        card = root / CARD_FILE
-        ids = root / ID_FILE
-        if card.is_file() and ids.is_file():
-            return card, ids
+def _file_suffix(name: str, canonical: str) -> int | None:
+    stem = re.escape(Path(canonical).stem)
+    match = re.fullmatch(rf"{stem}(?:\s*\((\d+)\))?\.csv", name, flags=re.IGNORECASE)
+    if not match:
+        return None
+    return int(match.group(1) or 0)
+
+
+def _matching_files(directory: Path, canonical: str) -> list[Path]:
+    try:
+        entries = list(directory.iterdir())
+    except OSError:
+        return []
+    matches = [entry for entry in entries if entry.is_file() and _file_suffix(entry.name, canonical) is not None]
+    return sorted(matches, key=lambda path: (_file_suffix(path.name, canonical) == 0, path.stat().st_mtime_ns), reverse=True)
+
+
+def _best_pair(directory: Path) -> tuple[Path, Path] | None:
+    cards = _matching_files(directory, CARD_FILE)
+    ids = _matching_files(directory, ID_FILE)
+    if not cards or not ids:
+        return None
+
+    def score(pair: tuple[Path, Path]) -> tuple[int, int, int]:
+        card, id_file = pair
+        card_suffix = _file_suffix(card.name, CARD_FILE) or 0
+        id_suffix = _file_suffix(id_file.name, ID_FILE) or 0
+        exact_count = int(card_suffix == 0) + int(id_suffix == 0)
+        same_suffix = int(card_suffix == id_suffix)
+        newest_common = min(card.stat().st_mtime_ns, id_file.stat().st_mtime_ns)
+        return exact_count, same_suffix, newest_common
+
+    return max(((card, id_file) for card in cards for id_file in ids), key=score)
+
+
+def _walk_directories(root: Path, max_depth: int = _MAX_DISCOVERY_DEPTH) -> Iterable[Path]:
+    if not root.is_dir():
+        return
+    base_depth = len(root.parts)
+    for directory, subdirectories, _files in os.walk(root):
+        current = Path(directory)
+        depth = len(current.parts) - base_depth
+        subdirectories[:] = [
+            name for name in subdirectories
+            if name not in _SKIP_DIRECTORIES and not (name.startswith(".") and name != ".")
+        ]
+        if depth >= max_depth:
+            subdirectories.clear()
+        yield current
+
+
+def discover_card_files(roots: list[Path] | None = None) -> tuple[Path, Path]:
+    searched: list[str] = []
+    for root in roots or _candidate_roots():
+        root = root.expanduser().resolve()
+        searched.append(str(root))
+        direct = _best_pair(root)
+        if direct:
+            return direct
+        for directory in _walk_directories(root):
+            if directory == root:
+                continue
+            pair = _best_pair(directory)
+            if pair:
+                return pair
+    accepted = f"{CARD_FILE} / EN_Card_Data(<番号>).csv と {ID_FILE} / card_id_list(<番号>).csv"
     raise FileNotFoundError(
-        f"{CARD_FILE} and {ID_FILE} were not found together; set BLACK_CARD_DATA_DIR"
+        f"カードDBが見つかりません。対応ファイル名: {accepted}。検索先: {', '.join(searched)}。"
+        "別の場所にある場合は BLACK_CARD_DATA_DIR を指定してください"
     )
 
 
