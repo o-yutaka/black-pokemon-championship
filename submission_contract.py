@@ -5,8 +5,8 @@ from typing import Any
 
 from black_engine.support import read_deck, validate_deck
 
-CANDIDATE = "dragapult_cinderace"
-ACE_SPEC_IDS = {1088}
+CANDIDATE = "rocket_mewtwo_xerosic2"
+ACE_SPEC_IDS = {1159}
 
 ROOT_FILE_ORDER = (
     "main.py",
@@ -15,9 +15,17 @@ ROOT_FILE_ORDER = (
 )
 BLACK_ENGINE_FILE_ORDER = (
     "__init__.py",
-    "policy.py",
     "runtime.py",
     "support.py",
+    "prize_truth.py",
+    "mewtwo_truth.py",
+    "rocket_mewtwo_worldline.py",
+    "rocket_mewtwo_worldline_v2.py",
+    "worldline/__init__.py",
+    "worldline/model.py",
+    "worldline/judge.py",
+    "worldline/vision.py",
+    "worldline/pending.py",
 )
 REQUIRED_CG_FILES = (
     "__init__.py",
@@ -81,7 +89,7 @@ def validate_source_layout(root: str | Path) -> dict:
     main_text = (root / "main.py").read_text(encoding="utf-8")
     forbidden = [
         token
-        for token in ("candidates/", "build_hybrid", "candidate router")
+        for token in ("candidates/", "build_hybrid", "candidate router", "DragapultPolicy")
         if token.lower() in main_text.lower()
     ]
     if forbidden:

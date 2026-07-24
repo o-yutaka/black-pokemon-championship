@@ -11,6 +11,7 @@ class PlanStep:
     expected_type: int | None = None
     card_id: int | None = None
     target_serial: int | None = None
+    attack_id: int | None = None
 
 
 @dataclass
