@@ -64,12 +64,12 @@ jobs:
           set -o pipefail
           npm run build 2>&1 | tee ../../../artifacts/battle_studio_ci/frontend_build.log
 
-      - name: Python converter tests
+      - name: Python backend tests
         working-directory: tools/battle_studio/backend
         shell: bash
         run: |
           set -o pipefail
-          python -m unittest -v test_replay_converter.py 2>&1 | tee ../../../artifacts/battle_studio_ci/python_tests.log
+          python -m unittest -v test_replay_converter.py test_decision_overlay.py test_agent_worker_overlay.py 2>&1 | tee ../../../artifacts/battle_studio_ci/python_tests.log
 
       - name: Validate JSON schema syntax
         shell: bash

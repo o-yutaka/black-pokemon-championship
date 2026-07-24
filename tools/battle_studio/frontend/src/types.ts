@@ -37,17 +37,42 @@ export const battleEventSchema = z.object({
   cardKey: z.string().nullable().default(null),
 });
 
+export const decisionCandidateSchema = z.object({
+  label: z.string(),
+  score: z.number(),
+  selected: z.boolean().default(false),
+  reason: z.string().nullable().optional(),
+  kind: z.string().nullable().optional(),
+  cardId: z.number().int().nonnegative().nullable().optional(),
+  serial: z.number().int().nonnegative().nullable().optional(),
+});
+
+export const selectedActionSchema = z.object({
+  arrayIndex: z.number().int().nonnegative().nullable().optional(),
+  optionIndex: z.number().int().nonnegative(),
+  kind: z.string().optional(),
+  cardId: z.number().int().nonnegative().nullable().optional(),
+  serial: z.number().int().nonnegative().nullable().optional(),
+  effectSource: z.string().optional(),
+  label: z.string().optional(),
+});
+
 export const decisionSchema = z.object({
   actor: z.number().int().min(0).max(1),
   goal: z.string().default("unrecorded"),
   chosen: z.string(),
   confidence: z.number().min(0).max(1).nullable().default(null),
   elapsedMs: z.number().nonnegative().nullable().default(null),
-  candidates: z.array(z.object({
-    label: z.string(),
-    score: z.number(),
-    selected: z.boolean().default(false),
-  })).default([]),
+  candidates: z.array(decisionCandidateSchema).default([]),
+  overlayVersion: z.string().optional(),
+  selectedAction: selectedActionSchema.nullable().optional(),
+  selectedActions: z.array(selectedActionSchema).optional(),
+  scores: z.record(z.string(), z.number()).optional(),
+  flags: z.record(z.string(), z.boolean()).optional(),
+  warnings: z.array(z.string()).optional(),
+  alternatives: z.array(decisionCandidateSchema).optional(),
+  boardDiff: z.array(z.string()).optional(),
+  scoreSource: z.string().optional(),
 });
 
 export const battleFrameSchema = z.object({
@@ -75,6 +100,8 @@ export const battleReplaySchema = z.object({
 export type CardInstance = z.infer<typeof cardInstanceSchema>;
 export type BattleFrame = z.infer<typeof battleFrameSchema>;
 export type BattleReplay = z.infer<typeof battleReplaySchema>;
+export type DecisionCandidate = z.infer<typeof decisionCandidateSchema>;
+export type SelectedAction = z.infer<typeof selectedActionSchema>;
 
 export function cardKey(card: CardInstance): string {
   return `${card.playerIndex}:${card.serial}`;

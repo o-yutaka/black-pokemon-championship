@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from decision_overlay import build_board_diff, normalize_decision_overlay
 from native_artifacts import BundleArtifact, EngineArtifact
 from official_replay_adapter import normalize_official_frame
 
@@ -50,6 +51,7 @@ class AgentProcess:
         if not ready.get("ready"):
             self.close()
             raise NativeEngineError(f"agent bootstrap failed: {ready.get('error', 'unknown error')}")
+        self.overlay_protocol = str(ready.get("overlayProtocol", "legacy"))
 
     def _readline(self, timeout: float) -> dict[str, Any]:
         if self.process.stdout is None:
@@ -66,7 +68,7 @@ class AgentProcess:
             raise NativeEngineError(f"agent process exited: {stderr}")
         return json.loads(line)
 
-    def decide(self, observation: dict[str, Any]) -> tuple[list[int], float, str | None]:
+    def decide(self, observation: dict[str, Any]) -> tuple[list[int], float, str | None, dict[str, Any] | None]:
         if self.process.stdin is None:
             raise NativeEngineError("agent stdin unavailable")
         started = time.perf_counter()
@@ -76,7 +78,8 @@ class AgentProcess:
             response = self._readline(self.timeout_seconds)
         elapsed = (time.perf_counter() - started) * 1000.0
         proposed = response.get("selection") if response.get("ok") else []
-        return _legalize(observation, proposed), elapsed, None if response.get("ok") else str(response.get("error", "agent error"))
+        overlay = response.get("overlay") if isinstance(response.get("overlay"), dict) else None
+        return _legalize(observation, proposed), elapsed, None if response.get("ok") else str(response.get("error", "agent error")), overlay
 
     def close(self) -> None:
         if self.process.poll() is None:
@@ -93,6 +96,7 @@ class DecisionEvidence:
     selection: list[int]
     elapsed_ms: float
     error: str | None
+    overlay: dict[str, Any]
 
 
 class NativeOfficialBattleSession:
@@ -118,7 +122,8 @@ class NativeOfficialBattleSession:
         deck_array = (ctypes.c_int * 120)(*(list(bundles[0].deck) + list(bundles[1].deck)))
         start = self.lib.BattleStart(deck_array)
         if not start.battlePtr or start.errorType:
-            for agent in self.agents: agent.close()
+            for agent in self.agents:
+                agent.close()
             raise NativeEngineError(f"BattleStart failed player={start.errorPlayer} errorType={start.errorType}")
         self.pointer = start.battlePtr
         self.frame_id = 0
@@ -134,17 +139,22 @@ class NativeOfficialBattleSession:
             raise NativeEngineError("GetBattleData returned no JSON")
         return json.loads(data.json.decode("utf-8")), int(data.selectPlayer)
 
-    def _snapshot(self) -> dict[str, Any]:
+    def _visual(self) -> dict[str, Any]:
         raw = self.lib.VisualizeData(self.pointer)
         if not raw:
             raise NativeEngineError("VisualizeData returned no JSON")
         frames = json.loads(raw.decode("utf-8"))
-        visual = dict(frames[-1]) if frames else self._observation()[0]
+        return dict(frames[-1]) if frames else self._observation()[0]
+
+    def _snapshot(self, visual: dict[str, Any] | None = None) -> dict[str, Any]:
+        frame = normalize_official_frame(visual or self._visual(), self.frame_id)
         if self.last_decision:
-            visual["decision"] = {"actor": self.last_decision.actor, "goal": "uploaded_bundle_agent", "chosen": str(self.last_decision.selection), "confidence": None, "elapsedMs": self.last_decision.elapsed_ms, "candidates": [{"label": str(self.last_decision.selection), "score": 1.0, "selected": True}]}
+            decision = dict(self.last_decision.overlay)
+            decision["actor"] = self.last_decision.actor
+            decision["elapsedMs"] = self.last_decision.elapsed_ms
+            frame["decision"] = decision
             if self.last_decision.error:
-                visual.setdefault("logs", []).append({"type": "agent_error", "playerIndex": self.last_decision.actor, "text": self.last_decision.error})
-        frame = normalize_official_frame(visual, self.frame_id)
+                frame.setdefault("events", []).append({"type": "agent_error", "actor": self.last_decision.actor, "text": self.last_decision.error, "cardKey": None})
         frame["players"][0]["name"] = self.bundles[0].filename
         frame["players"][1]["name"] = self.bundles[1].filename
         self.finished = frame.get("result") is not None
@@ -156,15 +166,21 @@ class NativeOfficialBattleSession:
     def _step_sync(self) -> dict[str, Any]:
         if self.finished:
             raise NativeEngineError("battle already finished")
+        before_visual = self._visual()
+        before_frame = normalize_official_frame(before_visual, self.frame_id)
         observation, player = self._observation()
-        selection, elapsed, error = self.agents[player].decide(observation)
+        selection, elapsed, error, explicit_overlay = self.agents[player].decide(observation)
+        decision = normalize_decision_overlay(observation, selection, elapsed, error, explicit_overlay)
         array = (ctypes.c_int * len(selection))(*selection) if selection else None
         code = int(self.lib.Select(self.pointer, array, len(selection)))
         if code:
             raise NativeEngineError(f"official Select rejected player={player} selection={selection} code={code}")
         self.frame_id += 1
-        self.last_decision = DecisionEvidence(player, selection, elapsed, error)
-        return self._snapshot()
+        after_visual = self._visual()
+        after_frame = normalize_official_frame(after_visual, self.frame_id)
+        decision["boardDiff"] = [*decision.get("boardDiff", []), *build_board_diff(before_frame, after_frame)]
+        self.last_decision = DecisionEvidence(player, selection, elapsed, error, decision)
+        return self._snapshot(after_visual)
 
     def legal_selections(self) -> list[list[int]]:
         return [] if self.finished else [[0]]
@@ -176,4 +192,5 @@ class NativeOfficialBattleSession:
         if getattr(self, "pointer", None):
             self.lib.BattleFinish(self.pointer)
             self.pointer = None
-        for agent in self.agents: agent.close()
+        for agent in self.agents:
+            agent.close()

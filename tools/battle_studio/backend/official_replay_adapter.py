@@ -52,10 +52,55 @@ def _player(raw: Mapping[str, Any], player: int) -> dict[str, Any]:
 def _result(value: Any) -> str | None:
     if value is None or value in {-1, "-1", "", "ongoing", "ONGOING"}:
         return None
-    if value in {0, "0"}: return "P0_WIN"
-    if value in {1, "1"}: return "P1_WIN"
-    if value in {2, "2"}: return "DRAW"
+    if value in {0, "0"}:
+        return "P0_WIN"
+    if value in {1, "1"}:
+        return "P1_WIN"
+    if value in {2, "2"}:
+        return "DRAW"
     return str(value)
+
+
+def _candidate(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, Mapping):
+        return None
+    result: dict[str, Any] = {"label": str(value.get("label", value.get("name", "候補"))), "score": float(value.get("score", 0.0) or 0.0), "selected": bool(value.get("selected", False))}
+    for key in ("reason", "kind"):
+        if value.get(key) is not None:
+            result[key] = str(value[key])
+    for key in ("cardId", "serial"):
+        if value.get(key) is not None:
+            result[key] = _int(value[key])
+    return result
+
+
+def _decision(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, Mapping) or value.get("actor") not in (0, 1):
+        return None
+    candidates = [candidate for item in _seq(value.get("candidates")) if (candidate := _candidate(item)) is not None]
+    alternatives = [candidate for item in _seq(value.get("alternatives")) if (candidate := _candidate(item)) is not None]
+    selected_action = dict(value["selectedAction"]) if isinstance(value.get("selectedAction"), Mapping) else None
+    selected_actions = [dict(item) for item in _seq(value.get("selectedActions")) if isinstance(item, Mapping)]
+    scores = {str(key): float(item) for key, item in dict(value.get("scores", {})).items() if isinstance(item, (int, float)) and not isinstance(item, bool)} if isinstance(value.get("scores"), Mapping) else {}
+    flags = {str(key): bool(item) for key, item in dict(value.get("flags", {})).items()} if isinstance(value.get("flags"), Mapping) else {}
+    confidence = value.get("confidence")
+    return {
+        "actor": int(value["actor"]),
+        "goal": str(value.get("goal", "uploaded_bundle_agent")),
+        "chosen": str(value.get("chosen", "[]")),
+        "confidence": float(confidence) if isinstance(confidence, (int, float)) and not isinstance(confidence, bool) else None,
+        "elapsedMs": float(value["elapsedMs"]) if isinstance(value.get("elapsedMs"), (int, float)) and not isinstance(value.get("elapsedMs"), bool) else None,
+        "candidates": candidates,
+        "overlayVersion": str(value.get("overlayVersion", value.get("schemaVersion", "1.0"))),
+        "selectedAction": selected_action,
+        "selectedActions": selected_actions,
+        "scores": scores,
+        "flags": flags,
+        "warnings": [str(item) for item in _seq(value.get("warnings"))],
+        "alternatives": alternatives,
+        "boardDiff": [str(item) for item in _seq(value.get("boardDiff"))],
+        "scoreSource": str(value.get("scoreSource", "unknown")),
+    }
 
 
 def normalize_official_frame(raw: Mapping[str, Any], frame_id: int) -> dict[str, Any]:
@@ -64,7 +109,8 @@ def normalize_official_frame(raw: Mapping[str, Any], frame_id: int) -> dict[str,
     if not isinstance(players_raw, Sequence) or len(players_raw) != 2:
         raise ValueError("official frame requires exactly two players")
     acting = _int(raw.get("actingPlayer", state.get("yourIndex", state.get("playerIndex", 0))))
-    if acting not in (0, 1): acting = 0
+    if acting not in (0, 1):
+        acting = 0
     events = []
     for item in _seq(raw.get("logs", raw.get("events", []))):
         if isinstance(item, Mapping):
@@ -72,8 +118,4 @@ def normalize_official_frame(raw: Mapping[str, Any], frame_id: int) -> dict[str,
             events.append({"type": str(item.get("type", "log")), "actor": actor_int if actor_int in (0, 1) else None, "text": str(item.get("text", item.get("message", item))), "cardKey": None})
         else:
             events.append({"type": "log", "actor": None, "text": str(item), "cardKey": None})
-    decision = raw.get("decision") if isinstance(raw.get("decision"), Mapping) else None
-    normalized_decision = None
-    if decision is not None and decision.get("actor") in (0, 1):
-        normalized_decision = {"actor": int(decision["actor"]), "goal": str(decision.get("goal", "uploaded_bundle_agent")), "chosen": str(decision.get("chosen", "[]")), "confidence": decision.get("confidence"), "elapsedMs": decision.get("elapsedMs"), "candidates": list(decision.get("candidates", []))}
-    return {"frameId": frame_id, "turn": max(0, _int(raw.get("turn", state.get("turn", 0)))), "actionCount": max(0, _int(raw.get("actionCount", state.get("turnActionCount", frame_id)))), "actingPlayer": acting, "phase": "result" if _result(state.get("result")) else str(raw.get("phase", "main")), "players": [_player(players_raw[0], 0), _player(players_raw[1], 1)], "stadium": None, "events": events, "decision": normalized_decision, "result": _result(state.get("result", raw.get("result")))}
+    return {"frameId": frame_id, "turn": max(0, _int(raw.get("turn", state.get("turn", 0)))), "actionCount": max(0, _int(raw.get("actionCount", state.get("turnActionCount", frame_id)))), "actingPlayer": acting, "phase": "result" if _result(state.get("result")) else str(raw.get("phase", "main")), "players": [_player(players_raw[0], 0), _player(players_raw[1], 1)], "stadium": None, "events": events, "decision": _decision(raw.get("decision")), "result": _result(state.get("result", raw.get("result")))}
