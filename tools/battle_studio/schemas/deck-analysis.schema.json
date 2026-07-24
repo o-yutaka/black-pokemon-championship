@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://black.local/schemas/deck-analysis.schema.json",
+  "title": "BLACK Deck Analysis Evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "intent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["winCondition", "idealTurns", "aceReason", "lossConditions", "invariants"],
+      "properties": {
+        "winCondition": { "type": "string" },
+        "idealTurns": { "type": "array", "items": { "type": "string" } },
+        "aceReason": { "type": "string" },
+        "lossConditions": { "type": "array", "items": { "type": "string" } },
+        "invariants": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "current": { "$ref": "#/$defs/snapshot" },
+    "candidate": { "$ref": "#/$defs/snapshot" },
+    "evaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evaluationId", "evaluatedAt", "method", "engineErrors", "timeouts"],
+      "properties": {
+        "evaluationId": { "type": "string" },
+        "evaluatedAt": { "type": "string" },
+        "method": { "type": "string" },
+        "engineErrors": { "type": "integer", "minimum": 0 },
+        "timeouts": { "type": "integer", "minimum": 0 },
+        "smokePassed": { "type": "boolean" },
+        "submissionFormatPassed": { "type": "boolean" }
+      }
+    },
+    "synergy": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "title", "detail"],
+        "properties": {
+          "severity": { "enum": ["info", "warning", "danger"] },
+          "title": { "type": "string" },
+          "detail": { "type": "string" },
+          "metric": { "type": "string" }
+        }
+      }
+    },
+    "hashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "policySha": { "type": "string", "pattern": "^[0-9a-fA-F]{64}$" },
+        "freezeSha": { "type": "string", "pattern": "^[0-9a-fA-F]{7,64}$" },
+        "engineSha": { "type": "string", "pattern": "^[0-9a-fA-F]{64}$" }
+      }
+    }
+  },
+  "$defs": {
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "matchups"],
+      "properties": {
+        "name": { "type": "string" },
+        "deckSha": { "type": "string", "pattern": "^[0-9a-fA-F]{64}$" },
+        "bundleSha": { "type": "string", "pattern": "^[0-9a-fA-F]{64}$" },
+        "matchups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "wins", "losses"],
+            "properties": {
+              "name": { "type": "string" },
+              "wins": { "type": "integer", "minimum": 0 },
+              "losses": { "type": "integer", "minimum": 0 },
+              "draws": { "type": "integer", "minimum": 0 },
+              "firstGames": { "type": "integer", "minimum": 0 },
+              "secondGames": { "type": "integer", "minimum": 0 },
+              "engineErrors": { "type": "integer", "minimum": 0 },
+              "timeouts": { "type": "integer", "minimum": 0 },
+              "ev": { "type": "number" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

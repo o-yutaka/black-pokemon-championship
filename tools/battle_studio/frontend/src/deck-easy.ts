@@ -1,3 +1,5 @@
+import type { AgentAnalysisContext } from "./deck-analysis";
+
 export const BUNDLE_DECK_EVENT = "black:bundle-deck";
 export const PLAYER_BUNDLE_SELECTED_EVENT = "black:player-bundle-selected";
 export const PLAYER_BUNDLE_UPDATED_EVENT = "black:player-bundle-updated";
@@ -16,6 +18,7 @@ export type PlayerBundleDetail = {
   bundle: BundleSummary;
   deck: number[];
   canApplyDirectly: boolean;
+  analysis?: AgentAnalysisContext | null;
 };
 
 export type ApplyPlayerDeckDetail = {
