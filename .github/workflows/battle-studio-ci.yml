@@ -33,13 +33,17 @@ jobs:
       - name: Prepare diagnostics
         run: mkdir -p artifacts/battle_studio_ci
 
+      - name: Validate Bridge launcher syntax
+        shell: bash
+        run: |
+          set -o pipefail
+          bash -n tools/battle_studio/start_bridge.sh 2>&1 | tee artifacts/battle_studio_ci/launcher_syntax.log
+
       - name: Install frontend dependencies
         working-directory: tools/battle_studio/frontend
         run: npm install --no-audit --no-fund
 
       - name: Type check
-        id: typecheck
-        continue-on-error: true
         working-directory: tools/battle_studio/frontend
         shell: bash
         run: |
@@ -47,8 +51,6 @@ jobs:
           npm run check 2>&1 | tee ../../../artifacts/battle_studio_ci/typecheck.log
 
       - name: Frontend tests
-        id: frontend_tests
-        continue-on-error: true
         working-directory: tools/battle_studio/frontend
         shell: bash
         run: |
@@ -56,8 +58,6 @@ jobs:
           npm test 2>&1 | tee ../../../artifacts/battle_studio_ci/frontend_tests.log
 
       - name: Production build
-        id: frontend_build
-        continue-on-error: true
         working-directory: tools/battle_studio/frontend
         shell: bash
         run: |
@@ -65,8 +65,6 @@ jobs:
           npm run build 2>&1 | tee ../../../artifacts/battle_studio_ci/frontend_build.log
 
       - name: Python converter tests
-        id: python_tests
-        continue-on-error: true
         working-directory: tools/battle_studio/backend
         shell: bash
         run: |
@@ -74,16 +72,12 @@ jobs:
           python -m unittest -v test_replay_converter.py 2>&1 | tee ../../../artifacts/battle_studio_ci/python_tests.log
 
       - name: Validate JSON schema syntax
-        id: schema_check
-        continue-on-error: true
         shell: bash
         run: |
           set -o pipefail
           python -m json.tool tools/battle_studio/schemas/battle_replay.schema.json 2>&1 | tee artifacts/battle_studio_ci/schema.log >/dev/null
 
       - name: Protected path guard
-        id: protected_paths
-        continue-on-error: true
         shell: bash
         run: |
           set -o pipefail
@@ -105,31 +99,10 @@ jobs:
           retention-days: 7
 
       - name: Upload static build
-        if: steps.frontend_build.outcome == 'success'
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: black-battle-studio-dist
           path: tools/battle_studio/frontend/dist
           if-no-files-found: error
           retention-days: 7
-
-      - name: Enforce validation gate
-        if: always()
-        shell: bash
-        env:
-          TYPECHECK: ${{ steps.typecheck.outcome }}
-          FRONTEND_TESTS: ${{ steps.frontend_tests.outcome }}
-          FRONTEND_BUILD: ${{ steps.frontend_build.outcome }}
-          PYTHON_TESTS: ${{ steps.python_tests.outcome }}
-          SCHEMA_CHECK: ${{ steps.schema_check.outcome }}
-          PROTECTED_PATHS: ${{ steps.protected_paths.outcome }}
-        run: |
-          set -euo pipefail
-          printf 'typecheck=%s\nfrontend_tests=%s\nfrontend_build=%s\npython_tests=%s\nschema_check=%s\nprotected_paths=%s\n' \
-            "$TYPECHECK" "$FRONTEND_TESTS" "$FRONTEND_BUILD" "$PYTHON_TESTS" "$SCHEMA_CHECK" "$PROTECTED_PATHS"
-          test "$TYPECHECK" = success
-          test "$FRONTEND_TESTS" = success
-          test "$FRONTEND_BUILD" = success
-          test "$PYTHON_TESTS" = success
-          test "$SCHEMA_CHECK" = success
-          test "$PROTECTED_PATHS" = success

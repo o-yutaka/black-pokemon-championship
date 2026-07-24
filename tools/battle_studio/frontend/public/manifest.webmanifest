@@ -1,7 +1,8 @@
 {
   "name": "BLACK Battle Studio",
   "short_name": "Battle Studio",
-  "description": "Replay-first Pokémon TCG battle viewer and AI decision inspector.",
+  "description": "Pokémon TCGのリプレイ表示、デッキ構築、公式エンジン対戦を行う日本語UI。",
+  "lang": "ja",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#07090d",

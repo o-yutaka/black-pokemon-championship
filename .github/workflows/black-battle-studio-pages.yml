@@ -37,10 +37,8 @@ jobs:
         working-directory: tools/battle_studio/frontend
         run: npm install --no-audit --no-fund
 
-      - name: Build Battle Studio
+      - name: Build Japanese Battle Studio
         working-directory: tools/battle_studio/frontend
-        env:
-          VITE_LIVE_BASE_URL: http://DESKTOP-C3RJG3V:8000/
         run: npm run build
 
       - name: Configure Pages

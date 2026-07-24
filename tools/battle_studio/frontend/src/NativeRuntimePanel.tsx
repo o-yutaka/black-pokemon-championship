@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { persistBridgeUrl } from "./bridge-url";
+import { getInitialBridgeUrl, persistBridgeUrl } from "./bridge-url";
 import type { LiveStatus } from "./live";
 import "./native-runtime.css";
 
@@ -15,7 +15,7 @@ type Props = {
 
 async function responseJson<T>(response: Response): Promise<T> {
   const payload = await response.json().catch(() => ({})) as T & { detail?: string };
-  if (!response.ok) throw new Error(payload.detail || `HTTP ${response.status}`);
+  if (!response.ok) throw new Error(payload.detail || `通信エラー（HTTP ${response.status}）`);
   return payload;
 }
 
@@ -32,7 +32,7 @@ export function NativeRuntimePanel({ liveStatus, onStart, onError }: Props) {
   const [opponent, setOpponent] = useState<BundleArtifact | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
-  const bridgeUrl = (): string => persistBridgeUrl(localStorage.getItem("black.bridgeUrl") || "http://DESKTOP-C3RJG3V:8000/");
+  const bridgeUrl = (): string => persistBridgeUrl(getInitialBridgeUrl());
 
   const run = async (label: string, task: () => Promise<void>) => {
     setBusy(label);
@@ -63,17 +63,17 @@ export function NativeRuntimePanel({ liveStatus, onStart, onError }: Props) {
   const ready = Boolean(engine && player && opponent && !busy && liveStatus !== "connecting" && liveStatus !== "connected");
 
   return (
-    <section className="native-runtime" aria-label="Local official engine runtime">
+    <section className="native-runtime" aria-label="ローカル公式エンジンRuntime">
       <div className="native-runtime-head">
-        <div><span className="eyebrow">LOCAL OFFICIAL RUNTIME</span><h2>Engine ZIP / libcg.so 直結</h2><p>外部Runnerなしで、アップロードした2つのKaggle Agentを同じ公式エンジン上で対戦させる。</p></div>
-        <span className={`native-state ${ready ? "ready" : "setup"}`}>{ready ? "READY" : "SETUP"}</span>
+        <div><span className="eyebrow">ローカル公式RUNTIME</span><h2>Engine ZIP / libcg.so 直結</h2><p>外部Runnerなしで、アップロードした2つのKaggle Agentを同じ公式エンジン上で対戦させる。</p></div>
+        <span className={`native-state ${ready ? "ready" : "setup"}`}>{ready ? "開始可能" : "準備中"}</span>
       </div>
       <div className="native-grid">
-        <article><strong>1. 公式エンジン</strong><p>{engine?.filename || "ptcg_engine ZIP または libcg.so"}</p><small>{engine ? `${engine.sourceKind} · ${shortSha(engine.sha256)}` : "ZIPはWSL2内でC++20ビルド"}</small><button type="button" onClick={() => engineRef.current?.click()} disabled={Boolean(busy)}>{busy === "engine" ? "Building…" : "Upload Engine"}</button></article>
-        <article><strong>2. 自分のBundle</strong><p>{player?.filename || ".tar.gz / .tgz"}</p><small>{player ? `${player.deckCount} cards · ${shortSha(player.sha256)}` : "root main.py + deck.csv"}</small><button type="button" onClick={() => playerRef.current?.click()} disabled={!engine || Boolean(busy)}>Upload Player</button></article>
-        <article><strong>3. 相手Bundle</strong><p>{opponent?.filename || ".tar.gz / .tgz"}</p><small>{opponent ? `${opponent.deckCount} cards · ${shortSha(opponent.sha256)}` : "別Agentを同じEngineへ接続"}</small><button type="button" onClick={() => opponentRef.current?.click()} disabled={!engine || Boolean(busy)}>Upload Opponent</button></article>
+        <article><strong>1. 公式エンジン</strong><p>{engine?.filename || "ptcg_engine ZIP または libcg.so"}</p><small>{engine ? `${engine.sourceKind} · ${shortSha(engine.sha256)}` : "ZIPはWSL2内でC++20ビルド"}</small><button type="button" onClick={() => engineRef.current?.click()} disabled={Boolean(busy)}>{busy === "engine" ? "ビルド中…" : "エンジンを選択"}</button></article>
+        <article><strong>2. 自分のBundle</strong><p>{player?.filename || ".tar.gz / .tgz"}</p><small>{player ? `${player.deckCount}枚 · ${shortSha(player.sha256)}` : "root直下のmain.pyとdeck.csvを検証"}</small><button type="button" onClick={() => playerRef.current?.click()} disabled={!engine || Boolean(busy)}>自分のBundleを選択</button></article>
+        <article><strong>3. 相手のBundle</strong><p>{opponent?.filename || ".tar.gz / .tgz"}</p><small>{opponent ? `${opponent.deckCount}枚 · ${shortSha(opponent.sha256)}` : "別Agentを同じEngineへ接続"}</small><button type="button" onClick={() => opponentRef.current?.click()} disabled={!engine || Boolean(busy)}>相手のBundleを選択</button></article>
       </div>
-      <button className="native-start primary" type="button" disabled={!ready} onClick={() => engine && player && opponent && onStart({ bridgeUrl: bridgeUrl(), engine: "official-native", engineId: engine.id, playerBundleId: player.id, nativeOpponentBundleId: opponent.id })}>Start Official Match</button>
+      <button className="native-start primary" type="button" disabled={!ready} onClick={() => engine && player && opponent && onStart({ bridgeUrl: bridgeUrl(), engine: "official-native", engineId: engine.id, playerBundleId: player.id, nativeOpponentBundleId: opponent.id })}>公式対戦を開始</button>
       <input ref={engineRef} className="file-input" type="file" accept=".zip,.so,application/zip,application/octet-stream" onChange={(event) => { uploadEngine(event.target.files?.[0]); event.currentTarget.value = ""; }} />
       <input ref={playerRef} className="file-input" type="file" accept=".tgz,.gz,.tar.gz,application/gzip" onChange={(event) => { uploadBundle("player", event.target.files?.[0]); event.currentTarget.value = ""; }} />
       <input ref={opponentRef} className="file-input" type="file" accept=".tgz,.gz,.tar.gz,application/gzip" onChange={(event) => { uploadBundle("opponent", event.target.files?.[0]); event.currentTarget.value = ""; }} />
