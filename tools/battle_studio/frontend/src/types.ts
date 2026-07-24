@@ -41,10 +41,10 @@ export const decisionCandidateSchema = z.object({
   label: z.string(),
   score: z.number(),
   selected: z.boolean().default(false),
-  reason: z.string().nullable().default(null),
-  kind: z.string().nullable().default(null),
-  cardId: z.number().int().nonnegative().nullable().default(null),
-  serial: z.number().int().nonnegative().nullable().default(null),
+  reason: z.string().nullable().optional(),
+  kind: z.string().nullable().optional(),
+  cardId: z.number().int().nonnegative().nullable().optional(),
+  serial: z.number().int().nonnegative().nullable().optional(),
 });
 
 export const selectedActionSchema = z.object({
