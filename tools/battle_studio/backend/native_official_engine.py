@@ -35,18 +35,34 @@ def _legalize(obs: dict[str, Any], value: Any) -> list[int]:
     select = obs.get("select") or {}
     options = select.get("option") or []
     minimum = int(select.get("minCount", 0) or 0)
-    maximum = int(select.get("maxCount", minimum) if select.get("maxCount") is not None else minimum)
+    maximum_raw = select.get("maxCount", minimum)
+    maximum = minimum if maximum_raw is None else int(maximum_raw)
     values = [value] if isinstance(value, int) and not isinstance(value, bool) else list(value) if isinstance(value, (list, tuple)) else []
     invalid = any(not isinstance(index, int) or isinstance(index, bool) for index in values) or len(values) != len(set(values)) or not minimum <= len(values) <= maximum or any(index < 0 or index >= len(options) for index in values)
     return list(range(minimum)) if invalid and minimum <= len(options) else ([] if invalid else values)
 
 
+def _trace_configuration(player_index: int, own: BundleArtifact, opponent: BundleArtifact) -> dict[str, Any]:
+    return {
+        "blackDecisionTrace": {
+            "enabled": True,
+            "playerIndex": player_index,
+            "yourDeck": list(own.deck),
+            "opponentDeck": list(opponent.deck),
+            "simulationsPerAction": max(1, min(8, int(os.environ.get("BLACK_TRACE_SEARCH_SIMS", "2")))),
+            "budgetMs": max(5.0, min(250.0, float(os.environ.get("BLACK_TRACE_SEARCH_BUDGET_MS", "45")))),
+            "mode": "trace_only",
+        }
+    }
+
+
 class AgentProcess:
-    def __init__(self, bundle: BundleArtifact, timeout_seconds: float = 5.0) -> None:
+    def __init__(self, bundle: BundleArtifact, configuration: dict[str, Any] | None = None, timeout_seconds: float = 5.0) -> None:
         worker = Path(__file__).with_name("agent_worker.py")
         env = {key: value for key, value in os.environ.items() if key not in {"PYTHONPATH", "PYTHONHOME"}}
         self.process = subprocess.Popen([sys.executable, "-I", str(worker), str(bundle.root)], cwd=bundle.root, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
         self.timeout_seconds = timeout_seconds
+        self.configuration = configuration
         self.lock = threading.Lock()
         ready = self._readline(timeout_seconds)
         if not ready.get("ready"):
@@ -74,7 +90,7 @@ class AgentProcess:
             raise NativeEngineError("agent stdin unavailable")
         started = time.perf_counter()
         with self.lock:
-            self.process.stdin.write(json.dumps({"observation": observation, "configuration": None}, separators=(",", ":")) + "\n")
+            self.process.stdin.write(json.dumps({"observation": observation, "configuration": self.configuration}, separators=(",", ":")) + "\n")
             self.process.stdin.flush()
             response = self._readline(self.timeout_seconds)
         elapsed = (time.perf_counter() - started) * 1000.0
@@ -119,7 +135,10 @@ class NativeOfficialBattleSession:
         self.lib.BattleFinish.argtypes = [ctypes.c_void_p]
         self.lib.BattleFinish.restype = None
         self.lib.GameInitialize()
-        self.agents = (AgentProcess(bundles[0]), AgentProcess(bundles[1]))
+        self.agents = (
+            AgentProcess(bundles[0], _trace_configuration(0, bundles[0], bundles[1])),
+            AgentProcess(bundles[1], _trace_configuration(1, bundles[1], bundles[0])),
+        )
         deck_array = (ctypes.c_int * 120)(*(list(bundles[0].deck) + list(bundles[1].deck)))
         start = self.lib.BattleStart(deck_array)
         if not start.battlePtr or start.errorType:
