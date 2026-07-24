@@ -5,21 +5,36 @@ import sys
 from pathlib import Path
 
 
-def _find_bundle_root() -> Path:
-    candidates: list[Path] = []
+def _candidate_roots() -> list[Path]:
+    """Return portable bundle-root candidates without assuming ``__file__`` exists."""
+    candidates: list[Path] = [Path.cwd()]
+
     explicit = os.environ.get("BLACK_BUNDLE_ROOT")
     if explicit:
-        candidates.append(Path(explicit))
+        candidates.insert(0, Path(explicit))
 
+    # Kaggle CABT evaluates raw Python with exec(code_object, env), so __file__
+    # may be absent. Reading it through globals() is optional compatibility only.
     module_file = globals().get("__file__")
     if isinstance(module_file, str) and module_file:
         candidates.append(Path(module_file).resolve().parent)
 
-    candidates.extend((Path("/kaggle_simulations/agent"), Path.cwd()))
+    # Reuse import roots supplied by the runtime instead of hard-coding Kaggle
+    # or local absolute paths.
+    for entry in sys.path:
+        if isinstance(entry, str) and entry:
+            candidates.append(Path(entry))
 
+    return candidates
+
+
+def _find_bundle_root() -> Path:
     seen: set[Path] = set()
-    for candidate in candidates:
-        candidate = candidate.resolve()
+    for candidate in _candidate_roots():
+        try:
+            candidate = candidate.resolve()
+        except OSError:
+            continue
         if candidate in seen:
             continue
         seen.add(candidate)
