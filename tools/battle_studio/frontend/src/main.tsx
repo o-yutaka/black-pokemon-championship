@@ -8,6 +8,7 @@ import { installJapaneseNetworkErrors } from "./network";
 import "./bridge-launch.css";
 import "./mobile.css";
 import "./layout-repair.css";
+import "./deck-easy.css";
 
 initializeJapaneseUi();
 getInitialBridgeUrl();
