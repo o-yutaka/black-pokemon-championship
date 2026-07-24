@@ -3,6 +3,7 @@ import { DeckAnalysisPanel } from "./DeckAnalysisPanel";
 import { canonicalDeck, parseAnalysisReport, sha256, type AgentAnalysisContext, type AnalysisReport } from "./deck-analysis";
 import { APPLY_PLAYER_DECK_EVENT, BUNDLE_DECK_EVENT, PLAYER_BUNDLE_SELECTED_EVENT, PLAYER_BUNDLE_UPDATED_EVENT, deckCsv, parseDeckCsv, type PlayerBundleDetail } from "./deck-easy";
 import { catalogTermJa } from "./locale";
+import { generateReplayChangeCandidates, loadReplayFailureHistory, REPLAY_FAILURE_EVENT, saveReplayFailureHistory, upsertReplayFailureHistory, type ReplayFailureReport } from "./replay-failure";
 import "./deck-builder.css";
 
 export type CatalogMove = { name: string; cost: string; damage: string; text: string };
@@ -80,6 +81,8 @@ export function DeckBuilder({ importedDeck }: { importedDeck: number[] | null })
   const [selectedPlayer, setSelectedPlayer] = useState<SelectedPlayer | null>(null);
   const [analysisContext, setAnalysisContext] = useState<AgentAnalysisContext | null>(null);
   const [analysisReport, setAnalysisReport] = useState<AnalysisReport | null>(null);
+  const [currentReplayFailure, setCurrentReplayFailure] = useState<ReplayFailureReport | null>(null);
+  const [replayFailureHistory, setReplayFailureHistory] = useState<ReplayFailureReport[]>(() => loadReplayFailureHistory());
   const [applyMessage, setApplyMessage] = useState<string | null>(null);
   const csvRef = useRef<HTMLInputElement>(null);
 
@@ -135,15 +138,27 @@ export function DeckBuilder({ importedDeck }: { importedDeck: number[] | null })
       if (detail.analysis?.report) setAnalysisReport(detail.analysis.report);
       setApplyMessage("自分の対戦AIへCandidateの60枚を反映しました。Baselineは比較用に保持しています");
     };
+    const handleReplayFailure = (event: Event) => {
+      const detail = (event as CustomEvent<ReplayFailureReport>).detail;
+      if (!detail || detail.schemaVersion !== "1.0") return;
+      setCurrentReplayFailure(detail);
+      setReplayFailureHistory((current) => {
+        const next = upsertReplayFailureHistory(current, detail);
+        if (next !== current) saveReplayFailureHistory(next);
+        return next;
+      });
+    };
     const reloadCatalog = () => void loadCatalog();
     window.addEventListener(BUNDLE_DECK_EVENT, handleDeck);
     window.addEventListener(PLAYER_BUNDLE_SELECTED_EVENT, handlePlayer);
     window.addEventListener(PLAYER_BUNDLE_UPDATED_EVENT, handleUpdated);
+    window.addEventListener(REPLAY_FAILURE_EVENT, handleReplayFailure);
     window.addEventListener("black:card-catalog-updated", reloadCatalog);
     return () => {
       window.removeEventListener(BUNDLE_DECK_EVENT, handleDeck);
       window.removeEventListener(PLAYER_BUNDLE_SELECTED_EVENT, handlePlayer);
       window.removeEventListener(PLAYER_BUNDLE_UPDATED_EVENT, handleUpdated);
+      window.removeEventListener(REPLAY_FAILURE_EVENT, handleReplayFailure);
       window.removeEventListener("black:card-catalog-updated", reloadCatalog);
     };
   }, [loadCatalog, replaceDeck]);
@@ -189,6 +204,7 @@ export function DeckBuilder({ importedDeck }: { importedDeck: number[] | null })
   const deckIds = useMemo(() => deckRows.flatMap((row) => Array.from({ length: row.count }, () => row.id)), [deckRows]);
   const baselineDeckSha = useDeckSha(baselineDeck);
   const candidateDeckSha = useDeckSha(deckIds);
+  const replayChangeCandidates = useMemo(() => generateReplayChangeCandidates(replayFailureHistory, deckIds, catalog), [replayFailureHistory, deckIds, catalog]);
 
   const setExactCount = useCallback((id: number, count: number) => {
     setDeck((current) => {
@@ -237,20 +253,31 @@ export function DeckBuilder({ importedDeck }: { importedDeck: number[] | null })
     catch (error) { setApplyMessage(error instanceof Error ? error.message : "分析JSONを読み込めませんでした"); }
   };
 
+  const searchCandidate = (name: string) => {
+    setKind("");
+    setQuery(name);
+    window.setTimeout(() => document.querySelector(".catalog-pane")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  };
+  const clearReplayHistory = () => {
+    setReplayFailureHistory([]);
+    saveReplayFailureHistory([]);
+    setApplyMessage("保存したリプレイ敗因履歴を消去しました");
+  };
+
   const selectedCard = selectedId === null ? null : catalogById.get(selectedId) ?? null;
   const canApply = Boolean(validation.ok && selectedPlayer?.canApplyDirectly);
 
   return (
     <section className="deck-builder" aria-label="かんたんデッキ作成">
       <div className="deck-builder-head">
-        <div><span className="eyebrow">かんたんデッキ作成 + BLACK分析</span><h2>カード変更と分析を同じ画面で確認</h2><p>読み込んだ60枚をCurrentとして固定し、編集内容をCandidateとして差分・Hash・証拠付きで比較する。</p></div>
+        <div><span className="eyebrow">かんたんデッキ作成 + BLACK分析</span><h2>カード変更と分析を同じ画面で確認</h2><p>読み込んだ60枚をCurrentとして固定し、編集内容をCandidateとして差分・Hash・リプレイ証拠付きで比較する。</p></div>
         <div className={`deck-total ${validation.ok ? "valid" : "invalid"}`}><strong>{total}</strong><span>/ 60枚</span></div>
       </div>
 
       <div className="deck-easy-guide">
         <div className={selectedPlayer ? "done" : ""}><b>1</b><span>自分の対戦AIフォルダーを選ぶ</span></div>
         <div><b>2</b><span>カード枚数を変更して差分を見る</span></div>
-        <div className={validation.ok ? "done" : ""}><b>3</b><span>警告・Intent・Gateを確認</span></div>
+        <div className={validation.ok ? "done" : ""}><b>3</b><span>敗因・候補・Intent・Gateを確認</span></div>
         <div className={canApply ? "ready" : ""}><b>4</b><span>Candidateを対戦AIへ反映</span></div>
       </div>
 
@@ -288,10 +315,10 @@ export function DeckBuilder({ importedDeck }: { importedDeck: number[] | null })
           <button className="deck-export primary" type="button" onClick={applyToPlayer} disabled={!canApply}>Candidateを対戦AIへ反映</button>
         </aside>
 
-        <DeckAnalysisPanel baselineDeck={baselineDeck} candidateDeck={deckIds} catalog={catalogById} selectedName={selectedPlayer?.filename ?? null} baselineDeckSha={baselineDeckSha} candidateDeckSha={candidateDeckSha} context={analysisContext} report={analysisReport} total={total} validationOk={validation.ok} hasBasic={validation.hasBasic} aceOk={validation.aceOk} onReport={importAnalysis} onPromoteBaseline={() => { setBaselineDeck(deckIds); setApplyMessage("Candidateを新しいCurrentとして固定しました"); }} />
+        <DeckAnalysisPanel baselineDeck={baselineDeck} candidateDeck={deckIds} catalog={catalogById} selectedName={selectedPlayer?.filename ?? null} baselineDeckSha={baselineDeckSha} candidateDeckSha={candidateDeckSha} context={analysisContext} report={analysisReport} total={total} validationOk={validation.ok} hasBasic={validation.hasBasic} aceOk={validation.aceOk} replayReport={currentReplayFailure} replayHistory={replayFailureHistory} replayCandidates={replayChangeCandidates} onSearchCandidate={searchCandidate} onClearReplayHistory={clearReplayHistory} onReport={importAnalysis} onReportError={setApplyMessage} onPromoteBaseline={() => { setBaselineDeck(deckIds); setApplyMessage("Candidateを新しいCurrentとして固定しました"); }} />
       </div>
 
-      <div className={`mobile-deck-bar ${validation.ok ? "valid" : "invalid"}`}><div><strong>{total}/60枚</strong><span>{validation.ok ? selectedPlayer?.canApplyDirectly ? "差分とGateを確認して反映できます" : "フォルダーから対戦AIを選んでください" : validation.errors[0] ?? "編集中"}</span></div><button type="button" className="primary" onClick={applyToPlayer} disabled={!canApply}>反映</button></div>
+      <div className={`mobile-deck-bar ${validation.ok ? "valid" : "invalid"}`}><div><strong>{total}/60枚</strong><span>{validation.ok ? selectedPlayer?.canApplyDirectly ? "差分・敗因候補・Gateを確認して反映できます" : "フォルダーから対戦AIを選んでください" : validation.errors[0] ?? "編集中"}</span></div><button type="button" className="primary" onClick={applyToPlayer} disabled={!canApply}>反映</button></div>
 
       {selectedCard && <div className="deck-modal-backdrop" role="presentation" onMouseDown={() => setSelectedId(null)}><section className="deck-modal" role="dialog" aria-modal="true" aria-label={selectedCard.name} onMouseDown={(event) => event.stopPropagation()}><button className="deck-modal-close" type="button" onClick={() => setSelectedId(null)}>閉じる</button><span className="catalog-id">#{selectedCard.id} · {selectedCard.expansion} {selectedCard.number}</span><h3>{selectedCard.name}</h3><p>{[catalogTermJa(selectedCard.stage || selectedCard.kind), catalogTermJa(selectedCard.type), hpText(selectedCard.hp), selectedCard.previous && `進化元 ${selectedCard.previous}`].filter(Boolean).join(" · ")}</p>{selectedCard.rule && <div className="deck-rule">{selectedCard.rule}</div>}<div className="move-list">{selectedCard.moves.map((move, index) => <article key={`${move.name}-${index}`}><div><strong>{move.name || "特性"}</strong><span>{move.cost} {move.damage}</span></div>{move.text && <p>{move.text}</p>}</article>)}</div><div className="modal-count"><span>このカードの枚数</span><div className="quick-count">{[0, 1, 2, 3, 4].map((value) => <button type="button" key={value} className={(deck.get(selectedCard.id) ?? 0) === value ? "active" : ""} onClick={() => setExactCount(selectedCard.id, value)}>{value}</button>)}</div></div></section></div>}
     </section>
