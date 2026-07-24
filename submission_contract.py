@@ -15,8 +15,10 @@ ROOT_FILE_ORDER = (
 )
 BLACK_ENGINE_FILE_ORDER = (
     "__init__.py",
+    "decision_trace.py",
     "policy.py",
     "runtime.py",
+    "search_trace.py",
     "support.py",
 )
 REQUIRED_CG_FILES = (
