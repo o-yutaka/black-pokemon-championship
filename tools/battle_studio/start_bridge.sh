@@ -14,6 +14,7 @@ for argument in "$@"; do
     --help|-h)
       printf '使い方: bash tools/battle_studio/start_bridge.sh [--iphone]\n'
       printf '  --iphone  WindowsのLANポート転送とFirewallを管理者権限で設定する\n'
+      printf '  カードDBを手動指定する場合: BLACK_CARD_DATA_DIR=/path/to/data bash tools/battle_studio/start_bridge.sh\n'
       exit 0
       ;;
     *) printf '不明な引数: %s\n' "$argument" >&2; exit 2 ;;
@@ -24,26 +25,57 @@ command -v node >/dev/null || { echo 'Node.jsがありません' >&2; exit 1; }
 command -v npm >/dev/null || { echo 'npmがありません' >&2; exit 1; }
 command -v python3 >/dev/null || { echo 'python3がありません' >&2; exit 1; }
 
-printf '\n[1/4] フロントエンド依存関係を確認\n'
+printf '\n[1/5] フロントエンド依存関係を確認\n'
 cd "$FRONTEND"
 npm install --no-audit --no-fund
 
-printf '\n[2/4] 日本語UIを本番ビルド\n'
+printf '\n[2/5] 日本語UIを本番ビルド\n'
 npm run build
 
-printf '\n[3/4] Python Bridge環境を確認\n'
+printf '\n[3/5] Python Bridge環境を確認\n'
 if [[ ! -x "$VENV/bin/python" ]]; then
   python3 -m venv "$VENV"
 fi
 "$VENV/bin/python" -m pip install --disable-pip-version-check -q -r "$BACKEND/requirements-live.txt"
 
+printf '\n[4/5] 公式カードDBを探索\n'
+mapfile -t CARD_DATA_RESULT < <(
+  "$VENV/bin/python" - "$BACKEND" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[1])
+from card_catalog import discover_card_files
+
+try:
+    card_path, id_path = discover_card_files()
+except (FileNotFoundError, OSError, ValueError) as exc:
+    print("MISSING")
+    print(str(exc))
+else:
+    print("FOUND")
+    print(str(card_path.parent))
+    print(str(card_path))
+    print(str(id_path))
+PY
+)
+CARD_DATA_STATUS="${CARD_DATA_RESULT[0]:-MISSING}"
+CARD_DATA_SUMMARY="未検出"
+if [[ "$CARD_DATA_STATUS" == "FOUND" ]]; then
+  export BLACK_CARD_DATA_DIR="${CARD_DATA_RESULT[1]}"
+  CARD_DATA_SUMMARY="${CARD_DATA_RESULT[2]} + ${CARD_DATA_RESULT[3]}"
+  printf 'カードDB検出: %s\n' "${CARD_DATA_RESULT[2]}"
+  printf 'ID一覧検出  : %s\n' "${CARD_DATA_RESULT[3]}"
+else
+  printf '警告: %s\n' "${CARD_DATA_RESULT[1]:-カードDBが見つかりません}" >&2
+  printf 'Bridgeと公式Runtimeは起動できますが、カード検索はCSV配置まで使用できません。\n' >&2
+fi
+
 if [[ "$ENABLE_IPHONE" == "1" ]]; then
   command -v powershell.exe >/dev/null || { echo 'powershell.exeが見つかりません' >&2; exit 1; }
   PS_SCRIPT="$(wslpath -w "$ROOT/tools/battle_studio/enable_iphone_bridge.ps1")"
-  printf '\n[4/4] iPhone用LAN公開を設定（Windowsの確認画面で「はい」）\n'
+  printf '\n[5/5] iPhone用LAN公開を設定（Windowsの確認画面で「はい」）\n'
   powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "\$process = Start-Process powershell.exe -Verb RunAs -PassThru -Wait -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File \"$PS_SCRIPT\" -Port $PORT'; exit \$process.ExitCode"
 else
-  printf '\n[4/4] PCローカル接続を準備\n'
+  printf '\n[5/5] PCローカル接続を準備\n'
 fi
 
 PC_URL="http://127.0.0.1:${PORT}/"
@@ -58,6 +90,7 @@ printf 'PC URL     : %s\n' "$PC_URL"
 if [[ -n "$WINDOWS_IP" ]]; then
   printf 'iPhone URL : http://%s:%s/\n' "$WINDOWS_IP" "$PORT"
 fi
+printf 'カードDB    : %s\n' "$CARD_DATA_SUMMARY"
 printf '停止        : Ctrl+C\n'
 printf '============================================================\n\n'
 
