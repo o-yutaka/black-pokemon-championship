@@ -48,20 +48,20 @@ const FLAG_LABELS: Record<string, string> = {
 
 function DecisionInspector({ frame }: { frame: BattleFrame }) {
   const decision = frame.decision;
-  const scores = decision ? Object.entries(decision.scores).sort(([left], [right]) => left === "total" ? 1 : right === "total" ? -1 : left.localeCompare(right)) : [];
-  const flags = decision ? Object.entries(decision.flags) : [];
-  const selected = decision?.selectedAction;
+  const scores = decision ? Object.entries(decision.scores ?? {}).sort(([left], [right]) => left === "total" ? 1 : right === "total" ? -1 : left.localeCompare(right)) : [];
+  const flags = decision ? Object.entries(decision.flags ?? {}) : [];
+  const selected = decision?.selectedAction ?? null;
   const scoreTitle = decision?.scoreSource === "agent" ? "Agentスコア" : "公式選択肢（Agentスコア未提供）";
   return <aside className="inspector"><h2>判断</h2>
     {!decision ? <p className="muted">このフレームには判断ログがありません。</p> : <>
       <div className="decision-summary"><span className="badge">{decision.goal}</span><strong>{decision.chosen}</strong><span>実行者 P{decision.actor + 1}</span><span>{decision.confidence === null ? "信頼度 —" : `信頼度 ${(decision.confidence * 100).toFixed(0)}%`}</span><span>{decision.elapsedMs === null ? "思考時間 —" : `${decision.elapsedMs.toFixed(0)} ms`}</span></div>
-      {selected && <section className="overlay-section"><h3>選択行動</h3><dl className="overlay-action"><div><dt>種類</dt><dd>{selected.kind}</dd></div><div><dt>選択番号</dt><dd>{selected.optionIndex}</dd></div><div><dt>カード</dt><dd>{selected.cardId === null ? "—" : `#${selected.cardId}`}</dd></div><div><dt>serial</dt><dd>{selected.serial ?? "—"}</dd></div><div><dt>発生源</dt><dd>{selected.effectSource || "—"}</dd></div></dl></section>}
+      {selected && <section className="overlay-section"><h3>選択行動</h3><dl className="overlay-action"><div><dt>種類</dt><dd>{selected.kind ?? "UNKNOWN"}</dd></div><div><dt>選択番号</dt><dd>{selected.optionIndex}</dd></div><div><dt>カード</dt><dd>{selected.cardId == null ? "—" : `#${selected.cardId}`}</dd></div><div><dt>serial</dt><dd>{selected.serial ?? "—"}</dd></div><div><dt>発生源</dt><dd>{selected.effectSource || "—"}</dd></div></dl></section>}
       {scores.length > 0 && <section className="overlay-section"><h3>スコア内訳</h3><div className="score-grid">{scores.map(([key, value]) => <div key={key} className={key === "total" ? "total" : ""}><span>{SCORE_LABELS[key] ?? key}</span><strong>{value.toFixed(2)}</strong></div>)}</div></section>}
       {flags.length > 0 && <section className="overlay-section"><h3>判定フラグ</h3><div className="flag-row">{flags.map(([key, value]) => <span key={key} className={value ? "on" : "off"}>{FLAG_LABELS[key] ?? key}: {value ? "はい" : "いいえ"}</span>)}</div></section>}
-      {decision.warnings.length > 0 && <section className="overlay-section warning-section"><h3>警告</h3>{decision.warnings.map((warning, index) => <p key={`${warning}-${index}`}>{warning}</p>)}</section>}
+      {(decision.warnings ?? []).length > 0 && <section className="overlay-section warning-section"><h3>警告</h3>{(decision.warnings ?? []).map((warning, index) => <p key={`${warning}-${index}`}>{warning}</p>)}</section>}
       <section className="overlay-section"><h3>{scoreTitle}</h3><ol className="candidate-list">{decision.candidates.slice().sort((a, b) => b.score - a.score).map((candidate, index) => <li key={`${candidate.label}-${candidate.score}-${index}`} className={candidate.selected ? "selected" : ""}><span>{candidate.label}{candidate.reason ? <small>{candidate.reason}</small> : null}</span><strong>{candidate.score.toFixed(2)}</strong></li>)}</ol></section>
-      {decision.boardDiff.length > 0 && <section className="overlay-section"><h3>行動前後の盤面差分</h3><ul className="board-diff">{decision.boardDiff.map((change, index) => <li key={`${change}-${index}`}>{change}</li>)}</ul></section>}
-      {decision.alternatives.length > 0 && <section className="overlay-section"><h3>代替候補</h3><ol className="candidate-list">{decision.alternatives.slice().sort((a, b) => b.score - a.score).map((candidate, index) => <li key={`alt-${candidate.label}-${index}`} className={candidate.selected ? "selected" : ""}><span>{candidate.label}{candidate.reason ? <small>{candidate.reason}</small> : null}</span><strong>{candidate.score.toFixed(2)}</strong></li>)}</ol></section>}
+      {(decision.boardDiff ?? []).length > 0 && <section className="overlay-section"><h3>行動前後の盤面差分</h3><ul className="board-diff">{(decision.boardDiff ?? []).map((change, index) => <li key={`${change}-${index}`}>{change}</li>)}</ul></section>}
+      {(decision.alternatives ?? []).length > 0 && <section className="overlay-section"><h3>代替候補</h3><ol className="candidate-list">{(decision.alternatives ?? []).slice().sort((a, b) => b.score - a.score).map((candidate, index) => <li key={`alt-${candidate.label}-${index}`} className={candidate.selected ? "selected" : ""}><span>{candidate.label}{candidate.reason ? <small>{candidate.reason}</small> : null}</span><strong>{candidate.score.toFixed(2)}</strong></li>)}</ol></section>}
     </>}
     <h2>イベント</h2><div className="event-log">{frame.events.length ? frame.events.map((event, index) => <div key={`${event.type}-${index}`}><span>{event.type}</span><p>{event.text}</p></div>) : <p className="muted">イベントはありません。</p>}</div>
   </aside>;
