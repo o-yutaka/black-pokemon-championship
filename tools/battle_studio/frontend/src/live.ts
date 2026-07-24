@@ -47,14 +47,14 @@ export async function connectLive(
   });
   if (!response.ok) {
     const value = await response.json().catch(() => ({})) as Record<string, unknown>;
-    throw new Error(String(value.detail ?? `Live session failed: HTTP ${response.status}`));
+    throw new Error(String(value.detail ?? `ライブセッションの作成に失敗しました（HTTP ${response.status}）`));
   }
   const session = await response.json() as { sessionId: string; engine: string; wsPath: string };
   const socket = new WebSocket(toWebSocketUrl(baseUrl, session.wsPath));
   await new Promise<void>((resolve, reject) => {
-    const timer = window.setTimeout(() => reject(new Error("WebSocket open timeout")), 5000);
+    const timer = window.setTimeout(() => reject(new Error("WebSocketの接続が時間切れになりました")), 5000);
     socket.addEventListener("open", () => { window.clearTimeout(timer); onStatus("connected"); resolve(); }, { once: true });
-    socket.addEventListener("error", () => { window.clearTimeout(timer); reject(new Error("WebSocket connection failed")); }, { once: true });
+    socket.addEventListener("error", () => { window.clearTimeout(timer); reject(new Error("WebSocketへ接続できません")); }, { once: true });
   });
   socket.addEventListener("message", (event) => {
     try {
@@ -62,10 +62,10 @@ export async function connectLive(
       const snapshot = parseLiveSnapshot(message);
       if (snapshot) { onSnapshot(snapshot); return; }
       if (message && typeof message === "object" && (message as Record<string, unknown>).type === "error") {
-        onError(String((message as Record<string, unknown>).detail ?? (message as Record<string, unknown>).code ?? "Live engine error"));
+        onError(String((message as Record<string, unknown>).detail ?? (message as Record<string, unknown>).code ?? "ライブエンジンでエラーが発生しました"));
       }
     } catch (error) {
-      onError(error instanceof Error ? error.message : "Invalid live message");
+      onError(error instanceof Error ? error.message : "ライブメッセージの形式が正しくありません");
     }
   });
   socket.addEventListener("close", () => onStatus("closed"));
@@ -73,7 +73,7 @@ export async function connectLive(
   return {
     sessionId: session.sessionId,
     engine: session.engine,
-    step(selection = [0]) { if (socket.readyState !== WebSocket.OPEN) throw new Error("WebSocket is not open"); socket.send(JSON.stringify({ type: "step", selection })); },
+    step(selection = [0]) { if (socket.readyState !== WebSocket.OPEN) throw new Error("WebSocketが接続されていません"); socket.send(JSON.stringify({ type: "step", selection })); },
     ping() { if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "ping" })); },
     close() { if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "close" })); else socket.close(); },
   };
