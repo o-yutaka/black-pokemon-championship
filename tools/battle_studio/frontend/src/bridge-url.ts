@@ -27,11 +27,12 @@ export function resolveInitialBridgeUrl({
   const queryUrl = new URL(location.href).searchParams.get("bridge")?.trim();
   if (queryUrl) return new URL(queryUrl).toString();
 
+  const normalizedLegacyDesktopUrl = new URL(LEGACY_DESKTOP_BRIDGE_URL).toString();
   const stored = storedUrl?.trim();
   if (stored) {
     try {
       const normalized = new URL(stored).toString();
-      const legacyDesktopValue = !isIos && normalized === LEGACY_DESKTOP_BRIDGE_URL;
+      const legacyDesktopValue = !isIos && normalized === normalizedLegacyDesktopUrl;
       if (!legacyDesktopValue) return normalized;
     } catch {
       // Ignore obsolete invalid values.
@@ -41,7 +42,7 @@ export function resolveInitialBridgeUrl({
   const configured = environmentUrl?.trim();
   if (configured) {
     const normalized = new URL(configured).toString();
-    if (isIos || normalized !== LEGACY_DESKTOP_BRIDGE_URL) return normalized;
+    if (isIos || normalized !== normalizedLegacyDesktopUrl) return normalized;
   }
 
   if (!location.hostname.endsWith("github.io")) {
