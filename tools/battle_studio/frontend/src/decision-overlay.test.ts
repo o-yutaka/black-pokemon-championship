@@ -42,8 +42,8 @@ describe("BLACK decision overlay", () => {
       },
     });
     expect(frame.decision?.selectedAction?.kind).toBe("ABILITY");
-    expect(frame.decision?.scores.total).toBe(72);
-    expect(frame.decision?.flags.abilityUsed).toBe(true);
+    expect(frame.decision?.scores?.total).toBe(72);
+    expect(frame.decision?.flags?.abilityUsed).toBe(true);
     expect(frame.decision?.boardDiff).toEqual(["P1 手札: 5→6 (+1)"]);
   });
 
@@ -59,7 +59,7 @@ describe("BLACK decision overlay", () => {
       result: null,
       decision: { actor: 0, chosen: "[0]", candidates: [] },
     });
-    expect(frame.decision?.warnings).toEqual([]);
-    expect(frame.decision?.selectedAction).toBeNull();
+    expect(frame.decision?.warnings).toBeUndefined();
+    expect(frame.decision?.selectedAction).toBeUndefined();
   });
 });
