@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_UI_LOCALE, initializeJapaneseUi, liveStatusJa, UI_LOCALE_STORAGE_KEY } from "./locale";
 
-describe("Japanese UI persistence", () => {
-  it("stores Japanese and restores the document language", () => {
+describe("日本語UIの保持", () => {
+  it("日本語設定を保存して文書言語へ反映する", () => {
     const values = new Map<string, string>();
     const storage = {
       getItem: (key: string) => values.get(key) ?? null,
@@ -15,7 +15,7 @@ describe("Japanese UI persistence", () => {
     expect(root.dataset.uiLocale).toBe("ja");
   });
 
-  it("replaces an obsolete non-Japanese value", () => {
+  it("古い日本語以外の設定を置き換える", () => {
     const values = new Map([[UI_LOCALE_STORAGE_KEY, "en"]]);
     const storage = {
       getItem: (key: string) => values.get(key) ?? null,
@@ -25,9 +25,9 @@ describe("Japanese UI persistence", () => {
     expect(values.get(UI_LOCALE_STORAGE_KEY)).toBe("ja");
   });
 
-  it("renders connection states in Japanese", () => {
+  it("接続状態を日本語で表示する", () => {
     expect(liveStatusJa("disconnected")).toBe("未接続");
     expect(liveStatusJa("connected")).toBe("接続済み");
-    expect(liveStatusJa("runner-missing")).toBe("Bridge接続済み");
+    expect(liveStatusJa("runner-missing")).toBe("接続先確認済み");
   });
 });
