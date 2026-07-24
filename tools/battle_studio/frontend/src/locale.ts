@@ -1,7 +1,15 @@
 export const UI_LOCALE_STORAGE_KEY = "black.uiLocale";
 export const DEFAULT_UI_LOCALE = "ja";
 
-export function initializeJapaneseUi(storage: Pick<Storage, "getItem" | "setItem"> = window.localStorage, root: HTMLElement = document.documentElement): "ja" {
+type LocaleRoot = {
+  lang: string;
+  dataset: Record<string, string | undefined>;
+};
+
+export function initializeJapaneseUi(
+  storage: Pick<Storage, "getItem" | "setItem"> = window.localStorage,
+  root: LocaleRoot = document.documentElement,
+): "ja" {
   const stored = storage.getItem(UI_LOCALE_STORAGE_KEY);
   if (stored !== DEFAULT_UI_LOCALE) storage.setItem(UI_LOCALE_STORAGE_KEY, DEFAULT_UI_LOCALE);
   root.lang = DEFAULT_UI_LOCALE;
