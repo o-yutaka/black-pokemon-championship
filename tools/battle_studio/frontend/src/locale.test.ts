@@ -8,7 +8,7 @@ describe("Japanese UI persistence", () => {
       getItem: (key: string) => values.get(key) ?? null,
       setItem: (key: string, value: string) => values.set(key, value),
     };
-    const root = document.createElement("html");
+    const root = { lang: "", dataset: {} as Record<string, string | undefined> };
     expect(initializeJapaneseUi(storage, root)).toBe(DEFAULT_UI_LOCALE);
     expect(values.get(UI_LOCALE_STORAGE_KEY)).toBe("ja");
     expect(root.lang).toBe("ja");
@@ -21,7 +21,7 @@ describe("Japanese UI persistence", () => {
       getItem: (key: string) => values.get(key) ?? null,
       setItem: (key: string, value: string) => values.set(key, value),
     };
-    initializeJapaneseUi(storage, document.createElement("html"));
+    initializeJapaneseUi(storage, { lang: "", dataset: {} });
     expect(values.get(UI_LOCALE_STORAGE_KEY)).toBe("ja");
   });
 
