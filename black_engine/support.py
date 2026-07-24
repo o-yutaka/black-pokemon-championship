@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import csv
+import time
 from abc import ABC, abstractmethod
 from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable
+
+from .decision_trace import build_decision_overlay, direct_branch_rejection, option_label
+from .search_trace import LocalSearchTracer, compare_prediction
 
 T_PLAY, T_ENERGY, T_EVOLVE, T_ABILITY, T_DISCARD, T_RETREAT, T_ATTACK, T_END = 7, 8, 9, 10, 11, 12, 13, 14
 AREA_HAND, AREA_DISCARD, AREA_ACTIVE, AREA_BENCH, AREA_PRIZE = 2, 3, 4, 5, 6
@@ -49,7 +53,8 @@ def normalize_selection(obs: dict | None, action: Any):
     select = obs["select"]
     options = select.get("option") if isinstance(select.get("option"), list) else []
     minimum = max(0, int(select.get("minCount", 1) or 0))
-    maximum = max(0, int(select.get("maxCount", 1) or 0))
+    maximum_raw = select.get("maxCount", minimum)
+    maximum = minimum if maximum_raw is None else max(0, int(maximum_raw or 0))
     capacity = min(maximum, len(options))
     if capacity <= 0:
         return []
@@ -192,6 +197,10 @@ def damage_points(pokemon: dict) -> int:
 class ScoredPolicy(ABC):
     def __init__(self) -> None:
         self.deck: list[int] = []
+        self._last_overlay: dict[str, Any] | None = None
+        self._last_prediction: dict[str, Any] | None = None
+        self._decision_sequence = 0
+        self._search_tracer = LocalSearchTracer()
 
     def set_deck(self, ids: list[int]) -> None:
         self.deck = [int(value) for value in ids]
@@ -202,13 +211,25 @@ class ScoredPolicy(ABC):
     @abstractmethod
     def score_option(self, option: dict, context: dict) -> float: ...
 
+    def branch_rejection(self, option: Any, context: dict, score: float, *, best_non_end: float | None = None) -> dict[str, Any] | None:
+        return direct_branch_rejection(option, context, score, best_non_end=best_non_end)
+
+    def _score_rows(self, options: list, context: dict) -> list[float]:
+        return [float(self.score_option(value, context)) if isinstance(value, dict) else -1e9 for value in options]
+
     def choose_single(self, options: list, context: dict) -> int:
-        return max(((self.score_option(value, context) if isinstance(value, dict) else -1e9, index) for index, value in enumerate(options)), default=(0, 0))[1]
+        rows = [(float(self.score_option(value, context)) if isinstance(value, dict) else -1e9, index, value) for index, value in enumerate(options)]
+        best_non_end = max((score for score, _, option in rows if not isinstance(option, dict) or option.get("type") != T_END), default=None)
+        allowed = [row for row in rows if self.branch_rejection(row[2], context, row[0], best_non_end=best_non_end) is None]
+        return max(allowed or rows, default=(0.0, 0, None), key=lambda row: (row[0], row[1]))[1]
 
     def choose_multi(self, options: list, context: dict, minimum: int, maximum: int) -> list[int]:
         scored = sorted(((self.score_option(value, context) if isinstance(value, dict) else -1e9, index) for index, value in enumerate(options)), reverse=True)
         count = max(minimum, min(maximum, len(scored))) if maximum > 0 else 0
         return [index for _, index in scored[:count]]
+
+    def get_decision_overlay(self) -> dict[str, Any] | None:
+        return dict(self._last_overlay) if self._last_overlay is not None else None
 
     def agent(self, obs: dict | None, configuration=None):
         if obs is None or not isinstance(obs, dict) or obs.get("select") is None:
@@ -217,8 +238,50 @@ class ScoredPolicy(ABC):
         options = select.get("option") if isinstance(select.get("option"), list) else []
         if not options:
             return []
+        started = time.perf_counter()
         context = self.build_context(obs)
+        scores = self._score_rows(options, context)
+        best_non_end = max((score for score, option in zip(scores, options, strict=True) if not isinstance(option, dict) or option.get("type") != T_END), default=None)
+        rejections: list[dict[str, Any]] = []
+        for index, (option, score) in enumerate(zip(options, scores, strict=True)):
+            rejection = self.branch_rejection(option, context, score, best_non_end=best_non_end)
+            if rejection is not None:
+                rejections.append({"action": option_label(index, option, context), "optionIndex": index, **rejection})
+
         minimum = max(0, int(select.get("minCount", 1) or 0))
-        maximum = max(0, int(select.get("maxCount", 1) or 0))
+        maximum_raw = select.get("maxCount", minimum)
+        maximum = minimum if maximum_raw is None else max(0, int(maximum_raw or 0))
         raw = self.choose_single(options, context) if minimum == maximum == 1 else self.choose_multi(options, context, minimum, maximum)
-        return normalize_selection(obs, raw)
+        selection = normalize_selection(obs, raw)
+        decision_diff = compare_prediction(self._last_prediction, obs, my_index(obs))
+        try:
+            search_report = self._search_tracer.evaluate(obs, configuration, self.deck, selection)
+        except Exception as exc:
+            search_report = {
+                "enabled": False,
+                "reason": f"{type(exc).__name__}: {exc}",
+                "source": "none",
+                "searchTree": {"id": "root", "label": "Root", "status": "unavailable", "children": []},
+                "rejectedBranches": [],
+                "counterfactuals": [],
+                "selectedPrediction": None,
+                "hiddenBelief": {},
+                "errors": [str(exc)],
+            }
+        self._decision_sequence += 1
+        decision_id = str(self._decision_sequence)
+        overlay, prediction = build_decision_overlay(
+            obs=obs,
+            context=context,
+            options=options,
+            selection=selection,
+            scores=scores,
+            rejections=rejections,
+            search_report=search_report,
+            decision_diff=decision_diff,
+            decision_id=decision_id,
+            elapsed_ms=(time.perf_counter() - started) * 1000.0,
+        )
+        self._last_overlay = overlay
+        self._last_prediction = prediction
+        return selection
