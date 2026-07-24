@@ -65,10 +65,10 @@ def _best_pair(directory: Path) -> tuple[Path, Path] | None:
         card, id_file = pair
         card_suffix = _file_suffix(card.name, CARD_FILE) or 0
         id_suffix = _file_suffix(id_file.name, ID_FILE) or 0
-        exact_count = int(card_suffix == 0) + int(id_suffix == 0)
         same_suffix = int(card_suffix == id_suffix)
+        exact_count = int(card_suffix == 0) + int(id_suffix == 0)
         newest_common = min(card.stat().st_mtime_ns, id_file.stat().st_mtime_ns)
-        return exact_count, same_suffix, newest_common
+        return same_suffix, exact_count, newest_common
 
     return max(((card, id_file) for card in cards for id_file in ids), key=score)
 
