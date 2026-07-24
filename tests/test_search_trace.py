@@ -25,7 +25,7 @@ class FakeSearchApi:
         mine = observation["current"]["players"][0]
         opponent = observation["current"]["players"][1]
         if choice == 0:
-            mine["prizeCount"] = 5
+            mine["prizeCount"] = 1
             opponent["active"][0]["hp"] = 20
         else:
             mine["active"][0]["energyCards"] = []
@@ -55,7 +55,7 @@ def _observation() -> dict:
                     "hand": [{"id": 3}],
                     "discard": [],
                     "handCount": 1,
-                    "deckCount": 4,
+                    "deckCount": 2,
                     "prizeCount": 2,
                 },
                 {
@@ -64,7 +64,7 @@ def _observation() -> dict:
                     "hand": [],
                     "discard": [],
                     "handCount": 1,
-                    "deckCount": 4,
+                    "deckCount": 3,
                     "prizeCount": 2,
                 },
             ],
