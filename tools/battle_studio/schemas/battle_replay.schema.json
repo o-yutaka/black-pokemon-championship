@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://black.local/schemas/battle_replay.schema.json",
-  "title": "BLACK Battle Studio Replay",
+  "title": "BLACK Battle Studio Decision IDE Replay",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "replayId", "createdAt", "source", "hiddenInformationPolicy", "frames"],
@@ -80,7 +80,7 @@
     "selectedAction": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["arrayIndex", "optionIndex", "kind", "cardId", "serial", "effectSource", "label"],
+      "required": ["optionIndex"],
       "properties": {
         "arrayIndex": { "type": ["integer", "null"], "minimum": 0 },
         "optionIndex": { "type": "integer", "minimum": 0 },
@@ -91,16 +91,118 @@
         "label": { "type": "string" }
       }
     },
+    "searchNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "status", "ev", "visits", "mean", "worst", "best", "reason", "children"],
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "status": { "enum": ["root", "available", "expanded", "selected", "pruned"] },
+        "ev": { "type": ["number", "null"] },
+        "visits": { "type": ["integer", "null"], "minimum": 0 },
+        "mean": { "type": ["number", "null"] },
+        "worst": { "type": ["number", "null"] },
+        "best": { "type": ["number", "null"] },
+        "reason": { "type": ["string", "null"] },
+        "children": { "type": "array", "items": { "$ref": "#/$defs/searchNode" } }
+      }
+    },
+    "rejectedBranch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "reason", "evidence", "metrics", "killedBy"],
+      "properties": {
+        "label": { "type": "string" },
+        "reason": { "type": "string" },
+        "evidence": { "type": "array", "items": { "type": "string" } },
+        "metrics": { "type": "object", "additionalProperties": { "type": ["string", "number"] } },
+        "killedBy": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "policyTrace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "status", "score", "reason"],
+      "properties": {
+        "name": { "type": "string" },
+        "status": { "enum": ["PASS", "FAIL", "HOLD", "SKIP"] },
+        "score": { "type": "number" },
+        "reason": { "type": "string" }
+      }
+    },
+    "route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "steps", "currentStep"],
+      "properties": {
+        "name": { "type": "string" },
+        "steps": { "type": "array", "items": { "type": "string" } },
+        "currentStep": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "prizePlanner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["neededAttacks", "expectedAttacks", "risk", "alternatives"],
+      "properties": {
+        "neededAttacks": { "type": ["number", "null"] },
+        "expectedAttacks": { "type": ["number", "null"] },
+        "risk": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "alternatives": { "type": "array", "items": { "$ref": "#/$defs/candidate" } }
+      }
+    },
+    "boardAnalysis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "components", "threatMap"],
+      "properties": {
+        "total": { "type": ["number", "null"] },
+        "components": { "type": "object", "additionalProperties": { "type": "number" } },
+        "threatMap": { "type": "object", "additionalProperties": { "type": "number" } }
+      }
+    },
+    "counterfactual": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "baselineWinRate", "alternativeWinRate", "reason"],
+      "properties": {
+        "label": { "type": "string" },
+        "baselineWinRate": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "alternativeWinRate": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "reason": { "type": "string" }
+      }
+    },
+    "causalityGraph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodes", "edges"],
+      "properties": {
+        "nodes": { "type": "array", "items": { "type": "string" } },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["from", "to"],
+            "properties": { "from": { "type": "string" }, "to": { "type": "string" }, "label": { "type": "string" } }
+          }
+        }
+      }
+    },
     "decision": {
       "type": "object",
       "additionalProperties": false,
       "required": ["actor", "goal", "chosen", "confidence", "elapsedMs", "candidates"],
       "properties": {
         "actor": { "type": "integer", "minimum": 0, "maximum": 1 },
+        "decisionId": { "type": "string" },
         "goal": { "type": "string" },
         "chosen": { "type": "string" },
         "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "expectedWinRate": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
         "elapsedMs": { "type": ["number", "null"], "minimum": 0 },
+        "priority": { "type": "array", "items": { "type": "string" } },
         "candidates": { "type": "array", "items": { "$ref": "#/$defs/candidate" } },
         "overlayVersion": { "type": "string" },
         "selectedAction": { "oneOf": [{ "$ref": "#/$defs/selectedAction" }, { "type": "null" }] },
@@ -110,7 +212,30 @@
         "warnings": { "type": "array", "items": { "type": "string" } },
         "alternatives": { "type": "array", "items": { "$ref": "#/$defs/candidate" } },
         "boardDiff": { "type": "array", "items": { "type": "string" } },
-        "scoreSource": { "type": "string" }
+        "scoreSource": { "type": "string" },
+        "searchTree": { "oneOf": [{ "$ref": "#/$defs/searchNode" }, { "type": "null" }] },
+        "rejectedBranches": { "type": "array", "items": { "$ref": "#/$defs/rejectedBranch" } },
+        "policyTrace": { "type": "array", "items": { "$ref": "#/$defs/policyTrace" } },
+        "boardAnalysis": { "$ref": "#/$defs/boardAnalysis" },
+        "route": { "$ref": "#/$defs/route" },
+        "prizePlanner": { "$ref": "#/$defs/prizePlanner" },
+        "heatmap": { "type": "object", "additionalProperties": { "type": "number" } },
+        "policyBattle": { "type": "object", "additionalProperties": { "type": "number" } },
+        "counterfactuals": { "type": "array", "items": { "$ref": "#/$defs/counterfactual" } },
+        "causalityGraph": { "$ref": "#/$defs/causalityGraph" },
+        "hiddenBelief": { "type": "object", "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 } },
+        "decisionDiff": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["previous", "current", "why", "delta"],
+          "properties": {
+            "previous": { "type": "string" },
+            "current": { "type": "string" },
+            "why": { "type": "string" },
+            "delta": { "type": ["number", "null"] }
+          }
+        },
+        "truthLedger": { "type": "object", "additionalProperties": { "type": ["string", "number", "boolean", "null"] } }
       }
     },
     "frame": {

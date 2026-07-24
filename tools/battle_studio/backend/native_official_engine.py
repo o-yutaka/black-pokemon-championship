@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from decision_ide_contract import normalize_ide_fields
 from decision_overlay import build_board_diff, normalize_decision_overlay
 from native_artifacts import BundleArtifact, EngineArtifact
 from official_replay_adapter import normalize_official_frame
@@ -171,6 +172,7 @@ class NativeOfficialBattleSession:
         observation, player = self._observation()
         selection, elapsed, error, explicit_overlay = self.agents[player].decide(observation)
         decision = normalize_decision_overlay(observation, selection, elapsed, error, explicit_overlay)
+        decision.update(normalize_ide_fields(explicit_overlay or {}, decision.get("candidates", [])))
         array = (ctypes.c_int * len(selection))(*selection) if selection else None
         code = int(self.lib.Select(self.pointer, array, len(selection)))
         if code:
