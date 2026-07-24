@@ -7,6 +7,7 @@ import { EngineConsole, type EngineStartRequest } from "./EngineConsole";
 import { connectLive, type LiveConnection, type LiveSnapshot, type LiveStatus } from "./live";
 import { liveStatusJa, motionModeJa, phaseJa, zoneJa } from "./locale";
 import { NativeRuntimePanel } from "./NativeRuntimePanel";
+import { analyzeReplayFailure, publishReplayFailureReport, REPLAY_EVIDENCE_FRAME_EVENT } from "./replay-failure";
 import { readReplayFile } from "./replay";
 import { cardKey, type BattleFrame, type BattleReplay, type CardInstance } from "./types";
 import "./styles.css";
@@ -64,9 +65,21 @@ export default function App() {
   useEffect(() => setSelectedCard(null), [frameIndex]);
   useEffect(() => () => liveRef.current?.close(), []);
   useEffect(() => localStorage.setItem("black-motion-mode", motionMode), [motionMode]);
+  useEffect(() => publishReplayFailureReport(analyzeReplayFailure(replay, 0)), [replay]);
 
   const frameLabel = useMemo(() => `ターン ${frame.turn} · ${phaseJa(frame.phase)} · 行動 ${frame.actionCount}`, [frame]);
   const selectFrame = (index: number) => { setPlaying(false); setFrameIndex(Math.max(0, Math.min(replay.frames.length - 1, index))); };
+  useEffect(() => {
+    const openEvidence = (event: Event) => {
+      const detail = (event as CustomEvent<{ replayId?: string; frameId?: number }>).detail;
+      if (!detail || detail.replayId !== replay.replayId || !Number.isInteger(detail.frameId)) return;
+      const index = replay.frames.findIndex((item) => item.frameId === detail.frameId);
+      if (index >= 0) selectFrame(index);
+    };
+    window.addEventListener(REPLAY_EVIDENCE_FRAME_EVENT, openEvidence);
+    return () => window.removeEventListener(REPLAY_EVIDENCE_FRAME_EVENT, openEvidence);
+  }, [replay]);
+
   const applyLiveSnapshot = (snapshot: LiveSnapshot) => {
     setLiveEngine(snapshot.engine); setLegalSelections(snapshot.legalSelections);
     setReplay((current) => {
