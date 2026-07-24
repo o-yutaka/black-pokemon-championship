@@ -3,7 +3,14 @@ import { battleFrameSchema, type BattleFrame } from "./types";
 export type LiveStatus = "disconnected" | "connecting" | "connected" | "closed" | "error";
 export type LiveSnapshot = { sessionId: string; engine: string; frame: BattleFrame; legalSelections: number[][] };
 export type LiveConnection = { sessionId: string; engine: string; step(selection?: number[]): void; ping(): void; close(): void };
-export type LiveSessionOptions = { engine?: "emulator" | "official"; bundleId?: string; opponentBundleId?: string };
+export type LiveSessionOptions = {
+  engine?: "emulator" | "official" | "official-native";
+  bundleId?: string;
+  opponentBundleId?: string;
+  engineId?: string;
+  playerBundleId?: string;
+  nativeOpponentBundleId?: string;
+};
 
 export function toWebSocketUrl(httpBase: string, wsPath: string): string {
   const base = new URL(httpBase);
@@ -36,7 +43,7 @@ export async function connectLive(
   const response = await fetch(new URL("/api/sessions", baseUrl), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ engine: options.engine ?? "emulator", bundleId: options.bundleId, opponentBundleId: options.opponentBundleId }),
+    body: JSON.stringify(options),
   });
   if (!response.ok) {
     const value = await response.json().catch(() => ({})) as Record<string, unknown>;

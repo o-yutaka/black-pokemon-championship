@@ -8,9 +8,12 @@ type BridgeState = "checking" | "ready" | "runner-missing" | "offline";
 
 export type EngineStartRequest = {
   bridgeUrl: string;
-  engine: "emulator" | "official";
+  engine: "emulator" | "official" | "official-native";
   bundleId?: string;
   opponentBundleId?: string;
+  engineId?: string;
+  playerBundleId?: string;
+  nativeOpponentBundleId?: string;
 };
 
 function shortSha(value: string): string {
@@ -86,7 +89,7 @@ export function EngineConsole({ liveStatus, liveEngine, legalSelectionCount, onS
 }) {
   const isIos = useMemo(detectIos, []);
   const isBridgeHosted = !window.location.hostname.endsWith("github.io");
-  const defaultBridgeUrl = import.meta.env.VITE_LIVE_BASE_URL || (isBridgeHosted ? window.location.origin : "");
+  const defaultBridgeUrl = import.meta.env.VITE_LIVE_BASE_URL || (isBridgeHosted ? window.location.origin : localStorage.getItem("black.bridgeUrl") || "http://DESKTOP-C3RJG3V:8000/");
   const [bridgeUrl, setBridgeUrl] = useState(defaultBridgeUrl);
   const [bridgeState, setBridgeState] = useState<BridgeState>(defaultBridgeUrl ? "checking" : "offline");
   const [checkingBridge, setCheckingBridge] = useState(false);
@@ -99,7 +102,9 @@ export function EngineConsole({ liveStatus, liveEngine, legalSelectionCount, onS
   const normalizedBridgeUrl = (): string => {
     const value = bridgeUrl.trim();
     if (!value) throw new Error("Bridge URLを入力してください");
-    return new URL(value).toString();
+    const normalized = new URL(value).toString();
+    localStorage.setItem("black.bridgeUrl", normalized);
+    return normalized;
   };
 
   const bridgeLink = useMemo(() => {
@@ -130,9 +135,7 @@ export function EngineConsole({ liveStatus, liveEngine, legalSelectionCount, onS
     }
   };
 
-  useEffect(() => {
-    if (defaultBridgeUrl) void checkBridge();
-  }, []);
+  useEffect(() => { if (defaultBridgeUrl) void checkBridge(); }, []);
 
   const uploadBundle = async (role: BundleRole, file: File | undefined) => {
     if (!file) return;
@@ -153,12 +156,7 @@ export function EngineConsole({ liveStatus, liveEngine, legalSelectionCount, onS
 
   const start = (engine: "emulator" | "official") => {
     try {
-      onStart({
-        bridgeUrl: normalizedBridgeUrl(),
-        engine,
-        bundleId: engine === "official" ? playerBundle?.bundleId : undefined,
-        opponentBundleId: engine === "official" ? opponentBundle?.bundleId : undefined,
-      });
+      onStart({ bridgeUrl: normalizedBridgeUrl(), engine, bundleId: engine === "official" ? playerBundle?.bundleId : undefined, opponentBundleId: engine === "official" ? opponentBundle?.bundleId : undefined });
     } catch (caught) {
       onError(caught instanceof Error ? caught.message : "Invalid Bridge URL");
     }
@@ -169,54 +167,14 @@ export function EngineConsole({ liveStatus, liveEngine, legalSelectionCount, onS
     <section className="engine-console" aria-label="Official engine console">
       <input ref={playerBundleRef} className="file-input" type="file" accept=".tgz,.gz,.tar.gz,application/gzip,application/x-gzip" onChange={(event) => void uploadBundle("player", event.target.files?.[0])} />
       <input ref={opponentBundleRef} className="file-input" type="file" accept=".tgz,.gz,.tar.gz,application/gzip,application/x-gzip" onChange={(event) => void uploadBundle("opponent", event.target.files?.[0])} />
-
-      <div className="engine-console-head">
-        <div>
-          <span className="eyebrow">OFFICIAL ENGINE BRIDGE</span>
-          <h2>Kaggle Agent Console</h2>
-          <p>提出Bundleを検証し、WSL2の公式エンジンへ接続して盤面をこの画面へ反映する。</p>
-        </div>
-        <span className={`engine-status ${bridgeState}`}>{bridgeState.replace("-", " ").toUpperCase()}</span>
-      </div>
-
-      {isIos && (
-        <div className="iphone-mode">
-          <div>
-            <strong>iPhone Mode</strong>
-            <span>PCと同じWi‑Fiで、WSL2 Bridgeが表示した <code>http://PC-IP:8000/</code> をSafariで直接開く。</span>
-          </div>
-          {bridgeLink && <a href={bridgeLink}>Bridge UIを開く</a>}
-        </div>
-      )}
-
-      <div className="bridge-row">
-        <label>Bridge URL<input value={bridgeUrl} onChange={(event) => setBridgeUrl(event.target.value)} placeholder={isIos ? "http://192.168.x.x:8000" : "http://127.0.0.1:8000"} spellCheck={false} autoCapitalize="none" autoCorrect="off" inputMode="url" /></label>
-        <button type="button" onClick={() => void checkBridge()} disabled={checkingBridge}>{checkingBridge ? "確認中…" : "接続確認"}</button>
-      </div>
-
+      <div className="engine-console-head"><div><span className="eyebrow">OFFICIAL ENGINE BRIDGE</span><h2>Kaggle Agent Console</h2><p>提出Bundleを検証し、WSL2の公式エンジンへ接続して盤面をこの画面へ反映する。</p></div><span className={`engine-status ${bridgeState}`}>{bridgeState.replace("-", " ").toUpperCase()}</span></div>
+      {isIos && <div className="iphone-mode"><div><strong>iPhone Mode</strong><span>PCと同じWi‑Fiで、WSL2 Bridgeが表示した <code>http://PC-IP:8000/</code> をSafariで直接開く。</span></div>{bridgeLink && <a href={bridgeLink}>Bridge UIを開く</a>}</div>}
+      <div className="bridge-row"><label>Bridge URL<input value={bridgeUrl} onChange={(event) => setBridgeUrl(event.target.value)} placeholder={isIos ? "http://192.168.x.x:8000" : "http://127.0.0.1:8000"} spellCheck={false} autoCapitalize="none" autoCorrect="off" inputMode="url" /></label><button type="button" onClick={() => void checkBridge()} disabled={checkingBridge}>{checkingBridge ? "確認中…" : "接続確認"}</button></div>
       {mixedContentRisk && <div className="engine-warning">GitHub Pages（HTTPS）からPCのHTTP Bridgeへ直接通信できない場合がある。上の「Bridge UIを開く」で同一オリジン表示に切り替える。</div>}
-      {bridgeState === "runner-missing" && <div className="engine-warning">Bridgeには接続済み。ただし <code>BLACK_OFFICIAL_RUNNER</code> が未設定のため公式対戦は開始できない。</div>}
-      {bridgeState === "offline" && bridgeUrl && <div className="engine-warning">Bridgeへ接続できない。WSL2側を <code>python run_mobile_bridge.py</code> で起動し、同じWi‑FiのPC-IPを入力してください。</div>}
-
-      <div className="bundle-grid">
-        <BundleSlot title="PLAYER 1 / 自分" hint="Kaggleへ提出する自分側Agent" info={playerBundle} busy={uploadRole === "player"} required onPick={() => playerBundleRef.current?.click()} onClear={() => setPlayerBundle(null)} />
-        <BundleSlot title="PLAYER 2 / 相手" hint="未指定ならRunner側の標準相手を使用" info={opponentBundle} busy={uploadRole === "opponent"} onPick={() => opponentBundleRef.current?.click()} onClear={() => setOpponentBundle(null)} />
-      </div>
-
-      <div className="engine-runbar">
-        <div className="engine-live-meta">
-          <span className={`live-dot ${liveStatus}`}></span>
-          <strong>{liveEngine ?? "NO ENGINE"}</strong>
-          <span>{liveStatus.toUpperCase()}</span>
-          <span>{legalSelectionCount} legal selections</span>
-        </div>
-        <div className="engine-run-actions">
-          <button type="button" onClick={() => start("emulator")} disabled={!bridgeUrl || liveStatus === "connecting" || liveStatus === "connected"}>Emulator</button>
-          <button className="primary" type="button" onClick={() => start("official")} disabled={!playerBundle || !runnerReady || liveStatus === "connecting" || liveStatus === "connected"}>Official Start</button>
-          <button type="button" onClick={onStep} disabled={liveStatus !== "connected" || legalSelectionCount === 0}>Live Step</button>
-          <button type="button" onClick={onDisconnect} disabled={liveStatus === "disconnected"}>Disconnect</button>
-        </div>
-      </div>
+      {bridgeState === "runner-missing" && <div className="engine-warning">外部Runnerは未設定。下のLOCAL OFFICIAL RUNTIMEへEngine ZIPまたはlibcg.soを登録すれば直接対戦できる。</div>}
+      {bridgeState === "offline" && bridgeUrl && <div className="engine-warning">Bridgeへ接続できない。WSL2側でBridgeを起動し、同じWi‑FiのPC-IPを使用してください。</div>}
+      <div className="bundle-grid"><BundleSlot title="PLAYER 1 / 自分" hint="外部Runner用Kaggle Agent" info={playerBundle} busy={uploadRole === "player"} required onPick={() => playerBundleRef.current?.click()} onClear={() => setPlayerBundle(null)} /><BundleSlot title="PLAYER 2 / 相手" hint="外部Runner側の相手" info={opponentBundle} busy={uploadRole === "opponent"} onPick={() => opponentBundleRef.current?.click()} onClear={() => setOpponentBundle(null)} /></div>
+      <div className="engine-runbar"><div className="engine-live-meta"><span className={`live-dot ${liveStatus}`}></span><strong>{liveEngine ?? "NO ENGINE"}</strong><span>{liveStatus.toUpperCase()}</span><span>{legalSelectionCount} legal selections</span></div><div className="engine-run-actions"><button type="button" onClick={() => start("emulator")} disabled={!bridgeUrl || liveStatus === "connecting" || liveStatus === "connected"}>Emulator</button><button className="primary" type="button" onClick={() => start("official")} disabled={!playerBundle || !runnerReady || liveStatus === "connecting" || liveStatus === "connected"}>External Runner</button><button type="button" onClick={onStep} disabled={liveStatus !== "connected" || legalSelectionCount === 0}>Live Step</button><button type="button" onClick={onDisconnect} disabled={liveStatus === "disconnected"}>Disconnect</button></div></div>
     </section>
   );
 }
