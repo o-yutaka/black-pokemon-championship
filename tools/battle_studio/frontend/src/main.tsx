@@ -4,11 +4,13 @@ import App from "./App";
 import { getInitialBridgeUrl } from "./bridge-url";
 import { DeckBuilder } from "./DeckBuilder";
 import { initializeJapaneseUi } from "./locale";
+import { installJapaneseNetworkErrors } from "./network";
 import "./bridge-launch.css";
 import "./mobile.css";
 
 initializeJapaneseUi();
 getInitialBridgeUrl();
+installJapaneseNetworkErrors();
 
 const root = document.getElementById("root");
 if (!root) throw new Error("#rootのアプリ表示領域がありません");
