@@ -8,7 +8,7 @@ import { connectLive, type LiveConnection, type LiveSnapshot, type LiveStatus } 
 import { liveStatusJa } from "./locale";
 import { NativeRuntimePanel } from "./NativeRuntimePanel";
 import { readReplayFile } from "./replay";
-import { cardKey, type BattleReplay, type CardInstance } from "./types";
+import { cardKey, type BattleFrame, type BattleReplay, type CardInstance } from "./types";
 import "./styles.css";
 import "./pocket-ui.css";
 
@@ -19,6 +19,19 @@ function defaultMotionMode(): MotionMode {
   if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return "lite";
   const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 8;
   return memory <= 4 || window.innerWidth <= 720 ? "balanced" : "full";
+}
+
+function frameCardIds(frame: BattleFrame): number[] {
+  const ids = new Set<number>();
+  const add = (card: CardInstance | null | undefined) => { if (card && card.cardId > 0) ids.add(card.cardId); };
+  add(frame.stadium);
+  for (const player of frame.players) {
+    add(player.active);
+    player.bench.forEach(add);
+    player.hand.forEach(add);
+    player.discard.forEach(add);
+  }
+  return [...ids];
 }
 
 export default function App() {
@@ -32,11 +45,12 @@ export default function App() {
   const [liveStatus, setLiveStatus] = useState<LiveStatus>("disconnected");
   const [liveEngine, setLiveEngine] = useState<string | null>(null);
   const [legalSelections, setLegalSelections] = useState<number[][]>([]);
-  const catalog = useCardArtCatalog();
   const fileRef = useRef<HTMLInputElement>(null);
   const liveRef = useRef<LiveConnection | null>(null);
   const frame = replay.frames[Math.min(frameIndex, replay.frames.length - 1)];
   const previousFrame = frameIndex > 0 ? replay.frames[frameIndex - 1] : null;
+  const visibleCardIds = useMemo(() => frameCardIds(frame), [frame]);
+  const catalog = useCardArtCatalog(visibleCardIds);
   const progress = replay.frames.length <= 1 ? 0 : (frameIndex / (replay.frames.length - 1)) * 100;
 
   useEffect(() => {
