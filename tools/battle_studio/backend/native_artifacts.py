@@ -12,6 +12,7 @@ import uuid
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from typing import Iterable
 
 MAX_ENGINE_BYTES = 64 * 1024 * 1024
 MAX_BUNDLE_BYTES = 128 * 1024 * 1024
@@ -57,6 +58,15 @@ def _read_deck(path: Path) -> tuple[int, ...]:
     if len(values) != 60 or any(value <= 0 for value in values):
         raise NativeArtifactError(f"deck.csv must contain exactly 60 positive card IDs, found {len(values)}")
     return tuple(values)
+
+
+def _directory_digest(entries: Iterable[tuple[str, bytes]]) -> str:
+    digest = hashlib.sha256()
+    for name, data in sorted(entries, key=lambda item: item[0]):
+        digest.update(name.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(hashlib.sha256(data).digest())
+    return digest.hexdigest()
 
 
 @dataclass(frozen=True)
@@ -136,12 +146,24 @@ class NativeArtifactStore:
         self.engines[artifact_id] = artifact
         return artifact
 
+    def _finish_bundle(self, artifact_id: str, filename: str, container: Path, bundle_root: Path, digest: str, expected_engine_sha256: str | None) -> BundleArtifact:
+        if not (bundle_root / "main.py").is_file() or not (bundle_root / "deck.csv").is_file():
+            raise NativeArtifactError("Kaggle bundle requires main.py and deck.csv in the same folder")
+        deck = _read_deck(bundle_root / "deck.csv")
+        bundled = bundle_root / "cg" / "libcg.so"
+        bundled_sha = _sha256_file(bundled) if bundled.is_file() else None
+        if bundled_sha and expected_engine_sha256 and bundled_sha != expected_engine_sha256:
+            raise NativeArtifactError("bundle engine SHA does not match uploaded official engine")
+        artifact = BundleArtifact(artifact_id, filename, bundle_root, digest, deck, bundled_sha)
+        self.bundles[artifact_id] = artifact
+        return artifact
+
     def register_bundle(self, filename: str, data: bytes, expected_engine_sha256: str | None = None) -> BundleArtifact:
         if not data or len(data) > MAX_BUNDLE_BYTES:
             raise NativeArtifactError("bundle upload is empty or too large")
         artifact_id = uuid.uuid4().hex
-        root = self.root / "bundles" / artifact_id
-        root.mkdir(parents=True)
+        container = self.root / "bundles" / artifact_id
+        container.mkdir(parents=True)
         try:
             with tarfile.open(fileobj=io.BytesIO(data), mode="r:*") as archive:
                 members = archive.getmembers()
@@ -152,27 +174,47 @@ class NativeArtifactStore:
                     if member.issym() or member.islnk() or member.isdev():
                         raise NativeArtifactError(f"links/devices forbidden: {member.name}")
                     if member.isdir():
-                        (root / relative).mkdir(parents=True, exist_ok=True)
+                        (container / relative).mkdir(parents=True, exist_ok=True)
                         continue
                     if not member.isfile():
                         raise NativeArtifactError(f"unsupported archive entry: {member.name}")
                     source = archive.extractfile(member)
                     if source is None:
                         raise NativeArtifactError(f"cannot read: {member.name}")
-                    target = root / relative
+                    target = container / relative
                     target.parent.mkdir(parents=True, exist_ok=True)
                     with source, target.open("wb") as output:
                         shutil.copyfileobj(source, output)
-            if not (root / "main.py").is_file() or not (root / "deck.csv").is_file():
-                raise NativeArtifactError("Kaggle bundle requires root main.py and deck.csv")
-            deck = _read_deck(root / "deck.csv")
-            bundled = root / "cg" / "libcg.so"
-            bundled_sha = _sha256_file(bundled) if bundled.is_file() else None
-            if bundled_sha and expected_engine_sha256 and bundled_sha != expected_engine_sha256:
-                raise NativeArtifactError("bundle engine SHA does not match uploaded official engine")
-            artifact = BundleArtifact(artifact_id, filename, root, _sha256(data), deck, bundled_sha)
-            self.bundles[artifact_id] = artifact
-            return artifact
+            candidates = sorted({path.parent for path in container.rglob("main.py") if (path.parent / "deck.csv").is_file()})
+            if len(candidates) != 1:
+                raise NativeArtifactError(f"bundle must contain exactly one main.py + deck.csv folder, found {len(candidates)}")
+            return self._finish_bundle(artifact_id, filename, container, candidates[0], _sha256(data), expected_engine_sha256)
         except Exception:
-            shutil.rmtree(root, ignore_errors=True)
+            shutil.rmtree(container, ignore_errors=True)
+            raise
+
+    def register_bundle_files(self, folder_name: str, entries: list[tuple[str, bytes]], expected_engine_sha256: str | None = None) -> BundleArtifact:
+        if not entries or len(entries) > MAX_MEMBERS:
+            raise NativeArtifactError("bundle folder is empty or has too many files")
+        total = sum(len(data) for _name, data in entries)
+        if total > MAX_BUNDLE_BYTES:
+            raise NativeArtifactError("bundle folder is too large")
+        artifact_id = uuid.uuid4().hex
+        container = self.root / "bundles" / artifact_id
+        container.mkdir(parents=True)
+        try:
+            normalized: list[tuple[str, bytes]] = []
+            for name, data in entries:
+                relative = _safe_path(name)
+                target = container / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(data)
+                normalized.append((relative.as_posix(), data))
+            candidates = sorted({path.parent for path in container.rglob("main.py") if (path.parent / "deck.csv").is_file()})
+            if len(candidates) != 1:
+                names = ", ".join(path.relative_to(container).as_posix() or "." for path in candidates[:5])
+                raise NativeArtifactError(f"main.py + deck.csvのフォルダーを1つだけ含めてください（検出 {len(candidates)}件: {names or 'なし'}）")
+            return self._finish_bundle(artifact_id, folder_name, container, candidates[0], _directory_digest(normalized), expected_engine_sha256)
+        except Exception:
+            shutil.rmtree(container, ignore_errors=True)
             raise

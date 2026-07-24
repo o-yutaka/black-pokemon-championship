@@ -8,15 +8,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
-from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from bundle_manager import BundleError, BundleStore
-from card_catalog import get_catalog
+from card_catalog import get_catalog, install_catalog_folder
 from emulator_engine import CabtShapeEmulator
-from native_artifacts import NativeArtifactError, NativeArtifactStore
+from native_artifacts import MAX_BUNDLE_BYTES, MAX_MEMBERS, NativeArtifactError, NativeArtifactStore
 from native_official_engine import NativeEngineError, NativeOfficialBattleSession
 from official_engine import OfficialEngineError, OfficialProcessEngine
 
@@ -45,7 +45,7 @@ class Session:
     frame: dict[str, Any] | None = None
 
 
-app = FastAPI(title="BLACK Battle Studio Live Bridge", version="3.0")
+app = FastAPI(title="BLACK Battle Studio Live Bridge", version="3.1")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:5173", "http://localhost:5173", "https://o-yutaka.github.io"],
@@ -55,6 +55,7 @@ app.add_middleware(
 SESSIONS: dict[str, Session] = {}
 BUNDLES = BundleStore(Path(os.environ.get("BLACK_BUNDLE_ROOT", Path(tempfile.gettempdir()) / "black-battle-studio-bundles")))
 NATIVE = NativeArtifactStore(Path(os.environ.get("BLACK_NATIVE_RUNTIME_ROOT", Path(tempfile.gettempdir()) / "black-battle-studio-native")))
+CARD_UPLOAD_ROOT = Path(os.environ.get("BLACK_CARD_UPLOAD_ROOT", Path(tempfile.gettempdir()) / "black-battle-studio-card-data"))
 FRONTEND_DIST = Path(__file__).resolve().parents[1] / "frontend" / "dist"
 
 
@@ -68,6 +69,26 @@ def _card_catalog_available() -> bool:
         return True
     except (FileNotFoundError, OSError, ValueError):
         return False
+
+
+async def _folder_entries(files: list[UploadFile], paths: list[str], max_bytes: int) -> list[tuple[str, bytes]]:
+    if len(files) != len(paths):
+        raise HTTPException(status_code=422, detail="フォルダー内ファイルと相対パスの数が一致しません")
+    if not files or len(files) > MAX_MEMBERS:
+        raise HTTPException(status_code=422, detail="フォルダーが空か、ファイル数が多すぎます")
+    entries: list[tuple[str, bytes]] = []
+    total = 0
+    try:
+        for upload, relative in zip(files, paths, strict=True):
+            data = await upload.read()
+            total += len(data)
+            if total > max_bytes:
+                raise HTTPException(status_code=413, detail="選択したフォルダーが大きすぎます")
+            entries.append((relative, data))
+    finally:
+        for upload in files:
+            await upload.close()
+    return entries
 
 
 @app.get("/api/health")
@@ -95,6 +116,17 @@ async def card_catalog() -> dict[str, Any]:
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=500, detail=f"card catalog failed: {exc}") from exc
     return {"ok": True, "count": len(cards), "sources": [path.name for path in sources], "cards": cards}
+
+
+@app.post("/api/cards/folder")
+async def upload_card_folder(files: list[UploadFile] = File(...), paths: list[str] = Form(...)) -> dict[str, Any]:
+    entries = await _folder_entries(files, paths, 96 * 1024 * 1024)
+    target = CARD_UPLOAD_ROOT / uuid.uuid4().hex
+    try:
+        cards, sources = install_catalog_folder(target, entries)
+    except (FileNotFoundError, OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"ok": True, "count": len(cards), "sources": [path.name for path in sources], "folder": sources[0].parent.name}
 
 
 @app.post("/api/bundles")
@@ -142,6 +174,22 @@ async def upload_native_bundle(file: UploadFile = File(...), engine_id: str | No
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     finally:
         await file.close()
+
+
+@app.post("/api/native/bundle-folder")
+async def upload_native_bundle_folder(folder_name: str = Form("Agent folder"), engine_id: str | None = Form(None), files: list[UploadFile] = File(...), paths: list[str] = Form(...)) -> dict[str, Any]:
+    entries = await _folder_entries(files, paths, MAX_BUNDLE_BYTES)
+    try:
+        expected = None
+        if engine_id:
+            engine = NATIVE.engines.get(engine_id)
+            if engine is None:
+                raise NativeArtifactError("unknown native engine id")
+            expected = engine.sha256
+        artifact = NATIVE.register_bundle_files(folder_name, entries, expected)
+        return {"ok": True, "bundle": artifact.public(), "deck": list(artifact.deck)}
+    except (NativeArtifactError, OSError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.get("/api/native/artifacts")
