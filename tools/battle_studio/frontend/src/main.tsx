@@ -4,6 +4,7 @@ import App from "./App";
 import { getInitialBridgeUrl } from "./bridge-url";
 import { DeckBuilder } from "./DeckBuilder";
 import { initializeJapaneseUi } from "./locale";
+import "./bridge-launch.css";
 import "./mobile.css";
 
 initializeJapaneseUi();
