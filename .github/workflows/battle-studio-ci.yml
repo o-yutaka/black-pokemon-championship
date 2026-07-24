@@ -34,8 +34,6 @@ jobs:
         run: mkdir -p artifacts/battle_studio_ci
 
       - name: Validate Bridge launcher syntax
-        id: launcher_syntax
-        continue-on-error: true
         shell: bash
         run: |
           set -o pipefail
@@ -125,7 +123,6 @@ jobs:
         if: always()
         shell: bash
         env:
-          LAUNCHER_SYNTAX: ${{ steps.launcher_syntax.outcome }}
           TYPECHECK: ${{ steps.typecheck.outcome }}
           FRONTEND_TESTS: ${{ steps.frontend_tests.outcome }}
           FRONTEND_BUILD: ${{ steps.frontend_build.outcome }}
@@ -134,9 +131,8 @@ jobs:
           PROTECTED_PATHS: ${{ steps.protected_paths.outcome }}
         run: |
           set -euo pipefail
-          printf 'launcher_syntax=%s\ntypecheck=%s\nfrontend_tests=%s\nfrontend_build=%s\npython_tests=%s\nschema_check=%s\nprotected_paths=%s\n' \
-            "$LAUNCHER_SYNTAX" "$TYPECHECK" "$FRONTEND_TESTS" "$FRONTEND_BUILD" "$PYTHON_TESTS" "$SCHEMA_CHECK" "$PROTECTED_PATHS"
-          test "$LAUNCHER_SYNTAX" = success
+          printf 'typecheck=%s\nfrontend_tests=%s\nfrontend_build=%s\npython_tests=%s\nschema_check=%s\nprotected_paths=%s\n' \
+            "$TYPECHECK" "$FRONTEND_TESTS" "$FRONTEND_BUILD" "$PYTHON_TESTS" "$SCHEMA_CHECK" "$PROTECTED_PATHS"
           test "$TYPECHECK" = success
           test "$FRONTEND_TESTS" = success
           test "$FRONTEND_BUILD" = success
