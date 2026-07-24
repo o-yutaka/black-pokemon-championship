@@ -3,12 +3,7 @@ export type PickedFolder = { name: string; files: FolderFile[] };
 
 type FileHandle = { kind: "file"; name: string; getFile(): Promise<File> };
 type DirectoryHandle = { kind: "directory"; name: string; values(): AsyncIterable<FileHandle | DirectoryHandle> };
-
-declare global {
-  interface Window {
-    showDirectoryPicker?: () => Promise<DirectoryHandle>;
-  }
-}
+type DirectoryPickerWindow = Window & { showDirectoryPicker?: () => Promise<DirectoryHandle> };
 
 const IGNORED_PARTS = new Set([".git", "node_modules", "__pycache__", ".venv", ".venv-battle-studio", ".DS_Store"]);
 
@@ -28,9 +23,10 @@ async function walk(handle: DirectoryHandle, prefix = ""): Promise<FolderFile[]>
 }
 
 export async function chooseFolder(): Promise<PickedFolder | null> {
-  if (!window.showDirectoryPicker) return null;
+  const picker = (window as DirectoryPickerWindow).showDirectoryPicker;
+  if (!picker) return null;
   try {
-    const handle = await window.showDirectoryPicker();
+    const handle = await picker.call(window);
     return { name: handle.name, files: await walk(handle) };
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") return { name: "", files: [] };
