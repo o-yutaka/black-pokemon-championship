@@ -1,15 +1,15 @@
 import { useRef, useState } from "react";
 import { persistBridgeUrl } from "./bridge-url";
-import type { EngineStartRequest } from "./EngineConsole";
 import type { LiveStatus } from "./live";
 import "./native-runtime.css";
 
 type EngineArtifact = { id: string; filename: string; sha256: string; sourceKind: string; compiler?: string | null };
 type BundleArtifact = { id: string; filename: string; sha256: string; deckCount: number; uniqueCardIds: number; bundledEngineSha256?: string | null };
+type NativeStartRequest = { bridgeUrl: string; engine: "official-native"; engineId: string; playerBundleId: string; nativeOpponentBundleId: string };
 
 type Props = {
   liveStatus: LiveStatus;
-  onStart(request: EngineStartRequest): void;
+  onStart(request: NativeStartRequest): void;
   onError(message: string | null): void;
 };
 
