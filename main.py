@@ -40,10 +40,10 @@ from submission_contract import validate_runtime_layout
 
 validate_runtime_layout(ROOT)
 
-from black_engine import DragapultPolicy, SubmissionRuntime, read_deck
+from black_engine import DragapultWorldlinePolicy, SubmissionRuntime, read_deck
 
 DECK = read_deck(ROOT / "deck.csv")
-POLICY = DragapultPolicy()
+POLICY = DragapultWorldlinePolicy()
 RUNTIME = SubmissionRuntime(
     POLICY,
     DECK,
