@@ -7,10 +7,11 @@ CYCLE_REASONS = {"RESOURCE_LOSS_CYCLE", "SWITCH_BACK_LOOP"}
 
 
 def rejected_option_indexes(overlay: Mapping[str, Any] | None) -> set[int]:
-    """Return option indexes rejected by real search evidence.
+    """Return option indexes rejected by explicit official Search evidence.
 
-    Only explicit optionIndex values with a known cycle reason are trusted.
-    Missing reasons or display-only labels never become action guards.
+    Only exact optionIndex values carrying a known cycle reason and an official
+    Search source are trusted. Missing reasons, display-only labels and policy
+    guesses never become action guards.
     """
     if not isinstance(overlay, Mapping):
         return set()
@@ -22,8 +23,12 @@ def rejected_option_indexes(overlay: Mapping[str, Any] | None) -> set[int]:
         if not isinstance(branch, Mapping):
             continue
         reason = str(branch.get("reason", "")).upper()
+        source = str(branch.get("source", ""))
+        killed_by = branch.get("killedBy")
+        killed_values = [str(value) for value in killed_by] if isinstance(killed_by, Sequence) and not isinstance(killed_by, (str, bytes, bytearray)) else [str(killed_by or "")]
+        official = "cg.api.search_step" in source or "OfficialSearchCycleGuard" in killed_values
         index = branch.get("optionIndex")
-        if reason in CYCLE_REASONS and isinstance(index, int) and not isinstance(index, bool) and index >= 0:
+        if official and reason in CYCLE_REASONS and isinstance(index, int) and not isinstance(index, bool) and index >= 0:
             result.add(index)
     return result
 
