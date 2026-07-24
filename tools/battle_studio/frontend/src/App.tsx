@@ -9,6 +9,7 @@ import { NativeRuntimePanel } from "./NativeRuntimePanel";
 import { readReplayFile } from "./replay";
 import { cardKey, type BattleReplay, type CardInstance } from "./types";
 import "./styles.css";
+import "./pocket-ui.css";
 
 const SPEEDS = [0.25, 0.5, 1, 2, 4] as const;
 
