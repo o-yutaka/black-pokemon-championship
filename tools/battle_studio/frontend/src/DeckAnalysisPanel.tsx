@@ -28,6 +28,12 @@ function GateRow({ item }: { item: GateItem }) {
   return <div className={`analysis-gate-row gate-${item.status}`}><span>{item.status === "pass" ? "✓" : item.status === "fail" ? "×" : "…"}</span><strong>{item.label}</strong><small>{item.detail}</small></div>;
 }
 
+function evidenceHashGate(id: string, label: string, expected?: string | null, actual?: string | null): GateItem {
+  if (!expected) return { id, label, status: "pending", detail: "分析JSON未提供" };
+  if (!actual) return { id, label, status: "pending", detail: "実物Hash未取得" };
+  return { id, label, status: expected === actual ? "pass" : "fail", detail: expected === actual ? "一致" : `不一致 ${short(expected)} ≠ ${short(actual)}` };
+}
+
 function MatchupCell({ metric }: { metric?: MatchupMetric }) {
   if (!metric) return <div><strong>—</strong><small>未計測</small></div>;
   const games = metric.wins + metric.losses + (metric.draws ?? 0);
@@ -39,7 +45,15 @@ export function DeckAnalysisPanel(props: Props) {
   const reportRef = useRef<HTMLInputElement>(null);
   const diff = useMemo(() => deckDiff(props.baselineDeck, props.candidateDeck, props.catalog), [props.baselineDeck, props.candidateDeck, props.catalog]);
   const warnings = useMemo(() => staticSynergyWarnings(props.candidateDeck, props.catalog, props.report), [props.candidateDeck, props.catalog, props.report]);
-  const gates = useMemo(() => buildBundleGate({ total: props.total, validationOk: props.validationOk, hasBasic: props.hasBasic, aceOk: props.aceOk, bundleLoaded: Boolean(props.selectedName), currentDeckSha: props.candidateDeckSha, context: props.context, report: props.report }), [props.total, props.validationOk, props.hasBasic, props.aceOk, props.selectedName, props.candidateDeckSha, props.context, props.report]);
+  const gates = useMemo(() => {
+    const base = buildBundleGate({ total: props.total, validationOk: props.validationOk, hasBasic: props.hasBasic, aceOk: props.aceOk, bundleLoaded: Boolean(props.selectedName), currentDeckSha: props.candidateDeckSha, context: props.context, report: props.report });
+    return [
+      ...base,
+      evidenceHashGate("policy-evidence", "評価Policy SHA", props.report?.hashes?.policySha, props.context?.policySha),
+      evidenceHashGate("engine-evidence", "評価Engine SHA", props.report?.hashes?.engineSha, props.context?.engineSha),
+      evidenceHashGate("bundle-evidence", "評価Bundle SHA", props.report?.candidate?.bundleSha, props.context?.bundleSha),
+    ];
+  }, [props.total, props.validationOk, props.hasBasic, props.aceOk, props.selectedName, props.candidateDeckSha, props.context, props.report]);
   const allGreen = gates.every((item) => item.status === "pass");
   const current = props.report?.current;
   const candidate = props.report?.candidate;
