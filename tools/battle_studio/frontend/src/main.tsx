@@ -1,8 +1,11 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import { getInitialBridgeUrl } from "./bridge-url";
 import { DeckBuilder } from "./DeckBuilder";
 import "./mobile.css";
+
+getInitialBridgeUrl();
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing #root application mount");
