@@ -1,5 +1,5 @@
 import { useMemo, useRef } from "react";
-import { buildBundleGate, deckDiff, matchupRate, parseAnalysisReport, staticSynergyWarnings, type AgentAnalysisContext, type AnalysisCatalogCard, type AnalysisReport, type GateItem } from "./deck-analysis";
+import { buildBundleGate, deckDiff, matchupRate, parseAnalysisReport, staticSynergyWarnings, type AgentAnalysisContext, type AnalysisCatalogCard, type AnalysisReport, type GateItem, type MatchupMetric } from "./deck-analysis";
 import "./deck-analysis.css";
 
 type Props = {
@@ -16,6 +16,7 @@ type Props = {
   hasBasic: boolean;
   aceOk: boolean;
   onReport(report: AnalysisReport, source: string): void;
+  onReportError(message: string): void;
   onPromoteBaseline(): void;
 };
 
@@ -27,10 +28,11 @@ function GateRow({ item }: { item: GateItem }) {
   return <div className={`analysis-gate-row gate-${item.status}`}><span>{item.status === "pass" ? "✓" : item.status === "fail" ? "×" : "…"}</span><strong>{item.label}</strong><small>{item.detail}</small></div>;
 }
 
-function rateText(wins: number, losses: number, draws = 0): string {
-  const total = wins + losses + draws;
-  if (!total) return "未計測";
-  return `${(((wins + draws * 0.5) / total) * 100).toFixed(1)}%`;
+function MatchupCell({ metric }: { metric?: MatchupMetric }) {
+  if (!metric) return <div><strong>—</strong><small>未計測</small></div>;
+  const games = metric.wins + metric.losses + (metric.draws ?? 0);
+  const rate = matchupRate(metric);
+  return <div className="matchup-cell"><strong>{rate === null ? "未計測" : `${(rate * 100).toFixed(1)}%`}</strong><progress max="1" value={rate ?? 0} /><small>{games}戦{games < 50 ? " · 参考値" : ""}</small><small>先 {metric.firstGames ?? "—"} / 後 {metric.secondGames ?? "—"}</small><small>EV {metric.ev == null ? "—" : `${metric.ev >= 0 ? "+" : ""}${metric.ev.toFixed(3)}`}</small></div>;
 }
 
 export function DeckAnalysisPanel(props: Props) {
@@ -45,7 +47,8 @@ export function DeckAnalysisPanel(props: Props) {
 
   const importReport = async (file?: File) => {
     if (!file) return;
-    props.onReport(parseAnalysisReport(JSON.parse(await file.text())), file.name);
+    try { props.onReport(parseAnalysisReport(JSON.parse(await file.text())), file.name); }
+    catch (error) { props.onReportError(error instanceof Error ? error.message : "分析JSONを読み込めませんでした"); }
   };
 
   return <aside className="deck-analysis-panel" aria-label="BLACKデッキ分析">
@@ -74,12 +77,7 @@ export function DeckAnalysisPanel(props: Props) {
 
     <section className="analysis-card matchup-card">
       <div className="analysis-title"><div><span>MATCHUP EVIDENCE</span><h4>Current / Candidate対面比較</h4></div></div>
-      {matchupNames.length ? <div className="matchup-table"><div className="matchup-head"><span>対面</span><b>{current?.name ?? "Current"}</b><b>{candidate?.name ?? "Candidate"}</b></div>{matchupNames.map((name) => {
-        const left = current?.matchups.find((item) => item.name === name);
-        const right = candidate?.matchups.find((item) => item.name === name);
-        const rightRate = right ? matchupRate(right) : null;
-        return <div className="matchup-row" key={name}><span>{name}</span><div><strong>{left ? rateText(left.wins, left.losses, left.draws) : "—"}</strong><small>{left ? `${left.wins + left.losses + (left.draws ?? 0)}戦` : "未計測"}</small></div><div><strong>{right ? rateText(right.wins, right.losses, right.draws) : "—"}</strong><small>{right ? `${right.wins + right.losses + (right.draws ?? 0)}戦${rightRate !== null && rightRate >= 0.5 ? "" : ""}` : "未計測"}</small></div></div>;
-      })}</div> : <p className="analysis-empty">対面結果は未提供です。勝率を推測表示しません。</p>}
+      {matchupNames.length ? <div className="matchup-table"><div className="matchup-head"><span>対面</span><b>{current?.name ?? "Current"}</b><b>{candidate?.name ?? "Candidate"}</b></div>{matchupNames.map((name) => <div className="matchup-row" key={name}><span>{name}</span><MatchupCell metric={current?.matchups.find((item) => item.name === name)} /><MatchupCell metric={candidate?.matchups.find((item) => item.name === name)} /></div>)}</div> : <p className="analysis-empty">対面結果は未提供です。勝率・EVを推測表示しません。</p>}
       {props.report?.evaluation && <div className="evaluation-proof"><span>評価ID {props.report.evaluation.evaluationId || "—"}</span><span>{props.report.evaluation.method || "方式未記載"}</span><span>Engine error {props.report.evaluation.engineErrors}</span><span>Timeout {props.report.evaluation.timeouts}</span><span>{props.report.evaluation.evaluatedAt || "日時未記載"}</span></div>}
     </section>
 
