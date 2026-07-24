@@ -19,6 +19,7 @@ BLACK_ENGINE_FILE_ORDER = (
     "official_search_trace.py",
     "policy.py",
     "runtime.py",
+    "search_guard.py",
     "search_trace.py",
     "support.py",
 )
