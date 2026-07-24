@@ -16,6 +16,8 @@ from pydantic import BaseModel
 from bundle_manager import BundleError, BundleStore
 from card_catalog import get_catalog
 from emulator_engine import CabtShapeEmulator
+from native_artifacts import NativeArtifactError, NativeArtifactStore
+from native_official_engine import NativeEngineError, NativeOfficialBattleSession
 from official_engine import OfficialEngineError, OfficialProcessEngine
 
 
@@ -31,6 +33,9 @@ class SessionRequest(BaseModel):
     engine: str = "emulator"
     bundleId: str | None = None
     opponentBundleId: str | None = None
+    engineId: str | None = None
+    playerBundleId: str | None = None
+    nativeOpponentBundleId: str | None = None
 
 
 @dataclass
@@ -40,19 +45,20 @@ class Session:
     frame: dict[str, Any] | None = None
 
 
-app = FastAPI(title="BLACK Battle Studio Live Bridge", version="2.1")
+app = FastAPI(title="BLACK Battle Studio Live Bridge", version="3.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:5173", "http://localhost:5173", "https://o-yutaka.github.io"],
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["Content-Type"],
 )
 SESSIONS: dict[str, Session] = {}
 BUNDLES = BundleStore(Path(os.environ.get("BLACK_BUNDLE_ROOT", Path(tempfile.gettempdir()) / "black-battle-studio-bundles")))
+NATIVE = NativeArtifactStore(Path(os.environ.get("BLACK_NATIVE_RUNTIME_ROOT", Path(tempfile.gettempdir()) / "black-battle-studio-native")))
 FRONTEND_DIST = Path(__file__).resolve().parents[1] / "frontend" / "dist"
 
 
-def _official_available() -> bool:
+def _runner_available() -> bool:
     return bool(os.environ.get("BLACK_OFFICIAL_RUNNER"))
 
 
@@ -70,7 +76,10 @@ async def health() -> dict[str, Any]:
         "ok": True,
         "service": "black-battle-studio-live-bridge",
         "emulator": True,
-        "officialCabt": _official_available(),
+        "officialCabt": _runner_available() or bool(NATIVE.engines),
+        "officialProcessRunner": _runner_available(),
+        "nativeOfficialEngineCount": len(NATIVE.engines),
+        "nativeBundleCount": len(NATIVE.bundles),
         "cardCatalog": _card_catalog_available(),
         "frontendDist": FRONTEND_DIST.is_dir(),
         "pid": os.getpid(),
@@ -107,6 +116,39 @@ async def bundle_info(bundle_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@app.post("/api/native/engine")
+async def upload_native_engine(file: UploadFile = File(...)) -> dict[str, Any]:
+    try:
+        artifact = NATIVE.register_engine(file.filename or "engine", await file.read())
+        return {"ok": True, "engine": artifact.public()}
+    except (NativeArtifactError, OSError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    finally:
+        await file.close()
+
+
+@app.post("/api/native/bundles")
+async def upload_native_bundle(file: UploadFile = File(...), engine_id: str | None = None) -> dict[str, Any]:
+    try:
+        expected = None
+        if engine_id:
+            engine = NATIVE.engines.get(engine_id)
+            if engine is None:
+                raise NativeArtifactError("unknown native engine id")
+            expected = engine.sha256
+        artifact = NATIVE.register_bundle(file.filename or "bundle.tgz", await file.read(), expected)
+        return {"ok": True, "bundle": artifact.public(), "deck": list(artifact.deck)}
+    except (NativeArtifactError, OSError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    finally:
+        await file.close()
+
+
+@app.get("/api/native/artifacts")
+async def native_artifacts() -> dict[str, Any]:
+    return {"ok": True, "engines": [item.public() for item in NATIVE.engines.values()], "bundles": [item.public() for item in NATIVE.bundles.values()]}
+
+
 @app.post("/api/sessions")
 async def create_session(request: SessionRequest) -> dict[str, Any]:
     try:
@@ -118,16 +160,34 @@ async def create_session(request: SessionRequest) -> dict[str, Any]:
             player = BUNDLES.get(request.bundleId)
             opponent = BUNDLES.get(request.opponentBundleId) if request.opponentBundleId else None
             engine = OfficialProcessEngine(player.root, opponent.root if opponent else None)
+        elif request.engine == "official-native":
+            if not request.engineId or not request.playerBundleId or not request.nativeOpponentBundleId:
+                raise HTTPException(status_code=422, detail="engineId, playerBundleId and nativeOpponentBundleId are required")
+            engine_artifact = NATIVE.engines.get(request.engineId)
+            player = NATIVE.bundles.get(request.playerBundleId)
+            opponent = NATIVE.bundles.get(request.nativeOpponentBundleId)
+            if not engine_artifact or not player or not opponent:
+                raise HTTPException(status_code=404, detail="unknown native engine or bundle artifact")
+            engine = NativeOfficialBattleSession(engine_artifact, (player, opponent))
         else:
-            raise HTTPException(status_code=400, detail="engine must be emulator or official")
+            raise HTTPException(status_code=400, detail="engine must be emulator, official or official-native")
         frame = await engine.start()
     except BundleError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except OfficialEngineError as exc:
+    except (OfficialEngineError, NativeEngineError, NativeArtifactError, OSError, ValueError) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     session_id = uuid.uuid4().hex
     SESSIONS[session_id] = Session(engine=engine, frame=frame)
     return {"sessionId": session_id, "engine": engine.name, "wsPath": f"/ws/battle/{session_id}"}
+
+
+@app.delete("/api/sessions/{session_id}")
+async def delete_session(session_id: str) -> dict[str, Any]:
+    session = SESSIONS.pop(session_id, None)
+    if session is None:
+        raise HTTPException(status_code=404, detail="unknown session")
+    await session.engine.close()
+    return {"deleted": True, "sessionId": session_id}
 
 
 async def _snapshot_payload(session_id: str, session: Session) -> dict[str, Any]:
@@ -171,7 +231,7 @@ async def battle_socket(websocket: WebSocket, session_id: str) -> None:
                 async with session.lock:
                     session.frame = await session.engine.step(selection)
                 await websocket.send_json(await _snapshot_payload(session_id, session))
-            except (ValueError, OfficialEngineError) as exc:
+            except (ValueError, OfficialEngineError, NativeEngineError) as exc:
                 await websocket.send_json({"type": "error", "code": "ENGINE_REJECTED", "detail": str(exc)})
     except WebSocketDisconnect:
         return
