@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://black.local/schemas/replay-failure.schema.json",
+  "title": "BLACK Official Replay Failure Evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "replayId", "source", "subjectPlayer", "winnerPlayer", "outcome", "outcomeBasis", "terminalFrameId", "analyzedAt", "findings"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "replayId": { "type": "string", "minLength": 1 },
+    "source": { "enum": ["cabt", "kaggle", "demo", "unknown"] },
+    "subjectPlayer": { "enum": [0, 1] },
+    "winnerPlayer": { "type": ["integer", "null"], "minimum": 0, "maximum": 1 },
+    "outcome": { "enum": ["loss", "win", "unknown", "in_progress"] },
+    "outcomeBasis": { "type": "string", "minLength": 1 },
+    "terminalFrameId": { "type": ["integer", "null"], "minimum": 0 },
+    "analyzedAt": { "type": "string", "format": "date-time" },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "title", "confidence", "observation", "limitation", "evidence"],
+        "properties": {
+          "code": {
+            "enum": [
+              "SETUP_LOW_BOARD",
+              "ENERGY_DEVELOPMENT_MISS",
+              "ATTACK_DELAY",
+              "HAND_STALL",
+              "BENCH_COLLAPSE",
+              "DECK_EXHAUSTION",
+              "PRIZE_RACE_BEHIND",
+              "HIGH_DISCARD_LOAD"
+            ]
+          },
+          "title": { "type": "string", "minLength": 1 },
+          "confidence": { "enum": ["high", "medium", "low"] },
+          "observation": { "type": "string", "minLength": 1 },
+          "limitation": { "type": "string", "minLength": 1 },
+          "evidence": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["frameId", "turn", "actionCount", "summary", "facts"],
+              "properties": {
+                "frameId": { "type": "integer", "minimum": 0 },
+                "turn": { "type": "integer", "minimum": 0 },
+                "actionCount": { "type": "integer", "minimum": 0 },
+                "summary": { "type": "string", "minLength": 1 },
+                "facts": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "outcome": { "const": "loss" } } },
+      "then": {},
+      "else": { "properties": { "findings": { "maxItems": 0 } } }
+    }
+  ]
+}

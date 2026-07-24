@@ -1,5 +1,6 @@
 import { useMemo, useRef } from "react";
 import { buildBundleGate, deckDiff, matchupRate, parseAnalysisReport, staticSynergyWarnings, type AgentAnalysisContext, type AnalysisCatalogCard, type AnalysisReport, type GateItem, type MatchupMetric } from "./deck-analysis";
+import { openReplayEvidence, type ReplayChangeCandidate, type ReplayFailureFinding, type ReplayFailureReport } from "./replay-failure";
 import "./deck-analysis.css";
 
 type Props = {
@@ -15,6 +16,11 @@ type Props = {
   validationOk: boolean;
   hasBasic: boolean;
   aceOk: boolean;
+  replayReport: ReplayFailureReport | null;
+  replayHistory: ReplayFailureReport[];
+  replayCandidates: ReplayChangeCandidate[];
+  onSearchCandidate(name: string): void;
+  onClearReplayHistory(): void;
   onReport(report: AnalysisReport, source: string): void;
   onReportError?(message: string): void;
   onPromoteBaseline(): void;
@@ -28,12 +34,6 @@ function GateRow({ item }: { item: GateItem }) {
   return <div className={`analysis-gate-row gate-${item.status}`}><span>{item.status === "pass" ? "✓" : item.status === "fail" ? "×" : "…"}</span><strong>{item.label}</strong><small>{item.detail}</small></div>;
 }
 
-function evidenceHashGate(id: string, label: string, expected?: string | null, actual?: string | null): GateItem {
-  if (!expected) return { id, label, status: "pending", detail: "分析JSON未提供" };
-  if (!actual) return { id, label, status: "pending", detail: "実物Hash未取得" };
-  return { id, label, status: expected === actual ? "pass" : "fail", detail: expected === actual ? "一致" : `不一致 ${short(expected)} ≠ ${short(actual)}` };
-}
-
 function MatchupCell({ metric }: { metric?: MatchupMetric }) {
   if (!metric) return <div><strong>—</strong><small>未計測</small></div>;
   const games = metric.wins + metric.losses + (metric.draws ?? 0);
@@ -41,23 +41,35 @@ function MatchupCell({ metric }: { metric?: MatchupMetric }) {
   return <div className="matchup-cell"><strong>{rate === null ? "未計測" : `${(rate * 100).toFixed(1)}%`}</strong><progress max="1" value={rate ?? 0} /><small>{games}戦{games < 50 ? " · 参考値" : ""}</small><small>先 {metric.firstGames ?? "—"} / 後 {metric.secondGames ?? "—"}</small><small>EV {metric.ev == null ? "—" : `${metric.ev >= 0 ? "+" : ""}${metric.ev.toFixed(3)}`}</small></div>;
 }
 
+function outcomeJa(report: ReplayFailureReport | null): string {
+  if (!report) return "未読込";
+  return { loss: "敗北", win: "勝利", unknown: "結果不明", in_progress: "対戦中" }[report.outcome];
+}
+
+function confidenceJa(value: ReplayFailureFinding["confidence"]): string {
+  return { high: "高", medium: "中", low: "低" }[value];
+}
+
 export function DeckAnalysisPanel(props: Props) {
   const reportRef = useRef<HTMLInputElement>(null);
   const diff = useMemo(() => deckDiff(props.baselineDeck, props.candidateDeck, props.catalog), [props.baselineDeck, props.candidateDeck, props.catalog]);
   const warnings = useMemo(() => staticSynergyWarnings(props.candidateDeck, props.catalog, props.report), [props.candidateDeck, props.catalog, props.report]);
-  const gates = useMemo(() => {
-    const base = buildBundleGate({ total: props.total, validationOk: props.validationOk, hasBasic: props.hasBasic, aceOk: props.aceOk, bundleLoaded: Boolean(props.selectedName), currentDeckSha: props.candidateDeckSha, context: props.context, report: props.report });
-    return [
-      ...base,
-      evidenceHashGate("policy-evidence", "評価Policy SHA", props.report?.hashes?.policySha, props.context?.policySha),
-      evidenceHashGate("engine-evidence", "評価Engine SHA", props.report?.hashes?.engineSha, props.context?.engineSha),
-      evidenceHashGate("bundle-evidence", "評価Bundle SHA", props.report?.candidate?.bundleSha, props.context?.bundleSha),
-    ];
-  }, [props.total, props.validationOk, props.hasBasic, props.aceOk, props.selectedName, props.candidateDeckSha, props.context, props.report]);
+  const gates = useMemo(() => buildBundleGate({ total: props.total, validationOk: props.validationOk, hasBasic: props.hasBasic, aceOk: props.aceOk, bundleLoaded: Boolean(props.selectedName), currentDeckSha: props.candidateDeckSha, context: props.context, report: props.report }), [props.total, props.validationOk, props.hasBasic, props.aceOk, props.selectedName, props.candidateDeckSha, props.context, props.report]);
   const allGreen = gates.every((item) => item.status === "pass");
   const current = props.report?.current;
   const candidate = props.report?.candidate;
   const matchupNames = [...new Set([...(current?.matchups ?? []).map((item) => item.name), ...(candidate?.matchups ?? []).map((item) => item.name)])];
+  const lossHistory = props.replayHistory.filter((item) => item.outcome === "loss");
+  const findingSummary = useMemo(() => {
+    const result = new Map<string, { title: string; evidence: number; replays: Set<string> }>();
+    for (const report of lossHistory) for (const finding of report.findings) {
+      const current = result.get(finding.code) ?? { title: finding.title, evidence: 0, replays: new Set<string>() };
+      current.evidence += Math.max(1, finding.evidence.length);
+      current.replays.add(report.replayId);
+      result.set(finding.code, current);
+    }
+    return [...result.entries()].sort(([, left], [, right]) => right.replays.size - left.replays.size || right.evidence - left.evidence);
+  }, [lossHistory]);
 
   const importReport = async (file?: File) => {
     if (!file) return;
@@ -72,6 +84,25 @@ export function DeckAnalysisPanel(props: Props) {
       <div className="analysis-title"><div><span>Current → Candidate</span><h4>デッキ差分</h4></div><strong>{diff.reduce((sum, item) => sum + Math.abs(item.delta), 0) / 2}枚変更</strong></div>
       {diff.length ? <div className="deck-diff-list">{diff.map((item) => <div key={item.cardId} className={item.delta > 0 ? "diff-add" : "diff-remove"}><b>{item.delta > 0 ? "+" : "−"}</b><span>{item.name}<small>#{item.cardId}</small></span><strong>×{Math.abs(item.delta)}</strong></div>)}</div> : <p className="analysis-empty">Baselineから変更はありません。</p>}
       <button type="button" onClick={props.onPromoteBaseline} disabled={!props.candidateDeck.length || !diff.length}>この候補を新しいCurrentにする</button>
+    </section>
+
+    <section className="analysis-card replay-failure-card">
+      <div className="analysis-title"><div><span>OFFICIAL REPLAY EVIDENCE</span><h4>リプレイ敗因抽出</h4></div><strong>{outcomeJa(props.replayReport)}</strong></div>
+      {!props.replayReport && <p className="analysis-empty">対戦記録を開くか、公式対戦を最後まで実行してください。</p>}
+      {props.replayReport && <div className={`replay-outcome outcome-${props.replayReport.outcome}`}><strong>{props.replayReport.replayId}</strong><span>{props.replayReport.outcomeBasis}</span></div>}
+      {props.replayReport?.outcome === "loss" && <div className="failure-finding-list">{props.replayReport.findings.length ? props.replayReport.findings.map((finding) => <article key={finding.code}><header><strong>{finding.title}</strong><span>信頼度 {confidenceJa(finding.confidence)}</span></header><p>{finding.observation}</p><small>{finding.limitation}</small><div className="finding-evidence">{finding.evidence.map((item) => <button type="button" key={`${finding.code}-${item.frameId}`} onClick={() => openReplayEvidence(props.replayReport!.replayId, item.frameId)}><b>T{item.turn} · A{item.actionCount}</b><span>{item.summary}</span><small>{item.facts.join(" / ")}</small></button>)}</div></article>) : <p className="analysis-empty">安全に分類できる敗因シグナルはありませんでした。</p>}</div>}
+      {props.replayReport && props.replayReport.outcome !== "loss" && <p className="analysis-empty">敗北が確定したリプレイだけを敗因集計へ入れます。途中・勝利・勝者不明の試合から変更候補は生成しません。</p>}
+    </section>
+
+    <section className="analysis-card failure-history-card">
+      <div className="analysis-title"><div><span>AGGREGATED LOSSES</span><h4>敗因シグナル集計</h4></div><strong>{lossHistory.length}敗戦</strong></div>
+      {findingSummary.length ? <div className="failure-summary-list">{findingSummary.map(([code, item]) => <div key={code}><span>{item.title}<small>{code}</small></span><strong>{item.replays.size}試合</strong><b>{item.evidence}証拠</b></div>)}</div> : <p className="analysis-empty">確定敗戦の証拠履歴はありません。</p>}
+      <div className="history-footer"><span>保存 {props.replayHistory.length}/100試合</span><button type="button" onClick={props.onClearReplayHistory} disabled={!props.replayHistory.length}>履歴を消去</button></div>
+    </section>
+
+    <section className="analysis-card replay-candidate-card">
+      <div className="analysis-title"><div><span>UNVERIFIED HYPOTHESES</span><h4>変更候補</h4></div><strong>{props.replayCandidates.length}</strong></div>
+      {props.replayCandidates.length ? <div className="replay-candidate-list">{props.replayCandidates.map((item) => <article key={item.id}><header><div><span>{item.kind === "deck" ? "デッキ候補" : "Policy候補"}</span><strong>{item.title}</strong></div><b>未検証</b></header><p>{item.reason}</p><div className="candidate-proof"><span>{item.replayIds.length}敗戦</span><span>{item.evidenceCount}証拠</span><span>{item.triggerCodes.join(" / ")}</span></div>{item.options.length > 0 && <div className="candidate-options">{item.options.map((option) => <button type="button" key={option.cardId} onClick={() => props.onSearchCandidate(option.name)}><strong>{option.name}</strong><span>現在{option.currentCount}枚 → +1候補</span><small>#{option.cardId}を検索</small></button>)}</div>}{item.kind === "deck" && <p className="candidate-removal">60枚維持には別カードを{item.requiredRemoval}枚減らす必要があります。削るカードは自動決定しません。</p>}<details><summary>検証方法</summary><p>{item.validationPlan}</p></details></article>)}</div> : <p className="analysis-empty">確定敗戦の証拠がないため、変更候補は生成していません。</p>}
     </section>
 
     <section className="analysis-card identity-card">
