@@ -14,11 +14,7 @@ class RuntimeDecision:
 
 
 def _is_deck_request(obs: Any) -> bool:
-    return (
-        isinstance(obs, dict)
-        and obs.get("current") is None
-        and obs.get("select") is None
-    )
+    return isinstance(obs, dict) and obs.get("current") is None and obs.get("select") is None
 
 
 def _selection_contract(obs: dict) -> tuple[int, int, int]:
@@ -64,30 +60,46 @@ class SubmissionRuntime:
         self.policy = policy
         self.deck = [int(card) for card in deck]
         self.budget_ms = max(1.0, float(budget_ms))
+        self._last_overlay: dict[str, Any] | None = None
         if hasattr(policy, "set_deck"):
             policy.set_deck(self.deck)
+
+    def _capture_overlay(self, *, source: str, selection: list[int], elapsed_ms: float, error: str | None = None) -> None:
+        getter = getattr(self.policy, "get_decision_overlay", None)
+        overlay = getter() if callable(getter) else None
+        if not isinstance(overlay, dict):
+            overlay = {
+                "schemaVersion": "2.0",
+                "goal": "runtime selection",
+                "chosen": str(selection),
+                "candidates": [],
+                "warnings": [],
+                "truthLedger": {},
+            }
+        overlay = dict(overlay)
+        overlay["elapsedMs"] = elapsed_ms
+        overlay["runtimeSource"] = source
+        overlay["runtimeSelection"] = list(selection)
+        warnings = list(overlay.get("warnings") or [])
+        if error:
+            warnings.append(error)
+        overlay["warnings"] = warnings
+        ledger = dict(overlay.get("truthLedger") or {})
+        ledger.update({"runtime": source, "runtimeSelection": list(selection), "runtimeError": error})
+        overlay["truthLedger"] = ledger
+        self._last_overlay = overlay
+
+    def get_decision_overlay(self) -> dict[str, Any] | None:
+        return dict(self._last_overlay) if self._last_overlay is not None else None
 
     def decide(self, obs: dict | None, configuration=None) -> RuntimeDecision:
         started = time.perf_counter()
         if _is_deck_request(obs):
-            return RuntimeDecision(
-                list(self.deck),
-                "deck",
-                (time.perf_counter() - started) * 1000.0,
-            )
+            return RuntimeDecision(list(self.deck), "deck", (time.perf_counter() - started) * 1000.0)
         if not isinstance(obs, dict):
-            return RuntimeDecision(
-                [],
-                "invalid_observation",
-                (time.perf_counter() - started) * 1000.0,
-                "observation_not_dict",
-            )
+            return RuntimeDecision([], "invalid_observation", (time.perf_counter() - started) * 1000.0, "observation_not_dict")
         if obs.get("select") is None:
-            return RuntimeDecision(
-                [],
-                "no_select",
-                (time.perf_counter() - started) * 1000.0,
-            )
+            return RuntimeDecision([], "no_select", (time.perf_counter() - started) * 1000.0)
 
         error = None
         try:
@@ -95,17 +107,16 @@ class SubmissionRuntime:
             elapsed = (time.perf_counter() - started) * 1000.0
             legal = legalize_selection(obs, proposed)
             if legal is not None and elapsed <= self.budget_ms:
+                self._capture_overlay(source="policy", selection=legal, elapsed_ms=elapsed)
                 return RuntimeDecision(legal, "policy", elapsed)
             error = "timeout" if elapsed > self.budget_ms else "invalid_selection"
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"
 
-        return RuntimeDecision(
-            deterministic_fallback(obs),
-            "fallback",
-            (time.perf_counter() - started) * 1000.0,
-            error,
-        )
+        selection = deterministic_fallback(obs)
+        elapsed = (time.perf_counter() - started) * 1000.0
+        self._capture_overlay(source="fallback", selection=selection, elapsed_ms=elapsed, error=error)
+        return RuntimeDecision(selection, "fallback", elapsed, error)
 
     def agent(self, obs: dict | None, configuration=None) -> list[int]:
         return self.decide(obs, configuration).selection
