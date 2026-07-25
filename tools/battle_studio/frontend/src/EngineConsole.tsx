@@ -72,10 +72,11 @@ function BundleSlot({ title, hint, info, busy, required, onPick, onClear }: {
   );
 }
 
-export function EngineConsole({ liveStatus, liveEngine, legalSelectionCount, onStart, onStep, onDisconnect, onError }: {
+export function EngineConsole({ liveStatus, liveEngine, legalSelectionCount, canAdvance, onStart, onStep, onDisconnect, onError }: {
   liveStatus: LiveStatus;
   liveEngine: string | null;
   legalSelectionCount: number;
+  canAdvance: boolean;
   onStart: (request: EngineStartRequest) => void;
   onStep: () => void;
   onDisconnect: () => void;
@@ -158,6 +159,7 @@ export function EngineConsole({ liveStatus, liveEngine, legalSelectionCount, onS
 
   const runnerReady = bridgeState === "ready";
   const startCommand = isIos ? IPHONE_START_COMMAND : DESKTOP_START_COMMAND;
+  const actionReady = canAdvance || legalSelectionCount > 0;
   return (
     <section className="engine-console" aria-label="公式エンジン接続画面">
       <input ref={playerBundleRef} className="file-input" type="file" accept=".tgz,.gz,.tar.gz,application/gzip,application/x-gzip" onChange={(event) => void uploadBundle("player", event.target.files?.[0])} />
@@ -169,7 +171,7 @@ export function EngineConsole({ liveStatus, liveEngine, legalSelectionCount, onS
       {bridgeState === "runner-missing" && <div className="engine-warning">Bridgeは接続済み。外部Runnerを使わない場合は、下の「ローカル公式Runtime」へEngine ZIPまたはlibcg.soを登録する。</div>}
       {bridgeState === "offline" && bridgeUrl && <div className="engine-warning">Bridge未接続。上の1行コマンドをWSL2で実行してから、Bridge画面を直接開いてください。</div>}
       <div className="bundle-grid"><BundleSlot title="プレイヤー1 / 自分" hint="外部Runner用Kaggle Agent" info={playerBundle} busy={uploadRole === "player"} required onPick={() => playerBundleRef.current?.click()} onClear={() => setPlayerBundle(null)} /><BundleSlot title="プレイヤー2 / 相手" hint="外部Runner側の対戦相手" info={opponentBundle} busy={uploadRole === "opponent"} onPick={() => opponentBundleRef.current?.click()} onClear={() => setOpponentBundle(null)} /></div>
-      <div className="engine-runbar"><div className="engine-live-meta"><span className={`live-dot ${liveStatus}`}></span><strong>{liveEngine ?? "エンジン未接続"}</strong><span>{liveStatusJa(liveStatus)}</span><span>選択肢 {legalSelectionCount}件</span></div><div className="engine-run-actions"><button type="button" onClick={() => start("emulator")} disabled={!bridgeUrl || liveStatus === "connecting" || liveStatus === "connected"}>エミュレーター</button><button className="primary" type="button" onClick={() => start("official")} disabled={!playerBundle || !runnerReady || liveStatus === "connecting" || liveStatus === "connected"}>外部Runner開始</button><button type="button" onClick={onStep} disabled={liveStatus !== "connected" || legalSelectionCount === 0}>1手進める</button><button type="button" onClick={onDisconnect} disabled={liveStatus === "disconnected"}>切断</button></div></div>
+      <div className="engine-runbar"><div className="engine-live-meta"><span className={`live-dot ${liveStatus}`}></span><strong>{liveEngine ?? "エンジン未接続"}</strong><span>{liveStatusJa(liveStatus)}</span><span>{canAdvance ? "操作準備済み" : legalSelectionCount > 0 ? `選択肢 ${legalSelectionCount}件` : "操作待ち"}</span></div><div className="engine-run-actions"><button type="button" onClick={() => start("emulator")} disabled={!bridgeUrl || liveStatus === "connecting" || liveStatus === "connected"}>エミュレーター</button><button className="primary" type="button" onClick={() => start("official")} disabled={!playerBundle || !runnerReady || liveStatus === "connecting" || liveStatus === "connected"}>外部Runner開始</button><button type="button" onClick={onStep} disabled={liveStatus !== "connected" || !actionReady}>1手進める</button><button type="button" onClick={onDisconnect} disabled={liveStatus === "disconnected"}>切断</button></div></div>
     </section>
   );
 }
