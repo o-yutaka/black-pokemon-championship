@@ -9,6 +9,7 @@ import "./bridge-launch.css";
 import "./mobile.css";
 import "./layout-repair.css";
 import "./deck-easy.css";
+import "./simple-pocket.css";
 
 initializeJapaneseUi();
 getInitialBridgeUrl();
@@ -20,9 +21,10 @@ if (!root) throw new Error("#rootのアプリ表示領域がありません");
 createRoot(root).render(
   <StrictMode>
     <App />
-    <div className="app-shell deck-builder-shell">
+    <details className="app-shell deck-builder-shell deck-builder-drawer">
+      <summary><strong>デッキ調整</strong><span>必要な時だけ開く</span></summary>
       <DeckBuilder importedDeck={null} />
-    </div>
+    </details>
   </StrictMode>,
 );
 
