@@ -76,7 +76,13 @@ jobs:
               "card_instance_identity_stable",
               "illegal_selection_fail_closed_pass",
               "clean_close_pass",
-              "reconnect_latest_snapshot_pass",
+              "session_cleanup_pass",
+              "official_public_session_create_pass",
+              "official_public_snapshot_pass",
+              "official_raw_identifiers_absent",
+              "official_step_contract_hidden",
+              "official_advance_pass",
+              "official_session_cleanup_pass",
           }
           assert required.issubset(set(result["checks"]))
           print(json.dumps(result, indent=2))
