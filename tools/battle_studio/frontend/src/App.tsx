@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { CardFace, selectedCardWithArt, type MotionMode } from "./BattleBoard";
-import { useCardArtCatalog } from "./cardArt";
+import { useCardArtCatalog, type PublicCardCatalogEntry } from "./cardArt";
 import { demoReplay } from "./demo";
 import { DecisionIDE } from "./DecisionIDE";
 import { EngineConsole, type EngineStartRequest } from "./EngineConsole";
@@ -46,12 +46,14 @@ export default function App() {
   const [liveStatus, setLiveStatus] = useState<LiveStatus>("disconnected");
   const [liveEngine, setLiveEngine] = useState<string | null>(null);
   const [legalSelections, setLegalSelections] = useState<number[][]>([]);
+  const [liveCanAdvance, setLiveCanAdvance] = useState(false);
+  const [publicCards, setPublicCards] = useState<PublicCardCatalogEntry[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const liveRef = useRef<LiveConnection | null>(null);
   const frame = replay.frames[Math.min(frameIndex, replay.frames.length - 1)];
   const previousFrame = frameIndex > 0 ? replay.frames[frameIndex - 1] : null;
   const visibleCardIds = useMemo(() => frameCardIds(frame), [frame]);
-  const catalog = useCardArtCatalog(visibleCardIds);
+  const catalog = useCardArtCatalog(visibleCardIds, publicCards);
   const progress = replay.frames.length <= 1 ? 0 : (frameIndex / (replay.frames.length - 1)) * 100;
 
   useEffect(() => {
@@ -81,14 +83,25 @@ export default function App() {
   }, [replay]);
 
   const applyLiveSnapshot = (snapshot: LiveSnapshot) => {
-    setLiveEngine(snapshot.engine); setLegalSelections(snapshot.legalSelections);
+    setLiveEngine(snapshot.engine);
+    setLegalSelections(snapshot.legalSelections);
+    setLiveCanAdvance(snapshot.controls.canAdvance);
+    setPublicCards(snapshot.cardCatalog);
     setReplay((current) => {
       const frames = current.replayId === snapshot.sessionId ? [...current.frames.filter((item) => item.frameId !== snapshot.frame.frameId), snapshot.frame].sort((a, b) => a.frameId - b.frameId) : [snapshot.frame];
       window.setTimeout(() => setFrameIndex(frames.length - 1), 0);
-      return { schemaVersion: "1.0", replayId: snapshot.sessionId, createdAt: new Date().toISOString(), source: "unknown", hiddenInformationPolicy: "player_view", frames };
+      return { schemaVersion: "1.0", replayId: snapshot.sessionId, createdAt: new Date().toISOString(), source: snapshot.publicProtocol ? "cabt" : "unknown", hiddenInformationPolicy: snapshot.hiddenInformationPolicy, frames };
     });
   };
-  const disconnectLive = () => { liveRef.current?.close(); liveRef.current = null; setLiveStatus("disconnected"); setLiveEngine(null); setLegalSelections([]); };
+  const disconnectLive = () => {
+    liveRef.current?.close();
+    liveRef.current = null;
+    setLiveStatus("disconnected");
+    setLiveEngine(null);
+    setLegalSelections([]);
+    setLiveCanAdvance(false);
+    setPublicCards([]);
+  };
   const startEngine = async (request: EngineStartRequest) => {
     setError(null); setPlaying(false); disconnectLive();
     try {
@@ -106,10 +119,10 @@ export default function App() {
   return <main className="app-shell">
     <header className="topbar"><div><h1>BLACK Battle Studio</h1><p>判断解析 · 対戦記録 {replay.replayId} · {frameLabel} · 接続 {liveStatusJa(liveStatus)}</p></div><div className="top-actions"><label className="motion-picker">演出<select value={motionMode} onChange={(event) => setMotionMode(event.target.value as MotionMode)}>{MOTION_MODES.map((mode) => <option key={mode} value={mode}>{motionModeJa(mode)}</option>)}</select></label><input ref={fileRef} className="file-input" type="file" accept="application/json,.json" onChange={(event) => void loadFile(event.target.files?.[0])} /><button type="button" onClick={() => fileRef.current?.click()}>対戦記録を開く</button><button type="button" onClick={() => { disconnectLive(); setReplay(demoReplay); setFrameIndex(0); setPlaying(false); setError(null); }}>見本を表示</button></div></header>
     {error && <div className="error-banner" role="alert">{error}</div>}
-    <EngineConsole liveStatus={liveStatus} liveEngine={liveEngine} legalSelectionCount={legalSelections.length} onStart={(request) => void startEngine(request)} onStep={() => liveRef.current?.step(legalSelections[0] ?? [0])} onDisconnect={disconnectLive} onError={setError} />
+    <EngineConsole liveStatus={liveStatus} liveEngine={liveEngine} legalSelectionCount={legalSelections.length} canAdvance={liveCanAdvance} onStart={(request) => void startEngine(request)} onStep={() => liveRef.current?.step(legalSelections[0])} onDisconnect={disconnectLive} onError={setError} />
     <NativeRuntimePanel liveStatus={liveStatus} onStart={(request) => void startEngine(request)} onError={setError} />
     <DecisionIDE replay={replay} frame={frame} previousFrame={previousFrame} frameIndex={frameIndex} onSelectFrame={selectFrame} onSelectCard={setSelectedCard} catalog={catalog} motionMode={motionMode} />
     <section className="controls" aria-label="対戦記録の操作"><div className="control-buttons"><button type="button" onClick={() => selectFrame(0)} disabled={frameIndex === 0} aria-label="最初へ">⏮</button><button type="button" onClick={() => selectFrame(frameIndex - 1)} disabled={frameIndex === 0} aria-label="1つ戻る">◀</button><button className="primary" type="button" onClick={() => setPlaying((value) => !value)}>{playing ? "一時停止" : "再生"}</button><button type="button" onClick={() => selectFrame(frameIndex + 1)} disabled={frameIndex === replay.frames.length - 1} aria-label="1つ進む">▶</button><button type="button" onClick={() => selectFrame(replay.frames.length - 1)} disabled={frameIndex === replay.frames.length - 1} aria-label="最後へ">⏭</button></div><label className="timeline-label">場面 {Math.min(frameIndex + 1, replay.frames.length)}/{replay.frames.length}<input type="range" min="0" max={Math.max(0, replay.frames.length - 1)} value={Math.min(frameIndex, replay.frames.length - 1)} onChange={(event) => selectFrame(Number(event.target.value))} style={{ "--progress": `${progress}%` } as CSSProperties} /></label><label className="speed-label">再生速度<select value={speed} onChange={(event) => setSpeed(Number(event.target.value) as (typeof SPEEDS)[number])}>{SPEEDS.map((value) => <option key={value} value={value}>{value}倍</option>)}</select></label></section>
-    {selectedWithArt && <div className="modal-backdrop" role="presentation" onMouseDown={() => setSelectedCard(null)}><section className="card-modal" role="dialog" aria-modal="true" aria-label={selectedWithArt.name} onMouseDown={(event) => event.stopPropagation()}><button className="close-button" type="button" onClick={() => setSelectedCard(null)}>閉じる</button><CardFace card={selectedWithArt} catalog={catalog} /><dl><div><dt>画面内カードID</dt><dd>{cardKey(selectedWithArt)}</dd></div><div><dt>現在の場所</dt><dd>{zoneJa(selectedWithArt.zone)}{selectedWithArt.slot === null ? "" : ` / 枠${selectedWithArt.slot + 1}`}</dd></div><div><dt>進化の履歴</dt><dd>{selectedWithArt.evolution.length ? selectedWithArt.evolution.join(" → ") : "記録なし"}</dd></div><div><dt>ついているどうぐ</dt><dd>{selectedWithArt.tools.length ? selectedWithArt.tools.join(", ") : "なし"}</dd></div></dl></section></div>}
+    {selectedWithArt && <div className="modal-backdrop" role="presentation" onMouseDown={() => setSelectedCard(null)}><section className="card-modal" role="dialog" aria-modal="true" aria-label={selectedWithArt.name} onMouseDown={(event) => event.stopPropagation()}><button className="close-button" type="button" onClick={() => setSelectedCard(null)}>閉じる</button><CardFace card={selectedWithArt} catalog={catalog} /><dl><div><dt>画面内識別</dt><dd>{cardKey(selectedWithArt)}</dd></div><div><dt>現在の場所</dt><dd>{zoneJa(selectedWithArt.zone)}{selectedWithArt.slot === null ? "" : ` / 枠${selectedWithArt.slot + 1}`}</dd></div><div><dt>進化の履歴</dt><dd>{selectedWithArt.evolution.length ? `${selectedWithArt.evolution.length}段階の記録あり` : "記録なし"}</dd></div><div><dt>ついているどうぐ</dt><dd>{selectedWithArt.tools.length ? selectedWithArt.tools.join(", ") : "なし"}</dd></div></dl></section></div>}
   </main>;
 }

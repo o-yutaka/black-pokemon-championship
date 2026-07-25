@@ -50,7 +50,7 @@ jobs:
 
       - name: Compile bridge
         working-directory: tools/battle_studio/backend
-        run: python -m py_compile emulator_engine.py live_server.py run_connection_smoke.py
+        run: python -m py_compile emulator_engine.py live_server.py public_battle_view.py run_connection_smoke.py
 
       - name: Real TCP and WebSocket smoke
         working-directory: tools/battle_studio/backend
