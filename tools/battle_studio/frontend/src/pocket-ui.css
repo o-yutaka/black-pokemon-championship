@@ -27,6 +27,9 @@ body::before { content: ""; position: fixed; inset: 0; pointer-events: none; bac
 .bench-label { margin: 4px 0 7px; color: rgba(201, 235, 255, .62); font-size: .58rem; font-weight: 800; letter-spacing: .22em; text-align: center; }
 .bench-row { max-width: 900px; margin: 0 auto; gap: clamp(5px, 1vw, 12px); }
 .active-stage { display: grid; place-items: center; margin-top: 18px; perspective: 900px; }
+.side-self .active-stage { margin-top: 0; margin-bottom: 18px; }
+.side-self .player-strip { margin-top: 12px; margin-bottom: 0; }
+.side-self .bench-area { margin-top: 2px; }
 .active-ring { position: relative; width: min(230px, 46vw); }
 .active-ring::before { content: ""; position: absolute; inset: -17px; border: 2px solid rgba(119, 226, 255, .54); border-radius: 26px; background: radial-gradient(circle, rgba(101, 219, 255, .16), transparent 66%); box-shadow: 0 0 34px rgba(78, 199, 255, .22), inset 0 0 30px rgba(78, 199, 255, .12); transform: rotateX(62deg) scale(1.12); }
 .active-ring > span { position: absolute; top: -10px; left: 50%; z-index: 4; transform: translate(-50%, -100%); color: #bdeeff; font-size: .57rem; font-weight: 900; letter-spacing: .2em; }
@@ -71,9 +74,8 @@ button.primary { background: linear-gradient(135deg, #eaffff, #74d9ff); color: #
 .action-caption span { color: #72ddff; font-size: .66rem; font-weight: 900; }
 .action-attack .action-line { height: 8px; background: linear-gradient(90deg, transparent, #fff 18%, #ffdc68 52%, #ff6a75 82%, transparent); box-shadow: 0 0 22px rgba(255,151,91,.9); }
 .action-attack .action-orb { background: radial-gradient(circle, #fff, #ffd568 38%, #e7444f 72%); box-shadow: 0 0 44px rgba(255,115,80,.95); }
-.action-evolve .action-orb { background: radial-gradient(circle, #fff, #c979ff 42%, #34206f 75%); }
-.motion-balanced .action-line { opacity: .58; }
-.motion-balanced .action-orb { width: 42px; height: 42px; }
+.action-evolve .action-orb { background: radial-gradient(circle, #fff, #c979ff 42%, #4d1f79 74%); }
+.motion-lite .action-fx { display: none; }
 .motion-lite .card-face, .motion-lite .hp-track i { transition: none !important; }
 @media (prefers-reduced-motion: no-preference) {
   .player-board.acting .active-ring::before { animation: pocketPulse 2.4s ease-in-out infinite; }
