@@ -17,83 +17,25 @@ jobs:
         with:
           ref: black/privacy-hardening-complete-v1
           fetch-depth: 0
-      - name: Stop after recorded failure
-        id: guard
-        shell: bash
-        run: |
-          if [[ "$(git log -1 --pretty=%s)" == "Record privacy patch failure" ]]; then
-            echo "stop=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "stop=false" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Extract and run hardening patch
-        if: steps.guard.outputs.stop != 'true'
+      - name: Apply privacy hardening
         id: patch
         continue-on-error: true
         shell: bash
         run: |
-          python - <<'PY'
-          from pathlib import Path
-          source = Path('.github/workflows/privacy-hardening-autopatch.yml').read_text(encoding='utf-8')
-          start_marker = "          python - <<'PY'\n"
-          end_marker = "\n          PY\n\n      - name: Commit patched implementation"
-          start = source.index(start_marker) + len(start_marker)
-          end = source.index(end_marker, start)
-          lines = source[start:end].splitlines()
-          script = "\n".join(line[10:] if line.startswith("          ") else line for line in lines) + "\n"
-          bad_start = script.index("old_create_tail =")
-          bad_end_marker = "replace_once(live, old_create_tail, new_create_tail)"
-          bad_end = script.index(bad_end_marker, bad_start) + len(bad_end_marker)
-          robust = r'''text = live.read_text(encoding="utf-8")
-create_start = text.index('    except BundleError as exc:', text.index('@app.post("/api/sessions")'))
-create_end = text.index('\n\n@app.delete("/api/sessions/{session_id}")', create_start)
-new_create_tail = ''' + "'''" + r'''    except BundleError as exc:
-        if request.engine in {"official", "official-native"}:
-            LOGGER.info("official bundle lookup failed: %s", exc)
-            raise HTTPException(status_code=404, detail="選択したBundleを確認してください。") from exc
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except (OfficialEngineError, NativeEngineError, NativeArtifactError, OSError, ValueError) as exc:
-        if request.engine in {"official", "official-native"}:
-            LOGGER.exception("official runtime session creation failed")
-            raise HTTPException(status_code=503, detail="公式対戦を開始できませんでした。BundleとEngineの整合を確認してください。") from exc
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    if request.subjectPlayer not in (0, 1):
-        await engine.close()
-        raise HTTPException(status_code=422, detail="subjectPlayer must be 0 or 1")
-    session_id = uuid.uuid4().hex
-    is_public = request.engine in {"official", "official-native"}
-    public_view = PublicBattleView(session_id, subject_player=request.subjectPlayer) if is_public else None
-    public_advance = "legal-first" if request.engine == "official" else "agent" if request.engine == "official-native" else None
-    SESSIONS[session_id] = Session(engine=engine, frame=frame, public_view=public_view, public_advance=public_advance)
-    asyncio.create_task(_expire_session(session_id))
-    public_engine = "official-battle" if is_public else engine.name
-    return {
-        "sessionId": session_id,
-        "engine": public_engine,
-        "wsPath": f"/ws/battle/{session_id}",
-        "publicProtocol": PUBLIC_PROTOCOL_VERSION if is_public else None,
-        "viewPolicy": "player_view" if is_public else "spectator",
-        "subjectPlayer": request.subjectPlayer,
-    }
-''' + "'''" + r'''
-live.write_text(text[:create_start] + new_create_tail + text[create_end:], encoding="utf-8")'''
-          script = script[:bad_start] + robust + script[bad_end:]
-          Path('/tmp/apply_privacy_hardening.py').write_text(script, encoding='utf-8')
-          PY
           set -o pipefail
-          python /tmp/apply_privacy_hardening.py 2>&1 | tee privacy_patch_error.log
+          python tools/battle_studio/backend/_apply_privacy_patch.py 2>&1 | tee privacy_patch_error.log
       - name: Commit implementation
-        if: steps.guard.outputs.stop != 'true' && steps.patch.outcome == 'success'
+        if: steps.patch.outcome == 'success'
         shell: bash
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git rm -f privacy_patch_error.log 2>/dev/null || true
+          git rm -f privacy_patch_error.log tools/battle_studio/backend/_apply_privacy_patch.py 2>/dev/null || true
           git add .github/workflows/battle-studio-live-ci.yml tools/battle_studio
           git commit -m "Complete official runtime privacy hardening"
           git push origin HEAD:black/privacy-hardening-complete-v1
       - name: Record failure
-        if: steps.guard.outputs.stop != 'true' && steps.patch.outcome == 'failure'
+        if: steps.patch.outcome == 'failure'
         shell: bash
         run: |
           git config user.name github-actions[bot]
