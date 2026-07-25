@@ -27,6 +27,25 @@ describe("live transport", () => {
     const parsed = parseLiveSnapshot({ type: "snapshot", sessionId: "abc", engine: "emulator", frame, legalSelections: [[0]] });
     expect(parsed?.frame.frameId).toBe(0);
     expect(parsed?.legalSelections).toEqual([[0]]);
+    expect(parsed?.controls.canAdvance).toBe(true);
+    expect(parsed?.publicProtocol).toBeNull();
+  });
+
+  it("accepts opaque official controls without raw selections", () => {
+    const parsed = parseLiveSnapshot({
+      type: "snapshot",
+      sessionId: "official-1",
+      engine: "official-battle",
+      publicProtocol: "1.0",
+      hiddenInformationPolicy: "player_view",
+      frame,
+      controls: { canAdvance: true },
+      cardCatalog: [{ id: 4321, name: "Dragapult ex", number: "130", expansion: "Test", sourceLink: "https://example.test/card" }],
+    });
+    expect(parsed?.legalSelections).toEqual([]);
+    expect(parsed?.controls.canAdvance).toBe(true);
+    expect(parsed?.hiddenInformationPolicy).toBe("player_view");
+    expect(parsed?.cardCatalog[0].id).toBe(4321);
   });
 
   it("ignores non-snapshot messages", () => {
