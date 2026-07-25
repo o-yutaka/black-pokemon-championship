@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 
 export type CardArtCatalog = Map<number, string>;
+export type PublicCardCatalogEntry = { id: number; name: string; number: string; expansion: string; sourceLink: string };
 type UnknownRecord = Record<string, unknown>;
-type CatalogCard = { id: number; name: string; number: string; expansion: string; sourceLink: string };
+type CatalogCard = PublicCardCatalogEntry;
 
 const CACHE_KEY = "black.real-card-art.v1";
 const API_ROOT = "https://api.pokemontcg.io/v2/cards";
@@ -93,38 +94,54 @@ async function resolveFromApi(card: CatalogCard, signal: AbortSignal): Promise<s
   return ranked[0]?.score >= 150 ? ranked[0].url : null;
 }
 
-export function useCardArtCatalog(requestedIds: number[]): CardArtCatalog {
+async function resolveCards(rows: CatalogCard[], cache: Record<string, string>, signal: AbortSignal): Promise<void> {
+  for (const card of rows) {
+    const direct = directImage(card.sourceLink);
+    if (direct) cache[String(card.id)] = direct;
+  }
+  for (const card of rows) {
+    if (cache[String(card.id)]) continue;
+    const url = await resolveFromApi(card, signal).catch(() => null);
+    if (url) cache[String(card.id)] = url;
+  }
+}
+
+export function useCardArtCatalog(requestedIds: number[], publicCards: PublicCardCatalogEntry[] = []): CardArtCatalog {
   const [entries, setEntries] = useState<Array<[number, string]>>(() => Object.entries(readCache()).map(([id, url]) => [Number(id), url]));
   const idKey = [...new Set(requestedIds)].sort((a, b) => a - b).join(",");
+  const publicKey = publicCards.map((card) => `${card.id}:${card.name}:${card.number}:${card.expansion}:${card.sourceLink}`).join("|");
   useEffect(() => {
     if (!idKey) return;
     const controller = new AbortController();
-    void fetch("/api/cards", { signal: controller.signal, cache: "force-cache" })
-      .then((response) => response.ok ? response.json() : Promise.reject(new Error(`card catalog ${response.status}`)))
-      .then(async (payload: unknown) => {
-        const wanted = new Set(idKey.split(",").map(Number));
-        const cache = readCache();
-        const rows: CatalogCard[] = [];
-        for (const row of collectRows(payload)) {
-          const record = asRecord(row);
-          if (!record) continue;
-          const id = pickNumber(record);
-          if (id === null || !wanted.has(id)) continue;
-          const explicit = pickUrl(record);
-          if (explicit) cache[String(id)] = explicit;
-          rows.push({ id, name: text(record, "name", "card_name", "Card Name"), number: text(record, "number", "collection_no", "Collection No."), expansion: text(record, "expansion", "Expansion"), sourceLink: text(record, "sourceLink", "link") });
+    void (async () => {
+      const wanted = new Set(idKey.split(",").map(Number));
+      const cache = readCache();
+      const supplied = publicCards.filter((card) => wanted.has(card.id));
+      await resolveCards(supplied, cache, controller.signal);
+      const suppliedIds = new Set(supplied.map((card) => card.id));
+      const unresolved = new Set([...wanted].filter((id) => !suppliedIds.has(id)));
+      if (unresolved.size) {
+        const response = await fetch("/api/cards", { signal: controller.signal, cache: "force-cache" });
+        if (response.ok) {
+          const payload = await response.json() as unknown;
+          const rows: CatalogCard[] = [];
+          for (const row of collectRows(payload)) {
+            const record = asRecord(row);
+            if (!record) continue;
+            const id = pickNumber(record);
+            if (id === null || !unresolved.has(id)) continue;
+            const explicit = pickUrl(record);
+            if (explicit) cache[String(id)] = explicit;
+            rows.push({ id, name: text(record, "name", "card_name", "Card Name"), number: text(record, "number", "collection_no", "Collection No."), expansion: text(record, "expansion", "Expansion"), sourceLink: text(record, "sourceLink", "link") });
+          }
+          await resolveCards(rows, cache, controller.signal);
         }
-        for (const card of rows) {
-          if (cache[String(card.id)]) continue;
-          const url = await resolveFromApi(card, controller.signal).catch(() => null);
-          if (url) cache[String(card.id)] = url;
-        }
-        localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
-        setEntries(Object.entries(cache).map(([id, url]) => [Number(id), url]));
-      })
-      .catch(() => undefined);
+      }
+      localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+      setEntries(Object.entries(cache).map(([id, url]) => [Number(id), url]));
+    })().catch(() => undefined);
     return () => controller.abort();
-  }, [idKey]);
+  }, [idKey, publicKey]);
   return useMemo(() => new Map(entries), [entries]);
 }
 
