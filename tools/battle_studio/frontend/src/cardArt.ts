@@ -115,9 +115,10 @@ export function useCardArtCatalog(requestedIds: number[], publicCards: PublicCar
     const controller = new AbortController();
     void (async () => {
       const wanted = new Set(idKey.split(",").map(Number));
-      const cache = readCache();
+      const persistentCache = readCache();
+      const displayCache = { ...persistentCache };
       const supplied = publicCards.filter((card) => wanted.has(card.id));
-      await resolveCards(supplied, cache, controller.signal);
+      await resolveCards(supplied, displayCache, controller.signal);
       const suppliedIds = new Set(supplied.map((card) => card.id));
       const unresolved = new Set([...wanted].filter((id) => !suppliedIds.has(id)));
       if (unresolved.size) {
@@ -131,14 +132,18 @@ export function useCardArtCatalog(requestedIds: number[], publicCards: PublicCar
             const id = pickNumber(record);
             if (id === null || !unresolved.has(id)) continue;
             const explicit = pickUrl(record);
-            if (explicit) cache[String(id)] = explicit;
+            if (explicit) displayCache[String(id)] = explicit;
             rows.push({ id, name: text(record, "name", "card_name", "Card Name"), number: text(record, "number", "collection_no", "Collection No."), expansion: text(record, "expansion", "Expansion"), sourceLink: text(record, "sourceLink", "link") });
           }
-          await resolveCards(rows, cache, controller.signal);
+          await resolveCards(rows, displayCache, controller.signal);
+          for (const id of unresolved) {
+            const url = displayCache[String(id)];
+            if (url) persistentCache[String(id)] = url;
+          }
         }
       }
-      localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
-      setEntries(Object.entries(cache).map(([id, url]) => [Number(id), url]));
+      localStorage.setItem(CACHE_KEY, JSON.stringify(persistentCache));
+      setEntries(Object.entries(displayCache).map(([id, url]) => [Number(id), url]));
     })().catch(() => undefined);
     return () => controller.abort();
   }, [idKey, publicKey]);

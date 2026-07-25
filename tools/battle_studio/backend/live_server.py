@@ -41,6 +41,7 @@ class SessionRequest(BaseModel):
     engineId: str | None = None
     playerBundleId: str | None = None
     nativeOpponentBundleId: str | None = None
+    subjectPlayer: int = 0
 
 
 @dataclass
@@ -49,9 +50,10 @@ class Session:
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     frame: dict[str, Any] | None = None
     public_view: PublicBattleView | None = None
+    public_advance: str | None = None
 
 
-app = FastAPI(title="BLACK Battle Studio Live Bridge", version="3.2")
+app = FastAPI(title="BLACK Battle Studio Live Bridge", version="3.3")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:5173", "http://localhost:5173", "https://o-yutaka.github.io"],
@@ -63,6 +65,7 @@ BUNDLES = BundleStore(Path(os.environ.get("BLACK_BUNDLE_ROOT", Path(tempfile.get
 NATIVE = NativeArtifactStore(Path(os.environ.get("BLACK_NATIVE_RUNTIME_ROOT", Path(tempfile.gettempdir()) / "black-battle-studio-native")))
 CARD_UPLOAD_ROOT = Path(os.environ.get("BLACK_CARD_UPLOAD_ROOT", Path(tempfile.gettempdir()) / "black-battle-studio-card-data"))
 FRONTEND_DIST = Path(__file__).resolve().parents[1] / "frontend" / "dist"
+SESSION_TTL_SECONDS = 15 * 60
 
 
 def _runner_available() -> bool:
@@ -75,6 +78,22 @@ def _card_catalog_available() -> bool:
         return True
     except (FileNotFoundError, OSError, ValueError):
         return False
+
+
+async def _cleanup_session(session_id: str) -> bool:
+    session = SESSIONS.pop(session_id, None)
+    if session is None:
+        return False
+    try:
+        await session.engine.close()
+    except Exception:
+        LOGGER.exception("battle session cleanup failed session=%s", session_id)
+    return True
+
+
+async def _expire_session(session_id: str) -> None:
+    await asyncio.sleep(SESSION_TTL_SECONDS)
+    await _cleanup_session(session_id)
 
 
 async def _folder_entries(files: list[UploadFile], paths: list[str], max_bytes: int) -> list[tuple[str, bytes]]:
@@ -109,6 +128,7 @@ async def health() -> dict[str, Any]:
         "nativeBundleCount": len(NATIVE.bundles),
         "cardCatalog": _card_catalog_available(),
         "frontendDist": FRONTEND_DIST.is_dir(),
+        "publicView": PUBLIC_PROTOCOL_VERSION,
         "pid": os.getpid(),
     }
 
@@ -227,25 +247,39 @@ async def create_session(request: SessionRequest) -> dict[str, Any]:
             raise HTTPException(status_code=400, detail="engine must be emulator, official or official-native")
         frame = await engine.start()
     except BundleError as exc:
+        if request.engine in {"official", "official-native"}:
+            LOGGER.info("official bundle lookup failed: %s", exc)
+            raise HTTPException(status_code=404, detail="選択したBundleを確認してください。") from exc
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except (OfficialEngineError, NativeEngineError, NativeArtifactError, OSError, ValueError) as exc:
-        if request.engine == "official-native":
+        if request.engine in {"official", "official-native"}:
             LOGGER.exception("official runtime session creation failed")
             raise HTTPException(status_code=503, detail="公式対戦を開始できませんでした。BundleとEngineの整合を確認してください。") from exc
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if request.subjectPlayer not in (0, 1):
+        await engine.close()
+        raise HTTPException(status_code=422, detail="subjectPlayer must be 0 or 1")
     session_id = uuid.uuid4().hex
-    public_view = PublicBattleView(session_id, subject_player=0) if request.engine == "official-native" else None
-    SESSIONS[session_id] = Session(engine=engine, frame=frame, public_view=public_view)
-    public_engine = "official-battle" if public_view else engine.name
-    return {"sessionId": session_id, "engine": public_engine, "wsPath": f"/ws/battle/{session_id}"}
+    is_public = request.engine in {"official", "official-native"}
+    public_view = PublicBattleView(session_id, subject_player=request.subjectPlayer) if is_public else None
+    public_advance = "legal-first" if request.engine == "official" else "agent" if request.engine == "official-native" else None
+    SESSIONS[session_id] = Session(engine=engine, frame=frame, public_view=public_view, public_advance=public_advance)
+    asyncio.create_task(_expire_session(session_id))
+    public_engine = "official-battle" if is_public else engine.name
+    return {
+        "sessionId": session_id,
+        "engine": public_engine,
+        "wsPath": f"/ws/battle/{session_id}",
+        "publicProtocol": PUBLIC_PROTOCOL_VERSION if is_public else None,
+        "viewPolicy": "player_view" if is_public else "spectator",
+        "subjectPlayer": request.subjectPlayer,
+    }
 
 
 @app.delete("/api/sessions/{session_id}")
 async def delete_session(session_id: str) -> dict[str, Any]:
-    session = SESSIONS.pop(session_id, None)
-    if session is None:
+    if not await _cleanup_session(session_id):
         raise HTTPException(status_code=404, detail="unknown session")
-    await session.engine.close()
     return {"deleted": True, "sessionId": session_id}
 
 
@@ -280,29 +314,30 @@ async def battle_socket(websocket: WebSocket, session_id: str) -> None:
         await websocket.close(code=4404, reason="unknown session")
         return
     await websocket.accept()
-    await websocket.send_json(await _snapshot_payload(session_id, session))
     try:
+        await websocket.send_json(await _snapshot_payload(session_id, session))
         while True:
             message = await websocket.receive_json()
             message_type = message.get("type")
             if message_type == "ping":
                 await websocket.send_json({"type": "pong", "sessionId": session_id})
                 continue
-            if message_type == "close":
-                await websocket.send_json({"type": "closed", "sessionId": session_id})
-                await websocket.close(code=1000)
-                break
-            if message_type == "destroy":
-                await session.engine.close()
-                SESSIONS.pop(session_id, None)
+            if message_type in {"close", "destroy"}:
                 await websocket.send_json({"type": "closed", "sessionId": session_id})
                 await websocket.close(code=1000)
                 break
             if session.public_view is not None:
                 if message_type != "advance":
-                    await websocket.send_json({"type": "error", "code": "UNSUPPORTED_PUBLIC_ACTION", "detail": "この画面では『1手進める』のみ使用できます"})
+                    await websocket.send_json({"type": "error", "code": "ACTION_UNAVAILABLE", "detail": "この画面では『1手進める』のみ使用できます"})
                     continue
-                selection: list[int] = []
+                if session.public_advance == "legal-first":
+                    legal = session.engine.legal_selections()
+                    if not legal:
+                        await websocket.send_json({"type": "error", "code": "ACTION_UNAVAILABLE", "detail": "現在進められる操作がありません"})
+                        continue
+                    selection = list(legal[0])
+                else:
+                    selection = []
             else:
                 if message_type != "step":
                     await websocket.send_json({"type": "error", "code": "UNSUPPORTED_MESSAGE"})
@@ -323,7 +358,9 @@ async def battle_socket(websocket: WebSocket, session_id: str) -> None:
                 else:
                     await websocket.send_json({"type": "error", "code": "ENGINE_REJECTED", "detail": str(exc)})
     except WebSocketDisconnect:
-        return
+        pass
+    finally:
+        await _cleanup_session(session_id)
 
 
 if FRONTEND_DIST.is_dir():
