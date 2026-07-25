@@ -34,13 +34,13 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          import textwrap
           source = Path('.github/workflows/privacy-hardening-autopatch.yml').read_text(encoding='utf-8')
           start_marker = "          python - <<'PY'\n"
           end_marker = "\n          PY\n\n      - name: Commit patched implementation"
           start = source.index(start_marker) + len(start_marker)
           end = source.index(end_marker, start)
-          script = textwrap.dedent(source[start:end])
+          lines = source[start:end].splitlines()
+          script = "\n".join(line[10:] if line.startswith("          ") else line for line in lines) + "\n"
           Path('/tmp/apply_privacy_hardening.py').write_text(script, encoding='utf-8')
           PY
           set -o pipefail
@@ -51,6 +51,7 @@ jobs:
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm -f privacy_patch_error.log 2>/dev/null || true
           git add .github/workflows/battle-studio-live-ci.yml tools/battle_studio
           git commit -m "Complete official runtime privacy hardening"
           git push origin HEAD:black/privacy-hardening-complete-v1
