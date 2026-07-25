@@ -1,0 +1,961 @@
+name: privacy-hardening-autopatch
+
+on:
+  push:
+    branches:
+      - black/privacy-hardening-complete-v1
+    paths:
+      - .github/workflows/privacy-hardening-autopatch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'Bootstrap privacy hardening patch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: black/privacy-hardening-complete-v1
+          fetch-depth: 0
+
+      - name: Apply complete privacy hardening
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          root = Path.cwd()
+
+          def replace_once(path: Path, old: str, new: str) -> None:
+              text = path.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected exactly one match in {path}: {count}\n{old[:160]}")
+              path.write_text(text.replace(old, new), encoding="utf-8")
+
+          live = root / "tools/battle_studio/backend/live_server.py"
+          replace_once(
+              live,
+              '''class SessionRequest(BaseModel):
+              engine: str = "emulator"
+              bundleId: str | None = None
+              opponentBundleId: str | None = None
+              engineId: str | None = None
+              playerBundleId: str | None = None
+              nativeOpponentBundleId: str | None = None
+          ''',
+              '''class SessionRequest(BaseModel):
+              engine: str = "emulator"
+              bundleId: str | None = None
+              opponentBundleId: str | None = None
+              engineId: str | None = None
+              playerBundleId: str | None = None
+              nativeOpponentBundleId: str | None = None
+              subjectPlayer: int = 0
+          ''',
+          )
+          replace_once(
+              live,
+              '''class Session:
+              engine: Engine
+              lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+              frame: dict[str, Any] | None = None
+              public_view: PublicBattleView | None = None
+          ''',
+              '''class Session:
+              engine: Engine
+              lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+              frame: dict[str, Any] | None = None
+              public_view: PublicBattleView | None = None
+              public_advance: str | None = None
+          ''',
+          )
+          replace_once(live, 'app = FastAPI(title="BLACK Battle Studio Live Bridge", version="3.2")', 'app = FastAPI(title="BLACK Battle Studio Live Bridge", version="3.3")')
+          replace_once(
+              live,
+              'FRONTEND_DIST = Path(__file__).resolve().parents[1] / "frontend" / "dist"\n',
+              'FRONTEND_DIST = Path(__file__).resolve().parents[1] / "frontend" / "dist"\nSESSION_TTL_SECONDS = 15 * 60\n',
+          )
+          replace_once(
+              live,
+              '''def _card_catalog_available() -> bool:
+              try:
+                  get_catalog()
+                  return True
+              except (FileNotFoundError, OSError, ValueError):
+                  return False
+
+
+          async def _folder_entries''',
+              '''def _card_catalog_available() -> bool:
+              try:
+                  get_catalog()
+                  return True
+              except (FileNotFoundError, OSError, ValueError):
+                  return False
+
+
+          async def _cleanup_session(session_id: str) -> bool:
+              session = SESSIONS.pop(session_id, None)
+              if session is None:
+                  return False
+              try:
+                  await session.engine.close()
+              except Exception:
+                  LOGGER.exception("battle session cleanup failed session=%s", session_id)
+              return True
+
+
+          async def _expire_session(session_id: str) -> None:
+              await asyncio.sleep(SESSION_TTL_SECONDS)
+              await _cleanup_session(session_id)
+
+
+          async def _folder_entries''',
+          )
+          replace_once(
+              live,
+              '        "frontendDist": FRONTEND_DIST.is_dir(),\n        "pid": os.getpid(),',
+              '        "frontendDist": FRONTEND_DIST.is_dir(),\n        "publicView": PUBLIC_PROTOCOL_VERSION,\n        "pid": os.getpid(),',
+          )
+          old_create_tail = '''    except BundleError as exc:
+              raise HTTPException(status_code=404, detail=str(exc)) from exc
+          except (OfficialEngineError, NativeEngineError, NativeArtifactError, OSError, ValueError) as exc:
+              if request.engine == "official-native":
+                  LOGGER.exception("official runtime session creation failed")
+                  raise HTTPException(status_code=503, detail="公式対戦を開始できませんでした。BundleとEngineの整合を確認してください。") from exc
+              raise HTTPException(status_code=503, detail=str(exc)) from exc
+          session_id = uuid.uuid4().hex
+          public_view = PublicBattleView(session_id, subject_player=0) if request.engine == "official-native" else None
+          SESSIONS[session_id] = Session(engine=engine, frame=frame, public_view=public_view)
+          public_engine = "official-battle" if public_view else engine.name
+          return {"sessionId": session_id, "engine": public_engine, "wsPath": f"/ws/battle/{session_id}"}
+          '''
+          new_create_tail = '''    except BundleError as exc:
+              if request.engine in {"official", "official-native"}:
+                  LOGGER.info("official bundle lookup failed: %s", exc)
+                  raise HTTPException(status_code=404, detail="選択したBundleを確認してください。") from exc
+              raise HTTPException(status_code=404, detail=str(exc)) from exc
+          except (OfficialEngineError, NativeEngineError, NativeArtifactError, OSError, ValueError) as exc:
+              if request.engine in {"official", "official-native"}:
+                  LOGGER.exception("official runtime session creation failed")
+                  raise HTTPException(status_code=503, detail="公式対戦を開始できませんでした。BundleとEngineの整合を確認してください。") from exc
+              raise HTTPException(status_code=503, detail=str(exc)) from exc
+          if request.subjectPlayer not in (0, 1):
+              await engine.close()
+              raise HTTPException(status_code=422, detail="subjectPlayer must be 0 or 1")
+          session_id = uuid.uuid4().hex
+          is_public = request.engine in {"official", "official-native"}
+          public_view = PublicBattleView(session_id, subject_player=request.subjectPlayer) if is_public else None
+          public_advance = "legal-first" if request.engine == "official" else "agent" if request.engine == "official-native" else None
+          SESSIONS[session_id] = Session(engine=engine, frame=frame, public_view=public_view, public_advance=public_advance)
+          asyncio.create_task(_expire_session(session_id))
+          public_engine = "official-battle" if is_public else engine.name
+          return {
+              "sessionId": session_id,
+              "engine": public_engine,
+              "wsPath": f"/ws/battle/{session_id}",
+              "publicProtocol": PUBLIC_PROTOCOL_VERSION if is_public else None,
+              "viewPolicy": "player_view" if is_public else "spectator",
+              "subjectPlayer": request.subjectPlayer,
+          }
+          '''
+          replace_once(live, old_create_tail, new_create_tail)
+          replace_once(
+              live,
+              '''@app.delete("/api/sessions/{session_id}")
+          async def delete_session(session_id: str) -> dict[str, Any]:
+              session = SESSIONS.pop(session_id, None)
+              if session is None:
+                  raise HTTPException(status_code=404, detail="unknown session")
+              await session.engine.close()
+              return {"deleted": True, "sessionId": session_id}
+          ''',
+              '''@app.delete("/api/sessions/{session_id}")
+          async def delete_session(session_id: str) -> dict[str, Any]:
+              if not await _cleanup_session(session_id):
+                  raise HTTPException(status_code=404, detail="unknown session")
+              return {"deleted": True, "sessionId": session_id}
+          ''',
+          )
+          text = live.read_text(encoding="utf-8")
+          ws_start = text.index('@app.websocket("/ws/battle/{session_id}")')
+          ws_end = text.index('\n\nif FRONTEND_DIST.is_dir():', ws_start)
+          websocket_block = '''@app.websocket("/ws/battle/{session_id}")
+          async def battle_socket(websocket: WebSocket, session_id: str) -> None:
+              session = SESSIONS.get(session_id)
+              if session is None:
+                  await websocket.close(code=4404, reason="unknown session")
+                  return
+              await websocket.accept()
+              try:
+                  await websocket.send_json(await _snapshot_payload(session_id, session))
+                  while True:
+                      message = await websocket.receive_json()
+                      message_type = message.get("type")
+                      if message_type == "ping":
+                          await websocket.send_json({"type": "pong", "sessionId": session_id})
+                          continue
+                      if message_type in {"close", "destroy"}:
+                          await websocket.send_json({"type": "closed", "sessionId": session_id})
+                          await websocket.close(code=1000)
+                          break
+                      if session.public_view is not None:
+                          if message_type != "advance":
+                              await websocket.send_json({"type": "error", "code": "ACTION_UNAVAILABLE", "detail": "この画面では『1手進める』のみ使用できます"})
+                              continue
+                          if session.public_advance == "legal-first":
+                              legal = session.engine.legal_selections()
+                              if not legal:
+                                  await websocket.send_json({"type": "error", "code": "ACTION_UNAVAILABLE", "detail": "現在進められる操作がありません"})
+                                  continue
+                              selection = list(legal[0])
+                          else:
+                              selection = []
+                      else:
+                          if message_type != "step":
+                              await websocket.send_json({"type": "error", "code": "UNSUPPORTED_MESSAGE"})
+                              continue
+                          raw_selection = message.get("selection")
+                          if not isinstance(raw_selection, list) or any(not isinstance(value, int) for value in raw_selection):
+                              await websocket.send_json({"type": "error", "code": "INVALID_SELECTION"})
+                              continue
+                          selection = raw_selection
+                      try:
+                          async with session.lock:
+                              session.frame = await session.engine.step(selection)
+                          await websocket.send_json(await _snapshot_payload(session_id, session))
+                      except (ValueError, OfficialEngineError, NativeEngineError) as exc:
+                          if session.public_view is not None:
+                              LOGGER.exception("official runtime action failed")
+                              await websocket.send_json({"type": "error", "code": "ACTION_REJECTED", "detail": "この操作を完了できませんでした"})
+                          else:
+                              await websocket.send_json({"type": "error", "code": "ENGINE_REJECTED", "detail": str(exc)})
+              except WebSocketDisconnect:
+                  pass
+              finally:
+                  await _cleanup_session(session_id)
+          '''
+          live.write_text(text[:ws_start] + websocket_block + text[ws_end:], encoding="utf-8")
+
+          public_view = root / "tools/battle_studio/backend/public_battle_view.py"
+          public_view.write_text(r'''from __future__ import annotations
+
+import hashlib
+import math
+import re
+from typing import Any, Mapping, Sequence
+from urllib.parse import urlparse
+
+from card_catalog import get_catalog
+
+
+PUBLIC_PROTOCOL_VERSION = "1.1"
+_PUBLIC_ZONES = {"active", "bench", "hand", "deck", "discard", "prize", "looking", "unknown"}
+_PUBLIC_PHASES = {"setup", "main", "attack", "between_turns", "game_over", "unknown"}
+_SAFE_EVENT_TYPES = {
+    "attack", "attach", "bench", "damage", "discard", "draw", "evolve", "heal",
+    "knockout", "log", "move", "play", "prize", "retreat", "stadium", "status",
+    "supporter", "switch", "trainer", "turn",
+}
+_SAFE_KINDS = {"attack", "ability", "attach", "evolve", "retreat", "switch", "trainer", "supporter", "pass", "other"}
+_SAFE_METRICS = {"ev", "visits", "mean", "worst", "best", "delta", "score", "probability", "confidence", "winrate", "elapsedms"}
+_ALLOWED_URL_HOSTS = (
+    "pokemontcg.io", "pokemon.com", "pokemon-card.com", "limitlesstcg.com",
+    "kaggleusercontent.com", "githubusercontent.com",
+)
+_PATH_RE = re.compile(r"(?:[A-Za-z]:[\\/]|/)(?:[^\s\]\[{}]+[\\/])+[^\s\]\[{}]*")
+_INTERNAL_RE = re.compile(
+    r"\b(?:select(?:ion)?(?:\.type)?|serial|option(?:index)?|arrayindex|area|context|searchid|battleptr|libcg|observation|truthledger|hiddenbelief|selectedaction)\b",
+    re.IGNORECASE,
+)
+_LONG_NUMBER_RE = re.compile(r"(?<!\d)\d{6,}(?!\d)")
+_HEX_RE = re.compile(r"\b[0-9a-f]{16,}\b", re.IGNORECASE)
+_JSONISH_RE = re.compile(r"[{}]|\[[^\]]*[:{},][^\]]*\]")
+
+
+def _seq(value: Any) -> list[Any]:
+    return list(value) if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)) else []
+
+
+def _number(value: Any, default: float | None = None) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return default
+    parsed = float(value)
+    return parsed if math.isfinite(parsed) else default
+
+
+def _integer(value: Any, default: int = 0) -> int:
+    if isinstance(value, bool):
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_text(value: Any, fallback: str = "", limit: int = 240) -> str:
+    text = " ".join(str(value if value is not None else fallback).replace("\r", " ").replace("\n", " ").split())
+    if not text:
+        return fallback
+    if _PATH_RE.search(text) or _INTERNAL_RE.search(text) or _LONG_NUMBER_RE.search(text) or _HEX_RE.search(text) or _JSONISH_RE.search(text):
+        return fallback or "対戦状態が更新されました"
+    return text[:limit]
+
+
+def _safe_url(value: Any) -> str:
+    if not isinstance(value, str) or not value:
+        return ""
+    try:
+        parsed = urlparse(value)
+    except ValueError:
+        return ""
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme != "https" or not any(host == allowed or host.endswith("." + allowed) for allowed in _ALLOWED_URL_HOSTS):
+        return ""
+    return value[:500]
+
+
+class PublicBattleView:
+    """Strict player-safe projection for every official runtime transport."""
+
+    def __init__(self, session_nonce: str, subject_player: int = 0) -> None:
+        self.subject_player = subject_player if subject_player in (0, 1) else 0
+        self._secret = hashlib.sha256(session_nonce.encode("utf-8")).digest()
+        self._public_card_ids: dict[tuple[int, str], int] = {}
+        self._catalog_entries: dict[int, dict[str, Any]] = {}
+        try:
+            cards, _sources = get_catalog()
+        except (FileNotFoundError, OSError, ValueError):
+            cards = []
+        self._catalog = {
+            _integer(card.get("id")): dict(card)
+            for card in cards
+            if isinstance(card, Mapping) and _integer(card.get("id")) > 0
+        }
+
+    def _opaque_int(self, namespace: str, *parts: Any) -> int:
+        digest = hashlib.blake2s(key=self._secret, digest_size=4)
+        digest.update(namespace.encode("utf-8"))
+        for part in parts:
+            digest.update(b"\0")
+            digest.update(str(part).encode("utf-8", errors="replace"))
+        value = int.from_bytes(digest.digest(), "big") & 0x7FFFFFFF
+        return value or 1
+
+    def _public_card_id(self, actual_card_id: int, fallback_name: str = "") -> int:
+        key = (actual_card_id, fallback_name if actual_card_id <= 0 else "")
+        if key not in self._public_card_ids:
+            self._public_card_ids[key] = self._opaque_int("card", *key)
+        public_id = self._public_card_ids[key]
+        if public_id not in self._catalog_entries:
+            metadata = self._catalog.get(actual_card_id, {})
+            self._catalog_entries[public_id] = {
+                "id": public_id,
+                "name": _safe_text(metadata.get("name"), fallback_name or "Unknown card", 120),
+                "number": _safe_text(metadata.get("number"), "", 40),
+                "expansion": _safe_text(metadata.get("expansion"), "", 100),
+                "sourceLink": _safe_url(metadata.get("sourceLink")),
+            }
+        return public_id
+
+    def _attachment_label(self, raw: Any, fallback: str) -> str:
+        if isinstance(raw, Mapping):
+            named = _safe_text(raw.get("name"), "", 100)
+            if named:
+                return named
+            raw = raw.get("cardId", raw.get("id"))
+        card_id = _integer(raw, -1)
+        if card_id > 0:
+            name = _safe_text(self._catalog.get(card_id, {}).get("name"), "", 100)
+            return name or fallback
+        text = _safe_text(raw, "", 100)
+        if text and not text.isdigit():
+            return text
+        return fallback
+
+    def _card(self, raw: Any, player: int) -> dict[str, Any] | None:
+        if not isinstance(raw, Mapping):
+            return None
+        actual_card_id = _integer(raw.get("cardId"))
+        name = _safe_text(raw.get("name"), "Unknown card", 120)
+        public_card_id = self._public_card_id(actual_card_id, name)
+        actual_serial = _integer(raw.get("serial"))
+        instance_seed: Any = actual_serial if actual_serial > 0 else (actual_card_id, name)
+        public_serial = self._opaque_int("instance", player, instance_seed)
+        zone = str(raw.get("zone", "unknown"))
+        return {
+            "playerIndex": player,
+            "serial": public_serial,
+            "cardId": public_card_id,
+            "name": name,
+            "zone": zone if zone in _PUBLIC_ZONES else "unknown",
+            "slot": _integer(raw.get("slot")) if isinstance(raw.get("slot"), int) and raw.get("slot") >= 0 else None,
+            "hp": _integer(raw.get("hp")) if isinstance(raw.get("hp"), int) and raw.get("hp") >= 0 else None,
+            "maxHp": _integer(raw.get("maxHp")) if isinstance(raw.get("maxHp"), int) and raw.get("maxHp") >= 0 else None,
+            "damage": max(0, _integer(raw.get("damage"))),
+            "energies": [self._attachment_label(item, "エネルギー") for item in _seq(raw.get("energies"))][:16],
+            "tools": [self._attachment_label(item, "ポケモンのどうぐ") for item in _seq(raw.get("tools"))][:8],
+            "status": [_safe_text(item, "状態異常", 48) for item in _seq(raw.get("status"))][:8],
+            "evolution": [
+                self._public_card_id(_integer(item))
+                for item in _seq(raw.get("evolution"))
+                if _integer(item) > 0
+            ][:8],
+            "imageUrl": None,
+        }
+
+    def _player(self, raw: Any, player: int) -> dict[str, Any]:
+        value = raw if isinstance(raw, Mapping) else {}
+        own_hand = player == self.subject_player
+        hand = [card for item in _seq(value.get("hand")) if (card := self._card(item, player)) is not None] if own_hand else []
+        return {
+            "name": "自分" if own_hand else "相手",
+            "active": self._card(value.get("active"), player),
+            "bench": [card for item in _seq(value.get("bench")) if (card := self._card(item, player)) is not None][:5],
+            "hand": hand,
+            "handCount": max(0, _integer(value.get("handCount"), len(hand))),
+            "deckCount": max(0, _integer(value.get("deckCount"))),
+            "prizeCount": max(0, _integer(value.get("prizeCount"))),
+            "discard": [card for item in _seq(value.get("discard")) if (card := self._card(item, player)) is not None][:60],
+            "supporterPlayed": bool(value.get("supporterPlayed", False)),
+            "retreated": bool(value.get("retreated", False)),
+        }
+
+    def _event(self, raw: Any) -> dict[str, Any] | None:
+        if not isinstance(raw, Mapping):
+            return None
+        event_type = str(raw.get("type", "log")).lower()
+        actor = raw.get("actor")
+        text = "対戦AIがこの行動を完了できませんでした" if event_type == "agent_error" else _safe_text(raw.get("text"), "対戦状態が更新されました")
+        return {
+            "type": event_type if event_type in _SAFE_EVENT_TYPES else "log",
+            "actor": int(actor) if actor in (0, 1) else None,
+            "text": text,
+            "cardKey": None,
+        }
+
+    def _candidate(self, raw: Any) -> dict[str, Any] | None:
+        if not isinstance(raw, Mapping):
+            return None
+        raw_kind = str(raw.get("kind", "")).lower()
+        return {
+            "label": _safe_text(raw.get("label"), "候補", 120),
+            "score": float(_number(raw.get("score"), 0.0) or 0.0),
+            "selected": bool(raw.get("selected", False)),
+            "reason": _safe_text(raw.get("reason"), "理由未提供") if raw.get("reason") is not None else None,
+            "kind": raw_kind if raw_kind in _SAFE_KINDS else None,
+        }
+
+    def _search_tree(self, raw: Any, path: str = "root") -> dict[str, Any] | None:
+        if not isinstance(raw, Mapping):
+            return None
+        status = str(raw.get("status", "available"))
+        if status not in {"root", "available", "expanded", "selected", "pruned"}:
+            status = "available"
+        return {
+            "id": f"node-{self._opaque_int('search-node', path)}",
+            "label": _safe_text(raw.get("label"), "候補", 120),
+            "status": status,
+            "ev": _number(raw.get("ev")),
+            "visits": max(0, _integer(raw.get("visits"))) if raw.get("visits") is not None else None,
+            "mean": _number(raw.get("mean")),
+            "worst": _number(raw.get("worst")),
+            "best": _number(raw.get("best")),
+            "reason": _safe_text(raw.get("reason"), "理由未提供") if raw.get("reason") is not None else None,
+            "children": [
+                node
+                for index, item in enumerate(_seq(raw.get("children")))
+                if (node := self._search_tree(item, f"{path}/{index}")) is not None
+            ][:64],
+        }
+
+    def _decision(self, raw: Any) -> dict[str, Any] | None:
+        if not isinstance(raw, Mapping) or raw.get("actor") not in (0, 1):
+            return None
+        candidates = [item for value in _seq(raw.get("candidates")) if (item := self._candidate(value)) is not None][:32]
+        alternatives = [item for value in _seq(raw.get("alternatives")) if (item := self._candidate(value)) is not None][:32]
+        raw_chosen = str(raw.get("chosen", ""))
+        if not raw_chosen or re.fullmatch(r"\s*\[[0-9,\s-]*\]\s*", raw_chosen):
+            chosen = next((item["label"] for item in candidates if item["selected"]), "行動を選択")
+        else:
+            chosen = _safe_text(raw_chosen, "行動を選択", 120)
+        decision: dict[str, Any] = {
+            "actor": int(raw["actor"]),
+            "goal": _safe_text(raw.get("goal"), "対戦を進める"),
+            "chosen": chosen,
+            "confidence": _number(raw.get("confidence")),
+            "expectedWinRate": _number(raw.get("expectedWinRate")),
+            "elapsedMs": max(0.0, _number(raw.get("elapsedMs"), 0.0) or 0.0),
+            "candidates": candidates,
+            "warnings": [_safe_text(item, "注意事項", 160) for item in _seq(raw.get("warnings"))][:16],
+            "alternatives": alternatives,
+            "boardDiff": [_safe_text(item, "盤面が変化しました", 160) for item in _seq(raw.get("boardDiff"))][:16],
+        }
+        tree = self._search_tree(raw.get("searchTree"))
+        if tree is not None:
+            decision["searchTree"] = tree
+        rejected = []
+        for value in _seq(raw.get("rejectedBranches"))[:32]:
+            if not isinstance(value, Mapping):
+                continue
+            metrics: dict[str, float] = {}
+            if isinstance(value.get("metrics"), Mapping):
+                for key, item in value["metrics"].items():
+                    canonical = str(key).lower().replace("_", "")
+                    number = _number(item)
+                    if canonical in _SAFE_METRICS and number is not None:
+                        metrics[canonical] = number
+            rejected.append({
+                "label": _safe_text(value.get("label"), "候補", 120),
+                "reason": _safe_text(value.get("reason"), "理由未提供"),
+                "evidence": [_safe_text(item, "公開可能な証拠なし", 160) for item in _seq(value.get("evidence"))][:16],
+                "metrics": metrics,
+                "killedBy": [_safe_text(item, "安全条件", 120) for item in _seq(value.get("killedBy"))][:16],
+            })
+        if rejected:
+            decision["rejectedBranches"] = rejected
+        return decision
+
+    def render(self, frame: Mapping[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        players = _seq(frame.get("players"))
+        if len(players) != 2:
+            raise ValueError("public battle view requires exactly two players")
+        phase = str(frame.get("phase", "unknown")).lower()
+        public_frame = {
+            "frameId": max(0, _integer(frame.get("frameId"))),
+            "turn": max(0, _integer(frame.get("turn"))),
+            "actionCount": max(0, _integer(frame.get("actionCount"))),
+            "actingPlayer": _integer(frame.get("actingPlayer")) if frame.get("actingPlayer") in (0, 1) else 0,
+            "phase": phase if phase in _PUBLIC_PHASES else "unknown",
+            "players": [self._player(players[0], 0), self._player(players[1], 1)],
+            "stadium": self._card(frame.get("stadium"), 0),
+            "events": [event for item in _seq(frame.get("events"))[-100:] if (event := self._event(item)) is not None],
+            "decision": self._decision(frame.get("decision")),
+            "result": _safe_text(frame.get("result"), "対戦終了", 160) if frame.get("result") is not None else None,
+        }
+        return public_frame, sorted(self._catalog_entries.values(), key=lambda item: int(item["id"]))
+''', encoding="utf-8")
+
+          test_view = root / "tools/battle_studio/backend/test_public_battle_view.py"
+          test_view.write_text(r'''from __future__ import annotations
+
+import json
+import unittest
+from unittest.mock import patch
+
+from public_battle_view import PublicBattleView
+
+
+CARD_ID = 987654321
+SERIAL = 123456789
+
+
+def card(player: int, zone: str, slot: int | None = None) -> dict[str, object]:
+    return {
+        "playerIndex": player,
+        "serial": SERIAL + player,
+        "cardId": CARD_ID + player,
+        "name": "Dragapult ex" if player == 0 else "Rocket Mewtwo ex",
+        "zone": zone,
+        "slot": slot,
+        "hp": 200,
+        "maxHp": 320,
+        "damage": 120,
+        "energies": [44444444, "Psychic"],
+        "tools": [{"cardId": 55555555}],
+        "status": [],
+        "evolution": [CARD_ID - 1],
+        "imageUrl": None,
+    }
+
+
+def frame(zone: str = "active", slot: int = 0) -> dict[str, object]:
+    own = card(0, zone, slot)
+    opponent_hand = card(1, "hand", 0)
+    return {
+        "frameId": 4,
+        "turn": 3,
+        "actionCount": 8,
+        "actingPlayer": 0,
+        "phase": "main",
+        "players": [
+            {"name": "Player /tmp/internal/main.py", "active": own, "bench": [], "hand": [own], "handCount": 1, "deckCount": 42, "prizeCount": 5, "discard": [], "supporterPlayed": False, "retreated": False},
+            {"name": "Opponent", "active": card(1, "active", 0), "bench": [], "hand": [opponent_hand], "handCount": 4, "deckCount": 39, "prizeCount": 4, "discard": [], "supporterPlayed": True, "retreated": False},
+        ],
+        "stadium": None,
+        "events": [
+            {"type": "agent_error", "actor": 0, "text": "Traceback File \"agent.py\" serial=123"},
+            {"type": "attack", "actor": 0, "text": "path=/home/user/HROS/private observation data"},
+        ],
+        "decision": {
+            "actor": 0,
+            "goal": "searchId=123456789 /tmp/private",
+            "chosen": "[0]",
+            "confidence": 0.8,
+            "elapsedMs": 12.5,
+            "candidates": [{"label": "ATTACK", "score": 74, "selected": True, "cardId": CARD_ID, "serial": SERIAL}],
+            "selectedAction": {"optionIndex": 0, "arrayIndex": 2, "serial": SERIAL},
+            "hiddenBelief": {"secret": 0.9},
+            "truthLedger": {"area": 4},
+            "searchTree": {"id": "raw-root-id", "label": "Attack", "status": "root", "ev": 0.74, "visits": 5, "mean": 0.7, "worst": 0.2, "best": 0.9, "reason": "/tmp/tree", "children": []},
+            "rejectedBranches": [{"label": "Switch", "reason": "context=MAIN", "evidence": ["serial 123456789"], "metrics": {"ev": 0.3, "raw": "/tmp/leak", "id": "123456789"}, "killedBy": ["optionIndex=3"]}],
+        },
+        "result": None,
+    }
+
+
+class PublicBattleViewTests(unittest.TestCase):
+    def build(self, nonce: str = "session-a") -> PublicBattleView:
+        catalog = [
+            {"id": CARD_ID, "name": "Dragapult ex", "number": "130", "expansion": "Test Set", "sourceLink": "https://images.pokemontcg.io/test/130.png"},
+            {"id": 44444444, "name": "Basic Psychic Energy", "number": "001", "expansion": "Energy", "sourceLink": "file:///tmp/secret"},
+            {"id": 55555555, "name": "Safe Tool", "number": "002", "expansion": "Tool", "sourceLink": "https://evil.example/private"},
+        ]
+        with patch("public_battle_view.get_catalog", return_value=(catalog, ())):
+            return PublicBattleView(nonce, subject_player=0)
+
+    def test_hides_opponent_hand_and_all_internal_identifiers(self) -> None:
+        public_frame, public_cards = self.build().render(frame())
+        encoded = json.dumps({"frame": public_frame, "cards": public_cards}, ensure_ascii=False)
+        self.assertEqual(public_frame["players"][1]["hand"], [])
+        self.assertEqual(public_frame["players"][1]["handCount"], 4)
+        for secret in (str(CARD_ID), str(SERIAL), "44444444", "55555555", "/tmp", "/home/user", "selectedAction", "hiddenBelief", "truthLedger", "optionIndex", "searchId"):
+            self.assertNotIn(secret, encoded)
+        self.assertEqual(public_frame["players"][0]["name"], "自分")
+        self.assertEqual(public_frame["players"][1]["name"], "相手")
+        self.assertEqual(public_frame["decision"]["chosen"], "ATTACK")
+        self.assertEqual(public_frame["decision"]["rejectedBranches"][0]["metrics"], {"ev": 0.3})
+        self.assertIn("Basic Psychic Energy", public_frame["players"][0]["active"]["energies"])
+        self.assertIn("Safe Tool", public_frame["players"][0]["active"]["tools"])
+        self.assertTrue(any(entry["sourceLink"].startswith("https://images.pokemontcg.io/") for entry in public_cards))
+        self.assertFalse(any("evil.example" in entry["sourceLink"] or "file:" in entry["sourceLink"] for entry in public_cards))
+
+    def test_instance_identity_survives_zone_and_slot_changes(self) -> None:
+        view = self.build()
+        active, _ = view.render(frame("active", 0))
+        moved, _ = view.render(frame("bench", 4))
+        self.assertEqual(active["players"][0]["active"]["serial"], moved["players"][0]["active"]["serial"])
+
+    def test_opaque_ids_change_between_sessions(self) -> None:
+        first, _ = self.build("session-a").render(frame())
+        other, _ = self.build("session-b").render(frame())
+        self.assertNotEqual(first["players"][0]["active"]["cardId"], other["players"][0]["active"]["cardId"])
+        self.assertNotEqual(first["players"][0]["active"]["serial"], other["players"][0]["active"]["serial"])
+
+
+if __name__ == "__main__":
+    unittest.main()
+''', encoding="utf-8")
+
+          # The legacy alternative entry point must never expose a second, weaker app.
+          (root / "tools/battle_studio/backend/main.py").write_text('from live_server import app\n\n__all__ = ["app"]\n', encoding="utf-8")
+
+          smoke = root / "tools/battle_studio/backend/run_connection_smoke.py"
+          smoke.write_text(r'''from __future__ import annotations
+
+import io
+import json
+import os
+import socket
+import subprocess
+import sys
+import tarfile
+import tempfile
+import time
+import urllib.error
+import urllib.request
+import uuid
+from pathlib import Path
+
+from websockets.sync.client import connect
+
+ROOT = Path(__file__).resolve().parent
+RAW_CARD_ID = 987654321
+RAW_SERIAL = 123456789
+
+
+def free_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+def request_json(url: str, data: dict | None = None) -> dict:
+    body = None if data is None else json.dumps(data).encode()
+    request = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(request, timeout=3) as response:
+        return json.loads(response.read())
+
+
+def request_text(url: str) -> str:
+    with urllib.request.urlopen(url, timeout=3) as response:
+        return response.read().decode("utf-8")
+
+
+def upload_file(url: str, path: Path) -> dict:
+    boundary = "----black" + uuid.uuid4().hex
+    data = path.read_bytes()
+    body = (
+        f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{path.name}\"\r\n"
+        "Content-Type: application/gzip\r\n\r\n"
+    ).encode() + data + f"\r\n--{boundary}--\r\n".encode()
+    request = urllib.request.Request(url, data=body, headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+    with urllib.request.urlopen(request, timeout=5) as response:
+        return json.loads(response.read())
+
+
+def make_bundle(path: Path) -> None:
+    entries = [
+        ("main.py", b"def agent(*args, **kwargs):\n    return []\n"),
+        ("deck.csv", ("\n".join(["1"] * 60) + "\n").encode()),
+        ("cg/libcg.so", b"\x7fELFprivacy-smoke"),
+    ]
+    with tarfile.open(path, "w:gz") as archive:
+        for name, data in entries:
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+
+
+def make_runner(path: Path) -> None:
+    path.write_text("""#!/usr/bin/env python3
+import json
+import sys
+
+frame_id = 0
+
+def card(player, zone, serial, card_id, name):
+    return {"playerIndex": player, "serial": serial, "cardId": card_id, "name": name, "zone": zone, "slot": 0, "hp": 200, "maxHp": 320, "damage": 120, "energies": [44444444], "tools": [55555555], "status": [], "evolution": [], "imageUrl": None}
+
+def frame():
+    own = card(0, "active", 123456789, 987654321, "Dragapult ex")
+    opp = card(1, "active", 223456789, 887654321, "Rocket Mewtwo ex")
+    secret = card(1, "hand", 323456789, 787654321, "Secret Hand")
+    return {"frameId": frame_id, "turn": 3, "actionCount": frame_id, "actingPlayer": 0, "phase": "main", "players": [{"name": "/home/user/private/main.py", "active": own, "bench": [], "hand": [own], "handCount": 1, "deckCount": 42, "prizeCount": 5, "discard": [], "supporterPlayed": False, "retreated": False}, {"name": "Opponent", "active": opp, "bench": [], "hand": [secret], "handCount": 4, "deckCount": 39, "prizeCount": 4, "discard": [], "supporterPlayed": False, "retreated": False}], "stadium": None, "events": [{"type": "log", "actor": 0, "text": "selection index=7 /tmp/libcg.so"}], "decision": {"actor": 0, "goal": "searchId=123456789", "chosen": "[7]", "confidence": 0.8, "elapsedMs": 2.0, "candidates": [{"label": "ATTACK", "score": 1.0, "selected": True}], "selectedAction": {"optionIndex": 7}, "hiddenBelief": {"secret": 1}}, "result": None}
+
+for line in sys.stdin:
+    message = json.loads(line)
+    if message.get("type") == "step":
+        if message.get("selection") != [7]:
+            print(json.dumps({"type": "error", "detail": "wrong selection /tmp/private serial=123456789"}), flush=True)
+            continue
+        frame_id += 1
+    print(json.dumps({"type": "snapshot", "frame": frame(), "legalSelections": [[7], [8]]}), flush=True)
+""", encoding="utf-8")
+    path.chmod(0o755)
+
+
+def assert_session_gone(uri: str) -> None:
+    failed = False
+    try:
+        with connect(uri, open_timeout=2, close_timeout=2) as websocket:
+            websocket.recv(timeout=1)
+    except Exception:
+        failed = True
+    assert failed, "closed session remained reconnectable"
+
+
+def main() -> int:
+    port = free_port()
+    with tempfile.TemporaryDirectory(prefix="black-privacy-smoke-") as temp:
+        temp_path = Path(temp)
+        runner = temp_path / "fake_official_runner.py"
+        bundle = temp_path / "privacy_bundle.tgz"
+        make_runner(runner)
+        make_bundle(bundle)
+        env = {**os.environ, "BLACK_OFFICIAL_RUNNER": str(runner), "BLACK_BUNDLE_ROOT": str(temp_path / "bundles")}
+        command = [sys.executable, "-m", "uvicorn", "live_server:app", "--host", "127.0.0.1", "--port", str(port), "--log-level", "warning"]
+        process = subprocess.Popen(command, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+        evidence: dict = {"port": port, "command": command, "checks": []}
+        try:
+            deadline = time.time() + 10
+            health = None
+            while time.time() < deadline:
+                try:
+                    health = request_json(f"http://127.0.0.1:{port}/api/health")
+                    break
+                except Exception:
+                    time.sleep(0.1)
+            if not health or not health.get("ok"):
+                raise RuntimeError("health endpoint did not become ready")
+            assert health.get("publicView") == "1.1"
+            evidence["health"] = health
+            evidence["checks"].append("http_health_pass")
+
+            if os.environ.get("EXPECT_FRONTEND_DIST") == "1":
+                assert health.get("frontendDist") is True
+                assert 'id="root"' in request_text(f"http://127.0.0.1:{port}/")
+                evidence["checks"].append("built_pwa_static_serve_pass")
+
+            emulator = request_json(f"http://127.0.0.1:{port}/api/sessions", {"engine": "emulator"})
+            evidence["checks"].append("session_create_pass")
+            emulator_uri = f"ws://127.0.0.1:{port}{emulator['wsPath']}"
+            with connect(emulator_uri, open_timeout=3, close_timeout=3) as websocket:
+                first = json.loads(websocket.recv(timeout=3))
+                assert first["frame"]["players"][0]["active"]["serial"] == 1001
+                assert first["legalSelections"] == [[0]]
+                evidence["checks"].append("websocket_initial_snapshot_pass")
+                websocket.send(json.dumps({"type": "ping"}))
+                assert json.loads(websocket.recv(timeout=3))["type"] == "pong"
+                evidence["checks"].append("websocket_ping_pong_pass")
+                frames = [first["frame"]]
+                for expected in range(1, 4):
+                    websocket.send(json.dumps({"type": "step", "selection": [0]}))
+                    message = json.loads(websocket.recv(timeout=3))
+                    assert message["frame"]["frameId"] == expected
+                    assert message["frame"]["players"][0]["active"]["serial"] == 1001
+                    frames.append(message["frame"])
+                evidence["checks"].extend(["three_live_steps_pass", "card_instance_identity_stable"])
+                websocket.send(json.dumps({"type": "step", "selection": [9]}))
+                rejected = json.loads(websocket.recv(timeout=3))
+                assert rejected["type"] == "error" and rejected["code"] == "ENGINE_REJECTED"
+                evidence["checks"].append("illegal_selection_fail_closed_pass")
+                websocket.send(json.dumps({"type": "close"}))
+                assert json.loads(websocket.recv(timeout=3))["type"] == "closed"
+                evidence["checks"].append("clean_close_pass")
+            assert_session_gone(emulator_uri)
+            evidence["checks"].append("session_cleanup_pass")
+
+            uploaded = upload_file(f"http://127.0.0.1:{port}/api/bundles", bundle)
+            official = request_json(f"http://127.0.0.1:{port}/api/sessions", {"engine": "official", "bundleId": uploaded["bundleId"], "subjectPlayer": 0})
+            assert official["engine"] == "official-battle" and official["publicProtocol"] == "1.1"
+            evidence["checks"].append("official_public_session_create_pass")
+            official_uri = f"ws://127.0.0.1:{port}{official['wsPath']}"
+            with connect(official_uri, open_timeout=3, close_timeout=3) as websocket:
+                snapshot = json.loads(websocket.recv(timeout=3))
+                encoded = json.dumps(snapshot, ensure_ascii=False)
+                assert snapshot["publicProtocol"] == "1.1"
+                assert snapshot["hiddenInformationPolicy"] == "player_view"
+                assert "legalSelections" not in snapshot
+                assert snapshot["controls"]["canAdvance"] is True
+                assert snapshot["frame"]["players"][1]["hand"] == []
+                evidence["checks"].append("official_public_snapshot_pass")
+                for secret in (str(RAW_CARD_ID), str(RAW_SERIAL), "/tmp", "/home/user", "selectedAction", "hiddenBelief", "optionIndex", "searchId", "legalSelections"):
+                    assert secret not in encoded
+                evidence["checks"].append("official_raw_identifiers_absent")
+                websocket.send(json.dumps({"type": "step", "selection": [7]}))
+                hidden = json.loads(websocket.recv(timeout=3))
+                assert hidden["type"] == "error" and hidden["code"] == "ACTION_UNAVAILABLE"
+                assert "selection" not in json.dumps(hidden).lower()
+                evidence["checks"].append("official_step_contract_hidden")
+                initial_serial = snapshot["frame"]["players"][0]["active"]["serial"]
+                websocket.send(json.dumps({"type": "advance"}))
+                advanced = json.loads(websocket.recv(timeout=3))
+                assert advanced["frame"]["frameId"] == 1
+                assert advanced["frame"]["players"][0]["active"]["serial"] == initial_serial
+                assert "legalSelections" not in advanced
+                evidence["checks"].append("official_advance_pass")
+                websocket.send(json.dumps({"type": "close"}))
+                assert json.loads(websocket.recv(timeout=3))["type"] == "closed"
+            assert_session_gone(official_uri)
+            evidence["checks"].append("official_session_cleanup_pass")
+
+            evidence["frameCount"] = len(frames)
+            evidence["verdict"] = "PASS"
+            output = ROOT / "connection_smoke_result.json"
+            output.write_text(json.dumps(evidence, indent=2) + "\n")
+            print(json.dumps(evidence, indent=2))
+            return 0
+        finally:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+''', encoding="utf-8")
+
+          card_art = root / "tools/battle_studio/frontend/src/cardArt.ts"
+          replace_once(
+              card_art,
+              '''      const wanted = new Set(idKey.split(",").map(Number));
+              const cache = readCache();
+              const supplied = publicCards.filter((card) => wanted.has(card.id));
+              await resolveCards(supplied, cache, controller.signal);
+              const suppliedIds = new Set(supplied.map((card) => card.id));
+              const unresolved = new Set([...wanted].filter((id) => !suppliedIds.has(id)));
+              if (unresolved.size) {
+                const response = await fetch("/api/cards", { signal: controller.signal, cache: "force-cache" });
+                if (response.ok) {
+                  const payload = await response.json() as unknown;
+                  const rows: CatalogCard[] = [];
+                  for (const row of collectRows(payload)) {
+                    const record = asRecord(row);
+                    if (!record) continue;
+                    const id = pickNumber(record);
+                    if (id === null || !unresolved.has(id)) continue;
+                    const explicit = pickUrl(record);
+                    if (explicit) cache[String(id)] = explicit;
+                    rows.push({ id, name: text(record, "name", "card_name", "Card Name"), number: text(record, "number", "collection_no", "Collection No."), expansion: text(record, "expansion", "Expansion"), sourceLink: text(record, "sourceLink", "link") });
+                  }
+                  await resolveCards(rows, cache, controller.signal);
+                }
+              }
+              localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+              setEntries(Object.entries(cache).map(([id, url]) => [Number(id), url]));
+          ''',
+              '''      const wanted = new Set(idKey.split(",").map(Number));
+              const persistentCache = readCache();
+              const displayCache = { ...persistentCache };
+              const supplied = publicCards.filter((card) => wanted.has(card.id));
+              await resolveCards(supplied, displayCache, controller.signal);
+              const suppliedIds = new Set(supplied.map((card) => card.id));
+              const unresolved = new Set([...wanted].filter((id) => !suppliedIds.has(id)));
+              if (unresolved.size) {
+                const response = await fetch("/api/cards", { signal: controller.signal, cache: "force-cache" });
+                if (response.ok) {
+                  const payload = await response.json() as unknown;
+                  const rows: CatalogCard[] = [];
+                  for (const row of collectRows(payload)) {
+                    const record = asRecord(row);
+                    if (!record) continue;
+                    const id = pickNumber(record);
+                    if (id === null || !unresolved.has(id)) continue;
+                    const explicit = pickUrl(record);
+                    if (explicit) displayCache[String(id)] = explicit;
+                    rows.push({ id, name: text(record, "name", "card_name", "Card Name"), number: text(record, "number", "collection_no", "Collection No."), expansion: text(record, "expansion", "Expansion"), sourceLink: text(record, "sourceLink", "link") });
+                  }
+                  await resolveCards(rows, displayCache, controller.signal);
+                  for (const id of unresolved) {
+                    const url = displayCache[String(id)];
+                    if (url) persistentCache[String(id)] = url;
+                  }
+                }
+              }
+              localStorage.setItem(CACHE_KEY, JSON.stringify(persistentCache));
+              setEntries(Object.entries(displayCache).map(([id, url]) => [Number(id), url]));
+          ''',
+          )
+
+          workflow = root / ".github/workflows/battle-studio-live-ci.yml"
+          replace_once(
+              workflow,
+              '''              "clean_close_pass",
+                        "reconnect_latest_snapshot_pass",
+          ''',
+              '''              "clean_close_pass",
+                        "session_cleanup_pass",
+                        "official_public_session_create_pass",
+                        "official_public_snapshot_pass",
+                        "official_raw_identifiers_absent",
+                        "official_step_contract_hidden",
+                        "official_advance_pass",
+                        "official_session_cleanup_pass",
+          ''',
+          )
+          PY
+
+      - name: Commit patched implementation
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .github/workflows/battle-studio-live-ci.yml tools/battle_studio
+          git commit -m "Complete official runtime privacy hardening"
+          git push origin HEAD:black/privacy-hardening-complete-v1
