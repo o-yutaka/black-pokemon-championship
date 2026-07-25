@@ -82,14 +82,13 @@ export function CardFace({ card, compact = false, onSelect, catalog, highlight =
   return <button className={`card-face ${compact ? "compact" : ""} ${critical ? "critical" : ""} ${highlight ? "action-target" : ""}`} type="button" onClick={() => onSelect?.(card)} aria-label={`${card.name}、HP ${hpText}`} data-card-key={cardKey(card)}>
     <div className={`card-art ${showImage ? "has-card-image" : "fallback-card-art"}`}>
       {showImage && <img src={resolvedImageUrl!} alt={`${card.name}のカード画像`} loading="lazy" decoding="async" draggable={false} onError={() => setFailedImageUrl(resolvedImageUrl)} />}
-      {!showImage && <><span>{card.name.slice(0, 2)}</span><div className="card-glass"><span>#{card.cardId}</span><b>{card.name}</b></div></>}
+      {!showImage && <><span>{card.name.slice(0, 2)}</span><div className="card-glass"><span>CARD</span><b>{card.name}</b></div></>}
     </div>
     <div className="card-readout">
       <div className="hp-readout"><strong>HP {hpText}</strong><span>{card.damage > 0 ? `${card.damage}ダメージ` : "準備完了"}</span></div>
       <div className="hp-track"><i style={{ width: `${ratio * 100}%` }} /></div>
       <div className="energy-row">{card.energies.length ? card.energies.map((energy, index) => <span key={`${energy}-${index}`} className={`energy-chip energy-${energy.toLowerCase()}`} title={`${energyJa(energy)}エネルギー`}>{energyJa(energy).slice(0, 1)}</span>) : <span className="muted">エネルギーなし</span>}</div>
       {card.status.length > 0 && <div className="status-row">{card.status.join(" · ")}</div>}
-      <small className="card-instance">カード識別 {cardKey(card)}</small>
     </div>
   </button>;
 }
@@ -98,18 +97,39 @@ function CountOrb({ label, value }: { label: string; value: number }) {
   return <div className="count-orb"><strong>{value}</strong><span>{label}</span></div>;
 }
 
+function PlayerInfo({ frame, playerIndex, marker }: { frame: BattleFrame; playerIndex: 0 | 1; marker: string }) {
+  const player = frame.players[playerIndex];
+  const acting = playerIndex === frame.actingPlayer;
+  return <div className="player-strip" data-board-marker={marker}>
+    <div className="player-identity"><span className="player-dot" /><div><strong>{player.name}</strong><span>{acting ? "思考・行動中" : "待機中"}</span></div></div>
+    <div className="counts"><CountOrb label="手札" value={player.handCount} /><CountOrb label="山札" value={player.deckCount} /><CountOrb label="サイド" value={player.prizeCount} /></div>
+  </div>;
+}
+
+function BenchArea({ frame, playerIndex, onSelect, catalog, targetKey, marker }: { frame: BattleFrame; playerIndex: 0 | 1; onSelect: (card: CardInstance) => void; catalog: CardArtCatalog; targetKey: string | null; marker: string }) {
+  const player = frame.players[playerIndex];
+  return <div className="bench-area" data-board-marker={marker}>
+    <div className="bench-label">ベンチ</div>
+    <div className="bench-row">{Array.from({ length: 5 }, (_, index) => { const boardCard = player.bench[index] ?? null; return <CardFace key={index} card={boardCard} compact onSelect={onSelect} catalog={catalog} highlight={boardCard ? cardKey(boardCard) === targetKey : false} />; })}</div>
+  </div>;
+}
+
+function ActiveArea({ frame, playerIndex, onSelect, catalog, targetKey, marker }: { frame: BattleFrame; playerIndex: 0 | 1; onSelect: (card: CardInstance) => void; catalog: CardArtCatalog; targetKey: string | null; marker: string }) {
+  const player = frame.players[playerIndex];
+  return <div className="active-stage" data-board-marker={marker}><div className="active-ring"><span>バトル場</span><CardFace card={player.active} onSelect={onSelect} catalog={catalog} highlight={player.active ? cardKey(player.active) === targetKey : false} /></div></div>;
+}
+
 function PlayerBoard({ frame, playerIndex, onSelect, catalog, fx }: { frame: BattleFrame; playerIndex: 0 | 1; onSelect: (card: CardInstance) => void; catalog: CardArtCatalog; fx: ActionFx | null }) {
   const player = frame.players[playerIndex];
   const acting = playerIndex === frame.actingPlayer;
   const targetKey = fx?.targetKey ?? null;
-  return <section className={`player-board player-${playerIndex} ${acting ? "acting" : "waiting"}`} aria-label={`${player.name}の盤面`}>
-    <div className="player-strip">
-      <div className="player-identity"><span className="player-dot" /><div><strong>{player.name}</strong><span>{acting ? "思考・行動中" : "待機中"}</span></div></div>
-      <div className="counts"><CountOrb label="手札" value={player.handCount} /><CountOrb label="山札" value={player.deckCount} /><CountOrb label="サイド" value={player.prizeCount} /></div>
-    </div>
-    <div className="bench-label">ベンチ</div>
-    <div className="bench-row">{Array.from({ length: 5 }, (_, index) => { const boardCard = player.bench[index] ?? null; return <CardFace key={index} card={boardCard} compact onSelect={onSelect} catalog={catalog} highlight={boardCard ? cardKey(boardCard) === targetKey : false} />; })}</div>
-    <div className="active-stage"><div className="active-ring"><span>バトル場</span><CardFace card={player.active} onSelect={onSelect} catalog={catalog} highlight={player.active ? cardKey(player.active) === targetKey : false} /></div></div>
+  const side = playerIndex === 1 ? "opponent" : "self";
+  const info = <PlayerInfo frame={frame} playerIndex={playerIndex} marker={`${side}-info`} />;
+  const bench = <BenchArea frame={frame} playerIndex={playerIndex} onSelect={onSelect} catalog={catalog} targetKey={targetKey} marker={`${side}-bench`} />;
+  const active = <ActiveArea frame={frame} playerIndex={playerIndex} onSelect={onSelect} catalog={catalog} targetKey={targetKey} marker={`${side}-active`} />;
+
+  return <section className={`player-board player-${playerIndex} side-${side} ${acting ? "acting" : "waiting"}`} aria-label={`${player.name}の盤面`}>
+    {playerIndex === 1 ? <>{info}{bench}{active}</> : <>{active}{bench}{info}</>}
   </section>;
 }
 
@@ -120,7 +140,7 @@ function ActionLayer({ fx, mode }: { fx: ActionFx | null; mode: MotionMode }) {
 
 export function BattleBoard({ frame, previousFrame, onSelect, catalog, motionMode }: { frame: BattleFrame; previousFrame: BattleFrame | null; onSelect: (card: CardInstance) => void; catalog: CardArtCatalog; motionMode: MotionMode }) {
   const fx = inferActionFx(previousFrame, frame);
-  return <div className={`battle-column pocket-board motion-${motionMode}`}><div className="playmat-grid" aria-hidden="true" /><PlayerBoard frame={frame} playerIndex={1} onSelect={onSelect} catalog={catalog} fx={fx} /><div className="center-line"><span>{frame.stadium ? frame.stadium.name : "スタジアムなし"}</span><strong>ターン {frame.turn}</strong><span>{phaseJa(frame.phase)}</span></div><PlayerBoard frame={frame} playerIndex={0} onSelect={onSelect} catalog={catalog} fx={fx} /><ActionLayer fx={fx} mode={motionMode} /></div>;
+  return <div className={`battle-column pocket-board motion-${motionMode}`}><div className="playmat-grid" aria-hidden="true" /><PlayerBoard frame={frame} playerIndex={1} onSelect={onSelect} catalog={catalog} fx={fx} /><div className="center-line" data-board-marker="center"><span>{frame.stadium ? frame.stadium.name : "スタジアムなし"}</span><strong>ターン {frame.turn}</strong><span>{phaseJa(frame.phase)}</span></div><PlayerBoard frame={frame} playerIndex={0} onSelect={onSelect} catalog={catalog} fx={fx} /><ActionLayer fx={fx} mode={motionMode} /></div>;
 }
 
 export function selectedCardWithArt(card: CardInstance, catalog: CardArtCatalog): CardInstance {
