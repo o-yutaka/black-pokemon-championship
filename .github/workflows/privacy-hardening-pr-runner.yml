@@ -30,8 +30,9 @@ jobs:
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git checkout -- .github/workflows/battle-studio-live-ci.yml
           git rm -f privacy_patch_error.log tools/battle_studio/backend/_apply_privacy_patch.py 2>/dev/null || true
-          git add .github/workflows/battle-studio-live-ci.yml tools/battle_studio
+          git add tools/battle_studio
           git commit -m "Complete official runtime privacy hardening"
           git push origin HEAD:black/privacy-hardening-complete-v1
       - name: Record failure
