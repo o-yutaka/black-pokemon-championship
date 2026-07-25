@@ -3,6 +3,8 @@ import { demoReplay } from "./demo";
 import { parseReplay, ReplayValidationError } from "./replay";
 import { cardKey } from "./types";
 
+const frame = demoReplay.frames[0];
+
 describe("replay truth contract", () => {
   it("accepts the deterministic demo replay", () => {
     const replay = parseReplay(demoReplay);
@@ -27,5 +29,49 @@ describe("replay truth contract", () => {
     const broken = structuredClone(demoReplay) as unknown as { frames: unknown[] };
     broken.frames[0] = { frameId: 0 };
     expect(() => parseReplay(broken)).toThrow(ReplayValidationError);
+  });
+});
+
+describe("対戦記録のかんたん読み込み", () => {
+  it("Bridge Snapshot単体をReplayへ変換する", () => {
+    const parsed = parseReplay({
+      type: "snapshot",
+      sessionId: "session-1",
+      engine: "official-battle",
+      publicProtocol: "1.1",
+      hiddenInformationPolicy: "player_view",
+      frame,
+    });
+    expect(parsed.replayId).toBe("session-1");
+    expect(parsed.source).toBe("cabt");
+    expect(parsed.frames).toHaveLength(1);
+  });
+
+  it("Frame単体をそのまま開ける", () => {
+    const parsed = parseReplay(frame);
+    expect(parsed.schemaVersion).toBe("1.0");
+    expect(parsed.frames[0].frameId).toBe(frame.frameId);
+  });
+
+  it("frames配列だけのJSONを開ける", () => {
+    const parsed = parseReplay({ frames: [frame] });
+    expect(parsed.frames).toHaveLength(1);
+    expect(parsed.source).toBe("unknown");
+  });
+
+  it("生配列も対戦記録として開ける", () => {
+    const parsed = parseReplay([frame]);
+    expect(parsed.frames).toHaveLength(1);
+  });
+
+  it("無関係なJSONでは内部Schema名を表示しない", () => {
+    expect(() => parseReplay({ hello: "world" })).toThrow(ReplayValidationError);
+    try {
+      parseReplay({ hello: "world" });
+    } catch (error) {
+      expect(String(error)).not.toContain("schemaVersion");
+      expect(String(error)).not.toContain("Invalid input");
+      expect(String(error)).toContain("対戦記録");
+    }
   });
 });
