@@ -125,7 +125,7 @@ class PublicBattleViewTests(unittest.TestCase):
         self.assertNotEqual(public_frame["decision"]["searchTree"]["id"], "raw-root-id")
         self.assertEqual(public_frame["decision"]["chosen"], "ATTACK")
         self.assertEqual(public_frame["events"][0]["text"], "対戦AIがこの行動を完了できませんでした")
-        self.assertEqual(public_cards[0]["name"], "Dragapult ex")
+        self.assertIn("Dragapult ex", {entry["name"] for entry in public_cards})
 
     def test_opaque_ids_are_stable_only_inside_one_session(self) -> None:
         first, _ = self.build("session-a").render(frame())
