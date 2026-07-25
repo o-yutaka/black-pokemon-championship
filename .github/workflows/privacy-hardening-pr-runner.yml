@@ -2,7 +2,7 @@ name: privacy-hardening-pr-runner
 
 on:
   pull_request:
-    types: [opened]
+    types: [opened, synchronize]
     branches: [main]
 
 permissions:
@@ -17,7 +17,19 @@ jobs:
         with:
           ref: black/privacy-hardening-complete-v1
           fetch-depth: 0
+      - name: Stop after recorded failure
+        id: guard
+        shell: bash
+        run: |
+          if [[ "$(git log -1 --pretty=%s)" == "Record privacy patch failure" ]]; then
+            echo "stop=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "stop=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Extract and run hardening patch
+        if: steps.guard.outputs.stop != 'true'
+        id: patch
+        continue-on-error: true
         shell: bash
         run: |
           python - <<'PY'
@@ -31,8 +43,10 @@ jobs:
           script = textwrap.dedent(source[start:end])
           Path('/tmp/apply_privacy_hardening.py').write_text(script, encoding='utf-8')
           PY
-          python /tmp/apply_privacy_hardening.py
+          set -o pipefail
+          python /tmp/apply_privacy_hardening.py 2>&1 | tee privacy_patch_error.log
       - name: Commit implementation
+        if: steps.guard.outputs.stop != 'true' && steps.patch.outcome == 'success'
         shell: bash
         run: |
           git config user.name github-actions[bot]
@@ -40,3 +54,13 @@ jobs:
           git add .github/workflows/battle-studio-live-ci.yml tools/battle_studio
           git commit -m "Complete official runtime privacy hardening"
           git push origin HEAD:black/privacy-hardening-complete-v1
+      - name: Record failure
+        if: steps.guard.outputs.stop != 'true' && steps.patch.outcome == 'failure'
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -f privacy_patch_error.log
+          git commit -m "Record privacy patch failure"
+          git push origin HEAD:black/privacy-hardening-complete-v1
+          exit 1
