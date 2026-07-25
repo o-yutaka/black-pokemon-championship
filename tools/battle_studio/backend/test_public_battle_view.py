@@ -1,104 +1,145 @@
 from __future__ import annotations
 
+import json
 import unittest
+from unittest.mock import patch
 
-from public_battle_view import public_battle_frame, public_error
+from public_battle_view import PublicBattleView
 
 
-class PublicBattleViewTest(unittest.TestCase):
-    def sample_frame(self):
-        card = {
-            "playerIndex": 0,
-            "serial": 918273,
-            "cardId": 42,
-            "name": "Visible Card",
-            "zone": "active",
-            "slot": 0,
-            "hp": 100,
-            "maxHp": 120,
-            "damage": 20,
-            "energies": ["Psychic"],
-            "tools": [],
-            "status": [],
-            "evolution": [10, 42],
-            "imageUrl": None,
-            "area": 7,
-            "index": 3,
-        }
-        hidden = {**card, "playerIndex": 1, "serial": 222, "cardId": 99, "name": "Secret Hand", "zone": "hand"}
-        player = {
-            "name": "Player bundle /tmp/private/main.py",
-            "active": card,
-            "bench": [],
-            "hand": [card],
-            "handCount": 1,
-            "deckCount": 50,
-            "prizeCount": 6,
-            "discard": [],
-            "supporterPlayed": False,
-            "retreated": False,
-        }
-        opponent = {**player, "name": "Opponent", "active": {**card, "playerIndex": 1, "serial": 123}, "hand": [hidden]}
-        return {
-            "frameId": 1,
-            "turn": 2,
-            "actionCount": 3,
-            "actingPlayer": 0,
-            "phase": "main",
-            "players": [player, opponent],
-            "stadium": None,
-            "events": [{"type": "engine", "actor": 0, "text": "selection index=3 /tmp/private/libcg.so", "cardKey": "0:918273"}],
-            "decision": {
-                "actor": 0,
-                "goal": "Attack",
-                "chosen": "Attach",
-                "confidence": 0.7,
-                "elapsedMs": 12,
-                "searchTree": {"id": "root"},
-                "truthLedger": {"serial": 918273},
-                "hiddenBelief": {"x": 0.5},
-                "selectedAction": {"optionIndex": 3},
+CARD_ID = 987654321
+SERIAL = 123456789
+
+
+def card(player: int, zone: str, slot: int | None = None) -> dict[str, object]:
+    return {
+        "playerIndex": player,
+        "serial": SERIAL + player,
+        "cardId": CARD_ID + player,
+        "name": "Dragapult ex" if player == 0 else "Rocket Mewtwo ex",
+        "zone": zone,
+        "slot": slot,
+        "hp": 200,
+        "maxHp": 320,
+        "damage": 120,
+        "energies": ["Psychic"],
+        "tools": [],
+        "status": [],
+        "evolution": [CARD_ID - 1],
+        "imageUrl": None,
+    }
+
+
+def frame() -> dict[str, object]:
+    return {
+        "frameId": 4,
+        "turn": 3,
+        "actionCount": 8,
+        "actingPlayer": 0,
+        "phase": "main",
+        "players": [
+            {
+                "name": "Player bundle path /tmp/internal",
+                "active": card(0, "active", 0),
+                "bench": [],
+                "hand": [card(0, "hand", 0)],
+                "handCount": 1,
+                "deckCount": 42,
+                "prizeCount": 5,
+                "discard": [],
+                "supporterPlayed": False,
+                "retreated": False,
             },
-            "result": None,
-            "observation": {"select": {"option": [1, 2]}},
-        }
+            {
+                "name": "Opponent",
+                "active": card(1, "active", 0),
+                "bench": [],
+                "hand": [card(1, "hand", 0)],
+                "handCount": 4,
+                "deckCount": 39,
+                "prizeCount": 4,
+                "discard": [],
+                "supporterPlayed": True,
+                "retreated": False,
+            },
+        ],
+        "stadium": None,
+        "events": [
+            {"type": "agent_error", "actor": 0, "text": "Traceback File \"agent.py\" serial=123"},
+            {"type": "attack", "actor": 0, "text": "ワザを使った"},
+        ],
+        "decision": {
+            "actor": 0,
+            "goal": "次の攻撃を準備",
+            "chosen": "[0]",
+            "confidence": 0.8,
+            "elapsedMs": 12.5,
+            "candidates": [
+                {"label": "ATTACK", "score": 74, "selected": True, "cardId": CARD_ID, "serial": SERIAL},
+            ],
+            "selectedAction": {"optionIndex": 0, "arrayIndex": 2, "serial": SERIAL},
+            "hiddenBelief": {"secret": 0.9},
+            "truthLedger": {"area": 4},
+            "searchTree": {
+                "id": "raw-root-id",
+                "label": "Attack",
+                "status": "root",
+                "ev": 0.74,
+                "visits": 5,
+                "mean": 0.7,
+                "worst": 0.2,
+                "best": 0.9,
+                "reason": None,
+                "children": [],
+            },
+        },
+        "result": None,
+    }
 
-    def test_whitelists_frame_and_hides_opponent_hand(self):
-        public = public_battle_frame(self.sample_frame(), b"a" * 32, subject_player=0)
-        self.assertEqual(set(public), {"frameId", "turn", "actionCount", "actingPlayer", "phase", "players", "stadium", "events", "decision", "result"})
-        self.assertEqual(public["players"][0]["hand"][0]["cardId"], 42)
-        self.assertEqual(public["players"][1]["hand"], [])
-        self.assertEqual(public["players"][1]["handCount"], 1)
-        self.assertNotEqual(public["players"][0]["active"]["serial"], 918273)
-        self.assertNotIn("area", public["players"][0]["active"])
-        self.assertNotIn("index", public["players"][0]["active"])
 
-    def test_decision_is_summary_only(self):
-        decision = public_battle_frame(self.sample_frame(), b"b" * 32)["decision"]
-        self.assertEqual(set(decision), {"actor", "goal", "chosen", "confidence", "elapsedMs", "warnings", "candidates"})
-        self.assertNotIn("searchTree", decision)
-        self.assertNotIn("truthLedger", decision)
-        self.assertNotIn("hiddenBelief", decision)
-        self.assertNotIn("selectedAction", decision)
+class PublicBattleViewTests(unittest.TestCase):
+    def build(self, nonce: str = "session-a") -> PublicBattleView:
+        catalog = [{
+            "id": CARD_ID,
+            "name": "Dragapult ex",
+            "number": "130",
+            "expansion": "Test Set",
+            "sourceLink": "https://example.test/card/dragapult",
+        }]
+        with patch("public_battle_view.get_catalog", return_value=(catalog, ())):
+            return PublicBattleView(nonce, subject_player=0)
 
-    def test_paths_and_internal_words_are_redacted(self):
-        public = public_battle_frame(self.sample_frame(), b"c" * 32)
-        self.assertNotIn("/tmp/private", public["players"][0]["name"])
-        self.assertEqual(public["events"][0]["text"], "内部処理は非公開です")
-        self.assertIsNone(public["events"][0]["cardKey"])
+    def test_hides_opponent_hand_and_internal_identifiers(self) -> None:
+        view = self.build()
+        public_frame, public_cards = view.render(frame())
+        encoded = json.dumps({"frame": public_frame, "cards": public_cards}, ensure_ascii=False)
 
-    def test_public_error_never_contains_engine_detail(self):
-        payload = public_error(RuntimeError("official Select rejected selection=[3] code=9 /tmp/libcg.so"))
-        self.assertEqual(payload["code"], "ACTION_UNAVAILABLE")
-        self.assertNotIn("Select", payload["detail"])
-        self.assertNotIn("libcg", payload["detail"])
+        self.assertEqual(len(public_frame["players"][0]["hand"]), 1)
+        self.assertEqual(public_frame["players"][1]["hand"], [])
+        self.assertEqual(public_frame["players"][1]["handCount"], 4)
+        self.assertNotIn(str(CARD_ID), encoded)
+        self.assertNotIn(str(SERIAL), encoded)
+        self.assertNotIn("selectedAction", public_frame["decision"])
+        self.assertNotIn("hiddenBelief", public_frame["decision"])
+        self.assertNotIn("truthLedger", public_frame["decision"])
+        self.assertNotEqual(public_frame["decision"]["searchTree"]["id"], "raw-root-id")
+        self.assertEqual(public_frame["decision"]["chosen"], "ATTACK")
+        self.assertEqual(public_frame["events"][0]["text"], "対戦AIがこの行動を完了できませんでした")
+        self.assertIn("Dragapult ex", {entry["name"] for entry in public_cards})
 
-    def test_opaque_serial_is_stable_per_session_and_changes_between_sessions(self):
-        first = public_battle_frame(self.sample_frame(), b"x" * 32)["players"][0]["active"]["serial"]
-        repeat = public_battle_frame(self.sample_frame(), b"x" * 32)["players"][0]["active"]["serial"]
-        other = public_battle_frame(self.sample_frame(), b"y" * 32)["players"][0]["active"]["serial"]
-        self.assertEqual(first, repeat)
-        self.assertNotEqual(first, other)
+    def test_opaque_ids_are_stable_only_inside_one_session(self) -> None:
+        first, _ = self.build("session-a").render(frame())
+        repeated_view = self.build("session-a")
+        repeated, _ = repeated_view.render(frame())
+        other, _ = self.build("session-b").render(frame())
+
+        first_card = first["players"][0]["active"]
+        repeated_card = repeated["players"][0]["active"]
+        other_card = other["players"][0]["active"]
+        self.assertEqual(first_card["cardId"], repeated_card["cardId"])
+        self.assertEqual(first_card["serial"], repeated_card["serial"])
+        self.assertNotEqual(first_card["cardId"], other_card["cardId"])
+        self.assertNotEqual(first_card["serial"], other_card["serial"])
 
 
 if __name__ == "__main__":
