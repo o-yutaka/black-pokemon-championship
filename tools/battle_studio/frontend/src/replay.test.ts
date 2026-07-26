@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { demoReplay } from "./demo";
-import { parseReplay, ReplayValidationError } from "./replay";
+import { parseReplay, readReplayFile, ReplayValidationError } from "./replay";
 import { cardKey } from "./types";
 
 const frame = demoReplay.frames[0];
@@ -59,9 +59,24 @@ describe("対戦記録のかんたん読み込み", () => {
     expect(parsed.source).toBe("unknown");
   });
 
-  it("生配列も対戦記録として開ける", () => {
-    const parsed = parseReplay([frame]);
+  it("深く入れ子になったCABT出力から場面を探す", () => {
+    const parsed = parseReplay({ episodeId: 87979287, output: { result: { timeline: [{ payload: { snapshot: { frame } } }] } } });
+    expect(parsed.replayId).toBe("87979287");
+    expect(parsed.frames[0].frameId).toBe(frame.frameId);
+  });
+
+  it("JSON文字列に包まれたSnapshotも開ける", () => {
+    const parsed = parseReplay({ output: JSON.stringify({ type: "snapshot", frame }) });
     expect(parsed.frames).toHaveLength(1);
+  });
+
+  it("1行1JSONのログを開ける", async () => {
+    const second = { ...demoReplay.frames[1], frameId: 9 };
+    const file = new File([
+      `INFO runner started\n${JSON.stringify({ type: "snapshot", frame })}\n${JSON.stringify({ type: "snapshot", frame: second })}\n`,
+    ], "episode.ndjson", { type: "application/x-ndjson" });
+    const parsed = await readReplayFile(file);
+    expect(parsed.frames.map((item) => item.frameId)).toEqual([frame.frameId, 9]);
   });
 
   it("無関係なJSONでは内部Schema名を表示しない", () => {
@@ -71,7 +86,7 @@ describe("対戦記録のかんたん読み込み", () => {
     } catch (error) {
       expect(String(error)).not.toContain("schemaVersion");
       expect(String(error)).not.toContain("Invalid input");
-      expect(String(error)).toContain("対戦記録");
+      expect(String(error)).toContain("対戦場面");
     }
   });
 });

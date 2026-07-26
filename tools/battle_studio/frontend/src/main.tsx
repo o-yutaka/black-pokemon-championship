@@ -10,6 +10,7 @@ import "./mobile.css";
 import "./layout-repair.css";
 import "./deck-easy.css";
 import "./simple-pocket.css";
+import "./pocket-game-v2.css";
 
 initializeJapaneseUi();
 getInitialBridgeUrl();
@@ -30,6 +31,12 @@ createRoot(root).render(
 
 if ("serviceWorker" in navigator && import.meta.env.PROD) {
   window.addEventListener("load", () => {
-    void navigator.serviceWorker.register("./sw.js");
+    let reloading = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (reloading) return;
+      reloading = true;
+      window.location.reload();
+    });
+    void navigator.serviceWorker.register("./sw.js", { updateViaCache: "none" }).then((registration) => registration.update());
   });
 }

@@ -1,4 +1,4 @@
-const CACHE = "black-battle-studio-ja-v2";
+const CACHE = "black-battle-studio-pocket-v4";
 const APP_SHELL = ["./manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
@@ -20,12 +20,17 @@ self.addEventListener("fetch", (event) => {
 
   if (event.request.mode === "navigate") {
     event.respondWith(
-      fetch(event.request).then((response) => {
+      fetch(event.request, { cache: "no-store" }).then((response) => {
         const copy = response.clone();
         caches.open(CACHE).then((cache) => cache.put("./index.html", copy));
         return response;
       }).catch(() => caches.match("./index.html"))
     );
+    return;
+  }
+
+  if (event.request.destination === "script" || event.request.destination === "style" || url.pathname.endsWith("/sw.js")) {
+    event.respondWith(fetch(event.request, { cache: "no-store" }));
     return;
   }
 
