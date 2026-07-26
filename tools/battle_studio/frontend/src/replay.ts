@@ -84,8 +84,19 @@ function normalizeReplayShape(input: unknown): BattleReplay | null {
   const ready = battleReplaySchema.safeParse(input);
   if (ready.success) return ready.data;
 
-  const frames = collectFrames(input);
+  let frames: BattleFrame[];
+  if (isRecord(input) && Array.isArray(input.frames)) {
+    const groups = input.frames.map((item) => collectFrames(item));
+    if (groups.some((group) => group.length === 0)) return null;
+    frames = groups.flat();
+  } else {
+    frames = collectFrames(input);
+  }
   if (!frames.length) return null;
+
+  const unique = new Map<number, BattleFrame>();
+  for (const frame of frames) unique.set(frame.frameId, frame);
+  frames = [...unique.values()].sort((left, right) => left.frameId - right.frameId);
 
   const root = metadataRoot(input);
   return battleReplaySchema.parse({
