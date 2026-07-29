@@ -53,7 +53,7 @@ describe("live transport", () => {
   });
 
   it("accepts an explicit simulator-full snapshot", () => {
-    const simulatorFrame = structuredClone(frame);
+    const simulatorFrame = structuredClone(frame) as any;
     simulatorFrame.players[1].hand = [{
       playerIndex: 1,
       serial: 9001,
