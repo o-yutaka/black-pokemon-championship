@@ -23,7 +23,9 @@ export const playerStateSchema = z.object({
   bench: z.array(cardInstanceSchema).max(8),
   hand: z.array(cardInstanceSchema).default([]),
   handCount: z.number().int().nonnegative(),
+  deck: z.array(cardInstanceSchema).max(60).default([]),
   deckCount: z.number().int().nonnegative(),
+  prize: z.array(cardInstanceSchema).max(6).default([]),
   prizeCount: z.number().int().nonnegative(),
   discard: z.array(cardInstanceSchema).default([]),
   supporterPlayed: z.boolean().default(false),
@@ -189,7 +191,7 @@ export const battleReplaySchema = z.object({
   replayId: z.string(),
   createdAt: z.string(),
   source: z.enum(["cabt", "kaggle", "demo", "unknown"]),
-  hiddenInformationPolicy: z.enum(["player_view", "spectator", "unknown"]).default("unknown"),
+  hiddenInformationPolicy: z.enum(["player_view", "simulator_full", "spectator", "unknown"]).default("unknown"),
   frames: z.array(battleFrameSchema).min(1),
 });
 
