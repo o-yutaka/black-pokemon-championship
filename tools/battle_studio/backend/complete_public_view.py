@@ -12,16 +12,62 @@ def _items(value: Any) -> list[Any]:
 
 
 class CompletePublicBattleView(PublicBattleView):
-    """Player-safe view with every public card zone and viewer-normalized seating."""
+    """Player-safe view plus an explicit local simulator projection."""
+
+    def _zone_cards(
+        self,
+        value: Any,
+        player: int,
+        zone: str,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        cards: list[dict[str, Any]] = []
+        for item in _items(value):
+            card = self._card(item, player)
+            if card is None:
+                continue
+            card["zone"] = zone
+            if card.get("slot") is None:
+                card["slot"] = len(cards)
+            cards.append(card)
+            if len(cards) >= limit:
+                break
+        return cards
 
     def _player(self, raw: Any, player: int) -> dict[str, Any]:
         projected = super()._player(raw, player)
         value = raw if isinstance(raw, Mapping) else {}
-        projected["bench"] = [
-            card
-            for item in _items(value.get("bench"))
-            if (card := self._card(item, player)) is not None
-        ][:8]
+        projected["bench"] = self._zone_cards(value.get("bench"), player, "bench", 8)
+        projected["deck"] = []
+        projected["prize"] = []
+        return projected
+
+    def _simulator_player(self, raw: Any, player: int) -> dict[str, Any]:
+        value = raw if isinstance(raw, Mapping) else {}
+        projected = super()._player(raw, player)
+        projected["bench"] = self._zone_cards(value.get("bench"), player, "bench", 8)
+        projected["hand"] = self._zone_cards(value.get("hand"), player, "hand", 60)
+        projected["deck"] = self._zone_cards(
+            value.get("deck", value.get("deckCards")),
+            player,
+            "deck",
+            60,
+        )
+        projected["prize"] = self._zone_cards(
+            value.get("prize", value.get("prizes", value.get("prizeCards"))),
+            player,
+            "prize",
+            6,
+        )
+        projected["discard"] = self._zone_cards(
+            value.get("discard", value.get("discardPile")),
+            player,
+            "discard",
+            60,
+        )
+        projected["handCount"] = max(int(projected.get("handCount", 0)), len(projected["hand"]))
+        projected["deckCount"] = max(int(projected.get("deckCount", 0)), len(projected["deck"]))
+        projected["prizeCount"] = max(int(projected.get("prizeCount", 0)), len(projected["prize"]))
         return projected
 
     @staticmethod
@@ -40,7 +86,7 @@ class CompletePublicBattleView(PublicBattleView):
             if not isinstance(player, dict):
                 continue
             self._swap_player_index(player.get("active"))
-            for zone in ("bench", "hand", "discard"):
+            for zone in ("bench", "hand", "deck", "prize", "discard"):
                 for card in _items(player.get(zone)):
                     self._swap_player_index(card)
         self._swap_player_index(frame.get("stadium"))
@@ -55,5 +101,22 @@ class CompletePublicBattleView(PublicBattleView):
 
     def render(self, frame: Mapping[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         public_frame, cards = super().render(frame)
+        for player in public_frame.get("players", []):
+            if isinstance(player, dict):
+                player.setdefault("deck", [])
+                player.setdefault("prize", [])
         self._normalize_to_viewer(public_frame)
+        return public_frame, cards
+
+    def render_simulator(self, frame: Mapping[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        public_frame, _cards = super().render(frame)
+        raw_players = _items(frame.get("players"))
+        if len(raw_players) != 2:
+            raise ValueError("simulator view requires exactly two players")
+        public_frame["players"] = [
+            self._simulator_player(raw_players[0], 0),
+            self._simulator_player(raw_players[1], 1),
+        ]
+        self._normalize_to_viewer(public_frame)
+        cards = sorted(self._catalog_entries.values(), key=lambda item: int(item["id"]))
         return public_frame, cards
