@@ -10,6 +10,8 @@ import { NativeRuntimePanel } from "./NativeRuntimePanel";
 import { OfficialScoreDashboardDialog } from "./OfficialScoreDashboard";
 import { analyzeReplayFailure, publishReplayFailureReport, REPLAY_EVIDENCE_FRAME_EVENT } from "./replay-failure";
 import { readReplayFile } from "./replay";
+import { RuntimeTruthBadge } from "./RuntimeTruthBadge";
+import { liveSurfaceLabel } from "./runtime-health";
 import type { BattleFrame, BattleReplay, CardInstance } from "./types";
 import "./styles.css";
 import "./pocket-ui.css";
@@ -65,6 +67,7 @@ export default function App() {
   const progress = replay.frames.length <= 1 ? 0 : (frameIndex / (replay.frames.length - 1)) * 100;
   const isLive = liveStatus === "connected";
   const actionReady = liveCanAdvance || legalSelections.length > 0;
+  const surfaceLabel = liveSurfaceLabel(liveStatus, liveEngine, replay.source);
 
   useEffect(() => {
     if (!playing) return;
@@ -177,8 +180,8 @@ export default function App() {
       <input ref={fileRef} className="file-input" type="file" accept="application/json,.json,.jsonl,.ndjson" onChange={(event) => void loadFile(event.target.files?.[0])} />
 
       <header className="game-topbar">
-        <div className="game-brand"><span className="brand-ball" /><div><strong>BLACK BATTLE</strong><small>{isLive ? "公式対戦" : "対戦ビュー"}</small></div></div>
-        <div className="game-top-actions"><button className="official-score-launch" type="button" onClick={() => setShowOfficialScores(true)}>公式row <b>844.4</b></button><button type="button" onClick={() => fileRef.current?.click()} aria-label="対戦記録を開く">記録</button><button className="primary" type="button" onClick={() => setShowSetup(true)}>対戦準備</button></div>
+        <div className="game-brand"><span className="brand-ball" /><div><strong>BLACK BATTLE</strong><small>{surfaceLabel}</small></div></div>
+        <div className="game-top-actions"><RuntimeTruthBadge /><button className="official-score-launch" type="button" onClick={() => setShowOfficialScores(true)}>公式row記録 <b>844.4</b></button><button type="button" onClick={() => fileRef.current?.click()} aria-label="対戦記録を開く">記録</button><button className="primary" type="button" onClick={() => setShowSetup(true)}>対戦準備</button></div>
       </header>
 
       <section className="game-hud" aria-label="対戦状況">
