@@ -4,7 +4,7 @@ import { useCardArtCatalog, type PublicCardCatalogEntry } from "./cardArt";
 import { demoReplay } from "./demo";
 import { DecisionIDE } from "./DecisionIDE";
 import { EngineConsole, type EngineStartRequest } from "./EngineConsole";
-import { connectLive, type LiveConnection, type LiveSnapshot, type LiveStatus, type ViewMode } from "./live";
+import { connectLive, mergeLiveSnapshotFrames, type LiveConnection, type LiveSnapshot, type LiveStatus, type ViewMode } from "./live";
 import { motionModeJa, phaseJa, zoneJa } from "./locale";
 import { NativeRuntimePanel } from "./NativeRuntimePanel";
 import { analyzeReplayFailure, publishReplayFailureReport, REPLAY_EVIDENCE_FRAME_EVENT } from "./replay-failure";
@@ -100,10 +100,9 @@ export default function App() {
     setSimulatorAvailable(snapshot.controls.simulatorAvailable);
     setViewMode(snapshot.controls.viewMode);
     setPublicCards(snapshot.cardCatalog);
+    if (snapshot.hiddenInformationPolicy === "player_view") setSelectedCard(null);
     setReplay((current) => {
-      const frames = current.replayId === snapshot.sessionId
-        ? [...current.frames.filter((item) => item.frameId !== snapshot.frame.frameId), snapshot.frame].sort((a, b) => a.frameId - b.frameId)
-        : [snapshot.frame];
+      const frames = mergeLiveSnapshotFrames(current, snapshot);
       window.setTimeout(() => setFrameIndex(frames.length - 1), 0);
       return {
         schemaVersion: "1.0",
@@ -126,6 +125,7 @@ export default function App() {
     setSimulatorAvailable(false);
     setViewMode("player");
     setPublicCards([]);
+    setSelectedCard(null);
   };
 
   const startEngine = async (request: EngineStartRequest) => {
