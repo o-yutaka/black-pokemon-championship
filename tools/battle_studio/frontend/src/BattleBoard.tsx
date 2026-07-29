@@ -25,7 +25,7 @@ function allVisibleCards(frame: BattleFrame): CardInstance[] {
   if (frame.stadium) cards.push(frame.stadium);
   for (const player of frame.players) {
     if (player.active) cards.push(player.active);
-    cards.push(...player.bench, ...player.hand, ...player.discard);
+    cards.push(...player.bench, ...player.hand, ...player.deck, ...player.prize, ...player.discard);
   }
   return cards;
 }
@@ -86,14 +86,14 @@ export function CardFace({ card, compact = false, onSelect, catalog, highlight =
   const ratio = hpRatio(card);
   const critical = ratio > 0 && ratio <= 0.3;
   const showImage = Boolean(resolvedImageUrl && resolvedImageUrl !== failedImageUrl);
-  return <button className={`card-face ${compact ? "compact" : ""} ${critical ? "critical" : ""} ${highlight ? "action-target" : ""}`} type="button" onClick={() => onSelect?.(card)} aria-label={`${card.name}、HP ${hpText}`} data-card-key={cardKey(card)}>
+  return <button className={`card-face ${compact ? "compact" : ""} ${critical ? "critical" : ""} ${highlight ? "action-target" : ""}`} type="button" onClick={() => onSelect?.(card)} aria-label={`${card.name}、${hpText}`} data-card-key={cardKey(card)}>
     <div className={`card-art ${showImage ? "has-card-image" : "fallback-card-art"}`}>
       {showImage && <img src={resolvedImageUrl!} alt={`${card.name}のカード画像`} loading="lazy" decoding="async" draggable={false} onError={() => setFailedImageUrl(resolvedImageUrl)} />}
       {!showImage && <><span>{card.name.slice(0, 2)}</span><div className="card-glass"><span>CARD</span><b>{card.name}</b></div></>}
     </div>
     <div className="card-readout">
-      <div className="hp-readout"><strong>HP {hpText}</strong><span>{card.damage > 0 ? `${card.damage}ダメージ` : "準備完了"}</span></div>
-      <div className="hp-track"><i style={{ width: `${ratio * 100}%` }} /></div>
+      <div className="hp-readout"><strong>{card.hp === null ? card.name : `HP ${hpText}`}</strong><span>{card.damage > 0 ? `${card.damage}ダメージ` : card.zone}</span></div>
+      {card.maxHp !== null && <div className="hp-track"><i style={{ width: `${ratio * 100}%` }} /></div>}
       <div className="energy-row">{card.energies.length ? card.energies.map((energy, index) => <span key={`${energy}-${index}`} className={`energy-chip energy-${energy.toLowerCase()}`} title={`${energyJa(energy)}エネルギー`}>{energyJa(energy).slice(0, 1)}</span>) : <span className="muted">エネルギーなし</span>}</div>
       {card.tools.length > 0 && <div className="attachment-row" aria-label="ポケモンのどうぐ">{card.tools.map((tool, index) => <span key={`${tool}-${index}`}>どうぐ: {tool}</span>)}</div>}
       {card.evolution.length > 0 && <div className="evolution-stack" aria-label={`進化元 ${card.evolution.length}枚`}>{card.evolution.map((cardId, index) => { const image = catalog.get(cardId); return image ? <img key={`${cardId}-${index}`} src={image} alt="進化元カード" loading="lazy" decoding="async" /> : <span key={`${cardId}-${index}`}>進化元</span>; })}</div>}
@@ -119,18 +119,23 @@ function CardBack({ label, count }: { label: string; count: number }) {
   return <div className="card-back-stack" aria-label={`${label} ${count}枚`}><div className="card-back"><span>BLACK</span><b>{label}</b></div><strong>{count}</strong></div>;
 }
 
-function FaceUpZone({ label, cards, onSelect, catalog, marker }: { label: string; cards: CardInstance[]; onSelect: (card: CardInstance) => void; catalog: CardArtCatalog; marker: string }) {
+function FaceUpZone({ label, cards, onSelect, catalog, marker, total }: { label: string; cards: CardInstance[]; onSelect: (card: CardInstance) => void; catalog: CardArtCatalog; marker: string; total?: number }) {
   return <section className="visible-zone" data-board-marker={marker}>
-    <header><strong>{label}</strong><span>{cards.length}枚</span></header>
-    {cards.length ? <div className="zone-card-strip">{cards.map((card) => <CardFace key={cardKey(card)} card={card} compact onSelect={onSelect} catalog={catalog} />)}</div> : <div className="zone-empty">なし</div>}
+    <header><strong>{label}</strong><span>{cards.length}{total !== undefined && total !== cards.length ? ` / ${total}` : ""}枚</span></header>
+    {cards.length ? <div className="zone-card-strip">{cards.map((card) => <CardFace key={cardKey(card)} card={card} compact onSelect={onSelect} catalog={catalog} />)}</div> : <div className="zone-empty">Engineから実カード配列なし</div>}
   </section>;
 }
 
 function ZoneShelf({ frame, playerIndex, isSelf, onSelect, catalog, marker }: { frame: BattleFrame; playerIndex: 0 | 1; isSelf: boolean; onSelect: (card: CardInstance) => void; catalog: CardArtCatalog; marker: string }) {
   const player = frame.players[playerIndex];
+  const revealHand = isSelf || player.hand.length > 0;
+  const revealDeck = player.deck.length > 0;
+  const revealPrize = player.prize.length > 0;
   return <div className={`zone-shelf ${isSelf ? "self-zones" : "opponent-zones"}`} data-board-marker={marker}>
-    <div className="hidden-zone-row"><CardBack label="山札" count={player.deckCount} /><CardBack label="サイド" count={player.prizeCount} />{!isSelf && <CardBack label="手札" count={player.handCount} />}</div>
-    {isSelf && <FaceUpZone label="手札" cards={player.hand} onSelect={onSelect} catalog={catalog} marker={`${marker}-hand`} />}
+    <div className="hidden-zone-row">{!revealDeck && <CardBack label="山札" count={player.deckCount} />}{!revealPrize && <CardBack label="サイド" count={player.prizeCount} />}{!revealHand && <CardBack label="手札" count={player.handCount} />}</div>
+    {revealHand && <FaceUpZone label="手札" cards={player.hand} total={player.handCount} onSelect={onSelect} catalog={catalog} marker={`${marker}-hand`} />}
+    {revealDeck && <FaceUpZone label="山札" cards={player.deck} total={player.deckCount} onSelect={onSelect} catalog={catalog} marker={`${marker}-deck`} />}
+    {revealPrize && <FaceUpZone label="サイド" cards={player.prize} total={player.prizeCount} onSelect={onSelect} catalog={catalog} marker={`${marker}-prize`} />}
     <FaceUpZone label="トラッシュ" cards={player.discard} onSelect={onSelect} catalog={catalog} marker={`${marker}-discard`} />
   </div>;
 }
@@ -138,10 +143,7 @@ function ZoneShelf({ frame, playerIndex, isSelf, onSelect, catalog, marker }: { 
 function BenchArea({ frame, playerIndex, onSelect, catalog, targetKey, marker }: { frame: BattleFrame; playerIndex: 0 | 1; onSelect: (card: CardInstance) => void; catalog: CardArtCatalog; targetKey: string | null; marker: string }) {
   const player = frame.players[playerIndex];
   const slots = player.bench.length > 5 ? 8 : 5;
-  return <div className="bench-area" data-board-marker={marker}>
-    <div className="bench-label">ベンチ {player.bench.length}/{slots}</div>
-    <div className={`bench-row ${slots === 8 ? "bench-eight" : "bench-five"}`}>{Array.from({ length: slots }, (_, index) => { const boardCard = player.bench[index] ?? null; return <CardFace key={index} card={boardCard} compact onSelect={onSelect} catalog={catalog} highlight={boardCard ? cardKey(boardCard) === targetKey : false} />; })}</div>
-  </div>;
+  return <div className="bench-area" data-board-marker={marker}><div className="bench-label">ベンチ {player.bench.length}/{slots}</div><div className={`bench-row ${slots === 8 ? "bench-eight" : "bench-five"}`}>{Array.from({ length: slots }, (_, index) => { const boardCard = player.bench[index] ?? null; return <CardFace key={index} card={boardCard} compact onSelect={onSelect} catalog={catalog} highlight={boardCard ? cardKey(boardCard) === targetKey : false} />; })}</div></div>;
 }
 
 function ActiveArea({ frame, playerIndex, onSelect, catalog, targetKey, marker }: { frame: BattleFrame; playerIndex: 0 | 1; onSelect: (card: CardInstance) => void; catalog: CardArtCatalog; targetKey: string | null; marker: string }) {
@@ -157,10 +159,7 @@ function PlayerBoard({ frame, playerIndex, side, onSelect, catalog, fx }: { fram
   const zones = <ZoneShelf frame={frame} playerIndex={playerIndex} isSelf={side === "self"} onSelect={onSelect} catalog={catalog} marker={`${side}-zones`} />;
   const bench = <BenchArea frame={frame} playerIndex={playerIndex} onSelect={onSelect} catalog={catalog} targetKey={targetKey} marker={`${side}-bench`} />;
   const active = <ActiveArea frame={frame} playerIndex={playerIndex} onSelect={onSelect} catalog={catalog} targetKey={targetKey} marker={`${side}-active`} />;
-
-  return <section className={`player-board player-${playerIndex} side-${side} ${acting ? "acting" : "waiting"}`} aria-label={`${player.name}の盤面`}>
-    {side === "opponent" ? <>{info}{zones}{bench}{active}</> : <>{active}{bench}{zones}{info}</>}
-  </section>;
+  return <section className={`player-board player-${playerIndex} side-${side} ${acting ? "acting" : "waiting"}`} aria-label={`${player.name}の盤面`}>{side === "opponent" ? <>{info}{zones}{bench}{active}</> : <>{active}{bench}{zones}{info}</>}</section>;
 }
 
 function StadiumArea({ stadium, onSelect, catalog }: { stadium: CardInstance | null; onSelect: (card: CardInstance) => void; catalog: CardArtCatalog }) {
