@@ -1,12 +1,15 @@
 .official-score-backdrop { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 22px; background: rgba(2, 8, 18, .78); backdrop-filter: blur(10px); }
 .official-score-dialog { position: relative; width: min(1180px, 100%); max-height: min(900px, calc(100vh - 44px)); overflow: auto; border-radius: 26px; box-shadow: 0 36px 100px rgba(0, 0, 0, .58); }
 .official-score-close { position: sticky; top: 14px; z-index: 4; float: right; margin: 14px 14px -54px 0; border: 1px solid rgba(148, 163, 184, .45); border-radius: 999px; padding: 9px 15px; color: #0f2747; background: rgba(255, 255, 255, .92); font-weight: 900; cursor: pointer; }
+.official-score-import-error { position: sticky; top: 62px; z-index: 5; margin: 0 18px -44px; border: 1px solid #fecaca; border-radius: 12px; padding: 10px 14px; color: #991b1b; background: #fef2f2; font-size: .78rem; font-weight: 800; }
 .official-score-dashboard { --official-navy: #102a4c; --official-slate: #52647b; --official-line: #dce4ee; box-sizing: border-box; min-height: 620px; padding: 42px 46px 30px; color: var(--official-navy); background: linear-gradient(145deg, #f8fbff 0%, #ffffff 46%, #f4f8fc 100%); }
 .official-score-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 28px; padding-right: 92px; }
 .official-score-kicker { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; color: #4e6680; font-size: .72rem; font-weight: 950; letter-spacing: .14em; }
-.official-live-dot { width: 9px; height: 9px; border-radius: 50%; background: #18a36b; box-shadow: 0 0 0 5px rgba(24, 163, 107, .12), 0 0 16px rgba(24, 163, 107, .42); }
+.official-snapshot-dot { width: 9px; height: 9px; border-radius: 50%; background: #e5a50a; box-shadow: 0 0 0 5px rgba(229, 165, 10, .12), 0 0 16px rgba(229, 165, 10, .35); }
 .official-score-head h2 { margin: 0; font-size: clamp(1.45rem, 3vw, 2.15rem); line-height: 1.08; letter-spacing: -.035em; }
 .official-score-head p { max-width: 700px; margin: 10px 0 0; color: var(--official-slate); font-size: .94rem; line-height: 1.55; }
+.official-snapshot-warning { display: flex; flex-wrap: wrap; gap: 7px 12px; margin-top: 13px; color: #854d0e; font-size: .72rem; }
+.official-snapshot-warning strong, .official-snapshot-warning span { border: 1px solid #fde68a; border-radius: 999px; padding: 5px 9px; background: #fffbeb; }
 .official-score-refresh { display: grid; justify-items: end; gap: 5px; flex: 0 0 auto; padding-top: 4px; }
 .official-score-refresh > span { color: #74869c; font-size: .66rem; font-weight: 950; letter-spacing: .14em; }
 .official-score-refresh time { color: var(--official-navy); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .86rem; font-weight: 800; }
