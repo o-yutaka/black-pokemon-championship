@@ -14,9 +14,22 @@ def _int(value: Any, default: int = 0) -> int:
         return default
 
 
+_ZONE_SERIAL_BASE = {
+    "active": 100_000,
+    "bench": 200_000,
+    "hand": 300_000,
+    "deck": 400_000,
+    "prize": 500_000,
+    "discard": 600_000,
+    "unknown": 900_000,
+}
+
+
 def _card(raw: Mapping[str, Any], player: int, zone: str, slot: int | None) -> dict[str, Any]:
     card_id = _int(raw.get("cardId", raw.get("card_id", raw.get("id"))))
     serial = _int(raw.get("serial", raw.get("instanceSerial")))
+    if serial <= 0:
+        serial = (player + 1) * 1_000_000 + _ZONE_SERIAL_BASE.get(zone, 900_000) + (slot or 0) + 1
     max_hp = raw.get("maxHp", raw.get("max_hp"))
     hp = raw.get("hp", raw.get("currentHp", raw.get("current_hp")))
     max_hp_int = None if max_hp is None else _int(max_hp)
@@ -35,7 +48,9 @@ def _visible_cards(value: Any, player: int, zone: str, limit: int | None = None)
     for slot, item in enumerate(_seq(value)):
         if limit is not None and len(result) >= limit:
             break
-        if not isinstance(item, Mapping) or item.get("serial") is None or item.get("id", item.get("cardId")) is None:
+        if not isinstance(item, Mapping):
+            continue
+        if item.get("id", item.get("cardId", item.get("card_id"))) is None:
             continue
         result.append(_card(item, player, zone, slot))
     return result
@@ -43,10 +58,12 @@ def _visible_cards(value: Any, player: int, zone: str, limit: int | None = None)
 
 def _player(raw: Mapping[str, Any], player: int) -> dict[str, Any]:
     active_items = _visible_cards(raw.get("active", raw.get("activePokemon", [])), player, "active", 1)
-    bench = _visible_cards(raw.get("bench", raw.get("benchPokemon", [])), player, "bench", 5)
-    hand = _visible_cards(raw.get("hand", []), player, "hand")
-    discard = _visible_cards(raw.get("discard", raw.get("discardPile", [])), player, "discard")
-    return {"name": str(raw.get("name", raw.get("playerName", f"Player {player + 1}"))), "active": active_items[0] if active_items else None, "bench": bench, "hand": hand, "handCount": max(_int(raw.get("handCount"), len(hand)), len(hand)), "deckCount": max(0, _int(raw.get("deckCount"), len(_seq(raw.get("deck", []))))), "prizeCount": max(0, _int(raw.get("prizeCount"), len(_seq(raw.get("prize", raw.get("prizes", [])))))), "discard": discard, "supporterPlayed": bool(raw.get("supporterPlayed", False)), "retreated": bool(raw.get("retreated", raw.get("retreatUsed", False)))}
+    bench = _visible_cards(raw.get("bench", raw.get("benchPokemon", [])), player, "bench", 8)
+    hand = _visible_cards(raw.get("hand", raw.get("handCards", [])), player, "hand")
+    deck = _visible_cards(raw.get("deck", raw.get("deckCards", [])), player, "deck", 60)
+    prize = _visible_cards(raw.get("prize", raw.get("prizes", raw.get("prizeCards", []))), player, "prize", 6)
+    discard = _visible_cards(raw.get("discard", raw.get("discardPile", [])), player, "discard", 60)
+    return {"name": str(raw.get("name", raw.get("playerName", f"Player {player + 1}"))), "active": active_items[0] if active_items else None, "bench": bench, "hand": hand, "handCount": max(_int(raw.get("handCount"), len(hand)), len(hand)), "deck": deck, "deckCount": max(0, _int(raw.get("deckCount"), len(deck)), len(deck)), "prize": prize, "prizeCount": max(0, _int(raw.get("prizeCount"), len(prize)), len(prize)), "discard": discard, "supporterPlayed": bool(raw.get("supporterPlayed", False)), "retreated": bool(raw.get("retreated", raw.get("retreatUsed", False)))}
 
 
 def _result(value: Any) -> str | None:
@@ -84,23 +101,7 @@ def _decision(value: Any) -> dict[str, Any] | None:
     scores = {str(key): float(item) for key, item in dict(value.get("scores", {})).items() if isinstance(item, (int, float)) and not isinstance(item, bool)} if isinstance(value.get("scores"), Mapping) else {}
     flags = {str(key): bool(item) for key, item in dict(value.get("flags", {})).items()} if isinstance(value.get("flags"), Mapping) else {}
     confidence = value.get("confidence")
-    return {
-        "actor": int(value["actor"]),
-        "goal": str(value.get("goal", "uploaded_bundle_agent")),
-        "chosen": str(value.get("chosen", "[]")),
-        "confidence": float(confidence) if isinstance(confidence, (int, float)) and not isinstance(confidence, bool) else None,
-        "elapsedMs": float(value["elapsedMs"]) if isinstance(value.get("elapsedMs"), (int, float)) and not isinstance(value.get("elapsedMs"), bool) else None,
-        "candidates": candidates,
-        "overlayVersion": str(value.get("overlayVersion", value.get("schemaVersion", "1.0"))),
-        "selectedAction": selected_action,
-        "selectedActions": selected_actions,
-        "scores": scores,
-        "flags": flags,
-        "warnings": [str(item) for item in _seq(value.get("warnings"))],
-        "alternatives": alternatives,
-        "boardDiff": [str(item) for item in _seq(value.get("boardDiff"))],
-        "scoreSource": str(value.get("scoreSource", "unknown")),
-    }
+    return {"actor": int(value["actor"]), "goal": str(value.get("goal", "uploaded_bundle_agent")), "chosen": str(value.get("chosen", "[]")), "confidence": float(confidence) if isinstance(confidence, (int, float)) and not isinstance(confidence, bool) else None, "elapsedMs": float(value["elapsedMs"]) if isinstance(value.get("elapsedMs"), (int, float)) and not isinstance(value.get("elapsedMs"), bool) else None, "candidates": candidates, "overlayVersion": str(value.get("overlayVersion", value.get("schemaVersion", "1.0"))), "selectedAction": selected_action, "selectedActions": selected_actions, "scores": scores, "flags": flags, "warnings": [str(item) for item in _seq(value.get("warnings"))], "alternatives": alternatives, "boardDiff": [str(item) for item in _seq(value.get("boardDiff"))], "scoreSource": str(value.get("scoreSource", "unknown"))}
 
 
 def normalize_official_frame(raw: Mapping[str, Any], frame_id: int) -> dict[str, Any]:
@@ -118,4 +119,7 @@ def normalize_official_frame(raw: Mapping[str, Any], frame_id: int) -> dict[str,
             events.append({"type": str(item.get("type", "log")), "actor": actor_int if actor_int in (0, 1) else None, "text": str(item.get("text", item.get("message", item))), "cardKey": None})
         else:
             events.append({"type": "log", "actor": None, "text": str(item), "cardKey": None})
-    return {"frameId": frame_id, "turn": max(0, _int(raw.get("turn", state.get("turn", 0)))), "actionCount": max(0, _int(raw.get("actionCount", state.get("turnActionCount", frame_id)))), "actingPlayer": acting, "phase": "result" if _result(state.get("result")) else str(raw.get("phase", "main")), "players": [_player(players_raw[0], 0), _player(players_raw[1], 1)], "stadium": None, "events": events, "decision": _decision(raw.get("decision")), "result": _result(state.get("result", raw.get("result")))}
+    stadium_raw = state.get("stadium", raw.get("stadium"))
+    stadium = _card(stadium_raw, 0, "unknown", 0) if isinstance(stadium_raw, Mapping) else None
+    result = _result(state.get("result", raw.get("result")))
+    return {"frameId": frame_id, "turn": max(0, _int(raw.get("turn", state.get("turn", 0)))), "actionCount": max(0, _int(raw.get("actionCount", state.get("turnActionCount", frame_id)))), "actingPlayer": acting, "phase": "result" if result else str(raw.get("phase", "main")), "players": [_player(players_raw[0], 0), _player(players_raw[1], 1)], "stadium": stadium, "events": events, "decision": _decision(raw.get("decision")), "result": result}
