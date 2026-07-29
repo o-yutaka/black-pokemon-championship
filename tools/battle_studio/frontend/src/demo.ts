@@ -40,7 +40,9 @@ const player = (name: string, active: CardInstance | null, bench: CardInstance[]
   bench,
   hand: [],
   handCount,
+  deck: [],
   deckCount,
+  prize: [],
   prizeCount,
   discard: [],
   supporterPlayed: false,
@@ -77,7 +79,7 @@ export const demoReplay: BattleReplay = {
           { label: "Ability", score: 81, selected: true, kind: "ABILITY", cardId: 120, serial: 1002 },
           { label: "Energy", score: 73, selected: false },
           { label: "Attack", score: 61, selected: false },
-          { label: "Switch", score: 14, selected: false, reason: "RESOURCE_LOOP" }
+          { label: "Switch", score: 14, selected: false, reason: "RESOURCE_LOOP" },
         ],
         selectedAction: { optionIndex: 3, kind: "ABILITY", cardId: 120, serial: 1002, effectSource: "Drakloak", label: "Drakloak Ability" },
         searchTree: {
@@ -86,21 +88,21 @@ export const demoReplay: BattleReplay = {
             { id: "attack", label: "Attack", status: "expanded", ev: 61, visits: 71, mean: 60.8, worst: 42, best: 79, reason: null, children: [] },
             { id: "energy", label: "Energy", status: "expanded", ev: 73, visits: 84, mean: 72.5, worst: 55, best: 86, reason: null, children: [] },
             { id: "switch", label: "Switch", status: "pruned", ev: 14, visits: 0, mean: null, worst: null, best: null, reason: "RESOURCE_LOOP", children: [] },
-            { id: "ability", label: "Ability", status: "selected", ev: 81, visits: 146, mean: 82.4, worst: 61, best: 89, reason: null, children: [] }
-          ]
+            { id: "ability", label: "Ability", status: "selected", ev: 81, visits: 146, mean: 82.4, worst: 61, best: 89, reason: null, children: [] },
+          ],
         },
         rejectedBranches: [{
           label: "Switch",
           reason: "RESOURCE_LOOP",
           evidence: ["Retreat Lost", "Prize 0"],
           metrics: { "Energy Tempo": -12, "Future Attack": "-18%" },
-          killedBy: ["CLOCK_V3", "ENERGY_POLICY", "DRAGAPULT_ROUTE"]
+          killedBy: ["CLOCK_V3", "ENERGY_POLICY", "DRAGAPULT_ROUTE"],
         }],
         policyTrace: [
           { name: "EnergyPolicy", status: "PASS", score: 16, reason: "Future Damage" },
           { name: "DragapultPolicy", status: "PASS", score: 21, reason: "2T attack route" },
           { name: "Clock", status: "PASS", score: 8, reason: "Attack window maintained" },
-          { name: "BossPolicy", status: "FAIL", score: -14, reason: "Prize expectation decreased" }
+          { name: "BossPolicy", status: "FAIL", score: -14, reason: "Prize expectation decreased" },
         ],
         boardAnalysis: { total: 81, components: { Energy: 23, Tempo: 18, Bench: 15, Damage: 11, Draw: 9, Future: 5 }, threatMap: { Garchomp: 10, Dragapult: 6, Crustle: 2 } },
         route: { name: "Win Route", steps: ["Attack x2", "Prize2", "Boss", "Prize2", "Attack", "Game"], currentStep: 3 },
@@ -114,9 +116,9 @@ export const demoReplay: BattleReplay = {
         truthLedger: { Truth: "PASS", Evidence: 5, Policy: "Dragapult", Engine: "PASS", Search: "PASS", Confidence: "91%", Seed: 184 },
         boardDiff: ["P1 手札: 5→6 (+1)"],
         warnings: [],
-        alternatives: []
+        alternatives: [],
       },
-      result: null
+      result: null,
     },
     {
       frameId: 1,
@@ -128,10 +130,10 @@ export const demoReplay: BattleReplay = {
       stadium: null,
       events: [
         { type: "attack", actor: 0, text: "Dragapult ex used Phantom Dive", cardKey: "0:1001" },
-        { type: "damage", actor: 0, text: "200 damage to Active; 60 damage counters to Bench", cardKey: "1:2001" }
+        { type: "damage", actor: 0, text: "200 damage to Active; 60 damage counters to Bench", cardKey: "1:2001" },
       ],
       decision: null,
-      result: null
+      result: null,
     },
     {
       frameId: 2,
@@ -143,7 +145,7 @@ export const demoReplay: BattleReplay = {
       stadium: null,
       events: [{ type: "turn", actor: 1, text: "Red Team turn started", cardKey: null }],
       decision: null,
-      result: null
-    }
-  ]
+      result: null,
+    },
+  ],
 };

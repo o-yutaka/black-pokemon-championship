@@ -50,7 +50,7 @@ jobs:
 
       - name: Compile bridge
         working-directory: tools/battle_studio/backend
-        run: python -m py_compile emulator_engine.py live_server.py public_battle_view.py run_connection_smoke.py
+        run: python -m py_compile emulator_engine.py live_server.py main.py public_battle_view.py complete_public_view.py official_replay_adapter.py run_connection_smoke.py
 
       - name: Real TCP and WebSocket smoke
         working-directory: tools/battle_studio/backend
@@ -68,6 +68,7 @@ jobs:
           assert result["verdict"] == "PASS"
           required = {
               "http_health_pass",
+              "simulator_capability_pass",
               "built_pwa_static_serve_pass",
               "session_create_pass",
               "websocket_initial_snapshot_pass",
@@ -80,6 +81,8 @@ jobs:
               "official_public_session_create_pass",
               "official_public_snapshot_pass",
               "official_raw_identifiers_absent",
+              "simulator_full_reveal_pass",
+              "simulator_rehide_pass",
               "official_step_contract_hidden",
               "official_advance_pass",
               "official_session_cleanup_pass",

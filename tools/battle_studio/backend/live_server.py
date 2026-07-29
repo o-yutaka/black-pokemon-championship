@@ -28,6 +28,7 @@ LOGGER = logging.getLogger(__name__)
 
 class Engine(Protocol):
     name: str
+
     async def start(self) -> dict[str, Any]: ...
     async def step(self, selection: list[int]) -> dict[str, Any]: ...
     async def close(self) -> None: ...
@@ -51,9 +52,11 @@ class Session:
     frame: dict[str, Any] | None = None
     public_view: PublicBattleView | None = None
     public_advance: str | None = None
+    simulator_available: bool = False
+    view_mode: str = "player"
 
 
-app = FastAPI(title="BLACK Battle Studio Live Bridge", version="3.3")
+app = FastAPI(title="BLACK Battle Studio Live Bridge", version="3.4")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:5173", "http://localhost:5173", "https://o-yutaka.github.io"],
@@ -70,6 +73,10 @@ SESSION_TTL_SECONDS = 15 * 60
 
 def _runner_available() -> bool:
     return bool(os.environ.get("BLACK_OFFICIAL_RUNNER"))
+
+
+def _simulator_view_available() -> bool:
+    return os.environ.get("BLACK_ALLOW_SIMULATOR_VIEW") == "1"
 
 
 def _card_catalog_available() -> bool:
@@ -96,7 +103,11 @@ async def _expire_session(session_id: str) -> None:
     await _cleanup_session(session_id)
 
 
-async def _folder_entries(files: list[UploadFile], paths: list[str], max_bytes: int) -> list[tuple[str, bytes]]:
+async def _folder_entries(
+    files: list[UploadFile],
+    paths: list[str],
+    max_bytes: int,
+) -> list[tuple[str, bytes]]:
     if len(files) != len(paths):
         raise HTTPException(status_code=422, detail="フォルダー内ファイルと相対パスの数が一致しません")
     if not files or len(files) > MAX_MEMBERS:
@@ -129,6 +140,7 @@ async def health() -> dict[str, Any]:
         "cardCatalog": _card_catalog_available(),
         "frontendDist": FRONTEND_DIST.is_dir(),
         "publicView": PUBLIC_PROTOCOL_VERSION,
+        "simulatorView": _simulator_view_available(),
         "pid": os.getpid(),
     }
 
@@ -141,18 +153,31 @@ async def card_catalog() -> dict[str, Any]:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=500, detail=f"card catalog failed: {exc}") from exc
-    return {"ok": True, "count": len(cards), "sources": [path.name for path in sources], "cards": cards}
+    return {
+        "ok": True,
+        "count": len(cards),
+        "sources": [path.name for path in sources],
+        "cards": cards,
+    }
 
 
 @app.post("/api/cards/folder")
-async def upload_card_folder(files: list[UploadFile] = File(...), paths: list[str] = Form(...)) -> dict[str, Any]:
+async def upload_card_folder(
+    files: list[UploadFile] = File(...),
+    paths: list[str] = Form(...),
+) -> dict[str, Any]:
     entries = await _folder_entries(files, paths, 96 * 1024 * 1024)
     target = CARD_UPLOAD_ROOT / uuid.uuid4().hex
     try:
         cards, sources = install_catalog_folder(target, entries)
     except (FileNotFoundError, OSError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return {"ok": True, "count": len(cards), "sources": [path.name for path in sources], "folder": sources[0].parent.name}
+    return {
+        "ok": True,
+        "count": len(cards),
+        "sources": [path.name for path in sources],
+        "folder": sources[0].parent.name,
+    }
 
 
 @app.post("/api/bundles")
@@ -186,7 +211,10 @@ async def upload_native_engine(file: UploadFile = File(...)) -> dict[str, Any]:
 
 
 @app.post("/api/native/bundles")
-async def upload_native_bundle(file: UploadFile = File(...), engine_id: str | None = None) -> dict[str, Any]:
+async def upload_native_bundle(
+    file: UploadFile = File(...),
+    engine_id: str | None = None,
+) -> dict[str, Any]:
     try:
         expected = None
         if engine_id:
@@ -203,7 +231,12 @@ async def upload_native_bundle(file: UploadFile = File(...), engine_id: str | No
 
 
 @app.post("/api/native/bundle-folder")
-async def upload_native_bundle_folder(folder_name: str = Form("Agent folder"), engine_id: str | None = Form(None), files: list[UploadFile] = File(...), paths: list[str] = Form(...)) -> dict[str, Any]:
+async def upload_native_bundle_folder(
+    folder_name: str = Form("Agent folder"),
+    engine_id: str | None = Form(None),
+    files: list[UploadFile] = File(...),
+    paths: list[str] = Form(...),
+) -> dict[str, Any]:
     entries = await _folder_entries(files, paths, MAX_BUNDLE_BYTES)
     try:
         expected = None
@@ -220,7 +253,11 @@ async def upload_native_bundle_folder(folder_name: str = Form("Agent folder"), e
 
 @app.get("/api/native/artifacts")
 async def native_artifacts() -> dict[str, Any]:
-    return {"ok": True, "engines": [item.public() for item in NATIVE.engines.values()], "bundles": [item.public() for item in NATIVE.bundles.values()]}
+    return {
+        "ok": True,
+        "engines": [item.public() for item in NATIVE.engines.values()],
+        "bundles": [item.public() for item in NATIVE.bundles.values()],
+    }
 
 
 @app.post("/api/sessions")
@@ -236,7 +273,10 @@ async def create_session(request: SessionRequest) -> dict[str, Any]:
             engine = OfficialProcessEngine(player.root, opponent.root if opponent else None)
         elif request.engine == "official-native":
             if not request.engineId or not request.playerBundleId or not request.nativeOpponentBundleId:
-                raise HTTPException(status_code=422, detail="engineId, playerBundleId and nativeOpponentBundleId are required")
+                raise HTTPException(
+                    status_code=422,
+                    detail="engineId, playerBundleId and nativeOpponentBundleId are required",
+                )
             engine_artifact = NATIVE.engines.get(request.engineId)
             player = NATIVE.bundles.get(request.playerBundleId)
             opponent = NATIVE.bundles.get(request.nativeOpponentBundleId)
@@ -254,16 +294,39 @@ async def create_session(request: SessionRequest) -> dict[str, Any]:
     except (OfficialEngineError, NativeEngineError, NativeArtifactError, OSError, ValueError) as exc:
         if request.engine in {"official", "official-native"}:
             LOGGER.exception("official runtime session creation failed")
-            raise HTTPException(status_code=503, detail="公式対戦を開始できませんでした。BundleとEngineの整合を確認してください。") from exc
+            raise HTTPException(
+                status_code=503,
+                detail="公式対戦を開始できませんでした。BundleとEngineの整合を確認してください。",
+            ) from exc
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
     if request.subjectPlayer not in (0, 1):
         await engine.close()
         raise HTTPException(status_code=422, detail="subjectPlayer must be 0 or 1")
+
     session_id = uuid.uuid4().hex
     is_public = request.engine in {"official", "official-native"}
     public_view = PublicBattleView(session_id, subject_player=request.subjectPlayer) if is_public else None
-    public_advance = "legal-first" if request.engine == "official" else "agent" if request.engine == "official-native" else None
-    SESSIONS[session_id] = Session(engine=engine, frame=frame, public_view=public_view, public_advance=public_advance)
+    public_advance = (
+        "legal-first"
+        if request.engine == "official"
+        else "agent"
+        if request.engine == "official-native"
+        else None
+    )
+    simulator_available = bool(
+        is_public
+        and _simulator_view_available()
+        and public_view is not None
+        and callable(getattr(public_view, "render_simulator", None))
+    )
+    SESSIONS[session_id] = Session(
+        engine=engine,
+        frame=frame,
+        public_view=public_view,
+        public_advance=public_advance,
+        simulator_available=simulator_available,
+    )
     asyncio.create_task(_expire_session(session_id))
     public_engine = "official-battle" if is_public else engine.name
     return {
@@ -273,6 +336,7 @@ async def create_session(request: SessionRequest) -> dict[str, Any]:
         "publicProtocol": PUBLIC_PROTOCOL_VERSION if is_public else None,
         "viewPolicy": "player_view" if is_public else "spectator",
         "subjectPlayer": request.subjectPlayer,
+        "simulatorAvailable": simulator_available,
     }
 
 
@@ -286,15 +350,24 @@ async def delete_session(session_id: str) -> dict[str, Any]:
 async def _snapshot_payload(session_id: str, session: Session) -> dict[str, Any]:
     assert session.frame is not None
     if session.public_view is not None:
-        frame, cards = session.public_view.render(session.frame)
+        simulator = session.view_mode == "simulator" and session.simulator_available
+        if simulator:
+            renderer = getattr(session.public_view, "render_simulator")
+            frame, cards = renderer(session.frame)
+        else:
+            frame, cards = session.public_view.render(session.frame)
         return {
             "type": "snapshot",
             "sessionId": session_id,
             "engine": "official-battle",
             "publicProtocol": PUBLIC_PROTOCOL_VERSION,
-            "hiddenInformationPolicy": "player_view",
+            "hiddenInformationPolicy": "simulator_full" if simulator else "player_view",
             "frame": frame,
-            "controls": {"canAdvance": frame.get("result") is None},
+            "controls": {
+                "canAdvance": frame.get("result") is None,
+                "simulatorAvailable": session.simulator_available,
+                "viewMode": "simulator" if simulator else "player",
+            },
             "cardCatalog": cards,
         }
     return {
@@ -304,6 +377,11 @@ async def _snapshot_payload(session_id: str, session: Session) -> dict[str, Any]
         "hiddenInformationPolicy": "spectator",
         "frame": session.frame,
         "legalSelections": session.engine.legal_selections(),
+        "controls": {
+            "canAdvance": bool(session.engine.legal_selections()),
+            "simulatorAvailable": False,
+            "viewMode": "player",
+        },
     }
 
 
@@ -319,21 +397,60 @@ async def battle_socket(websocket: WebSocket, session_id: str) -> None:
         while True:
             message = await websocket.receive_json()
             message_type = message.get("type")
+
             if message_type == "ping":
                 await websocket.send_json({"type": "pong", "sessionId": session_id})
                 continue
+
             if message_type in {"close", "destroy"}:
                 await websocket.send_json({"type": "closed", "sessionId": session_id})
                 await websocket.close(code=1000)
                 break
+
+            if message_type == "set_view_mode":
+                requested = message.get("mode")
+                if requested not in {"player", "simulator"}:
+                    await websocket.send_json(
+                        {
+                            "type": "error",
+                            "code": "INVALID_VIEW_MODE",
+                            "detail": "表示モードが正しくありません",
+                        }
+                    )
+                    continue
+                if requested == "simulator" and not session.simulator_available:
+                    await websocket.send_json(
+                        {
+                            "type": "error",
+                            "code": "SIMULATOR_DISABLED",
+                            "detail": "Bridgeを --simulator 付きで起動してください",
+                        }
+                    )
+                    continue
+                session.view_mode = requested
+                await websocket.send_json(await _snapshot_payload(session_id, session))
+                continue
+
             if session.public_view is not None:
                 if message_type != "advance":
-                    await websocket.send_json({"type": "error", "code": "ACTION_UNAVAILABLE", "detail": "この画面では『1手進める』のみ使用できます"})
+                    await websocket.send_json(
+                        {
+                            "type": "error",
+                            "code": "ACTION_UNAVAILABLE",
+                            "detail": "この画面では『1手進める』のみ使用できます",
+                        }
+                    )
                     continue
                 if session.public_advance == "legal-first":
                     legal = session.engine.legal_selections()
                     if not legal:
-                        await websocket.send_json({"type": "error", "code": "ACTION_UNAVAILABLE", "detail": "現在進められる操作がありません"})
+                        await websocket.send_json(
+                            {
+                                "type": "error",
+                                "code": "ACTION_UNAVAILABLE",
+                                "detail": "現在進められる操作がありません",
+                            }
+                        )
                         continue
                     selection = list(legal[0])
                 else:
@@ -343,10 +460,13 @@ async def battle_socket(websocket: WebSocket, session_id: str) -> None:
                     await websocket.send_json({"type": "error", "code": "UNSUPPORTED_MESSAGE"})
                     continue
                 raw_selection = message.get("selection")
-                if not isinstance(raw_selection, list) or any(not isinstance(value, int) for value in raw_selection):
+                if not isinstance(raw_selection, list) or any(
+                    not isinstance(value, int) for value in raw_selection
+                ):
                     await websocket.send_json({"type": "error", "code": "INVALID_SELECTION"})
                     continue
                 selection = raw_selection
+
             try:
                 async with session.lock:
                     session.frame = await session.engine.step(selection)
@@ -354,9 +474,21 @@ async def battle_socket(websocket: WebSocket, session_id: str) -> None:
             except (ValueError, OfficialEngineError, NativeEngineError) as exc:
                 if session.public_view is not None:
                     LOGGER.exception("official runtime action failed")
-                    await websocket.send_json({"type": "error", "code": "ACTION_REJECTED", "detail": "この操作を完了できませんでした"})
+                    await websocket.send_json(
+                        {
+                            "type": "error",
+                            "code": "ACTION_REJECTED",
+                            "detail": "この操作を完了できませんでした",
+                        }
+                    )
                 else:
-                    await websocket.send_json({"type": "error", "code": "ENGINE_REJECTED", "detail": str(exc)})
+                    await websocket.send_json(
+                        {
+                            "type": "error",
+                            "code": "ENGINE_REJECTED",
+                            "detail": str(exc),
+                        }
+                    )
     except WebSocketDisconnect:
         pass
     finally:

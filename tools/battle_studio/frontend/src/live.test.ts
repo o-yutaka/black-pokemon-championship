@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { parseLiveSnapshot, toWebSocketUrl } from "./live";
+import { mergeLiveSnapshotFrames, parseLiveSnapshot, toWebSocketUrl, type LiveSnapshot } from "./live";
+import type { BattleReplay } from "./types";
 
 const frame = {
   frameId: 0,
@@ -8,8 +9,8 @@ const frame = {
   actingPlayer: 0,
   phase: "main",
   players: [
-    { name: "A", active: null, bench: [], hand: [], handCount: 0, deckCount: 60, prizeCount: 6, discard: [], supporterPlayed: false, retreated: false },
-    { name: "B", active: null, bench: [], hand: [], handCount: 0, deckCount: 60, prizeCount: 6, discard: [], supporterPlayed: false, retreated: false },
+    { name: "A", active: null, bench: [], hand: [], handCount: 0, deck: [], deckCount: 60, prize: [], prizeCount: 6, discard: [], supporterPlayed: false, retreated: false },
+    { name: "B", active: null, bench: [], hand: [], handCount: 0, deck: [], deckCount: 60, prize: [], prizeCount: 6, discard: [], supporterPlayed: false, retreated: false },
   ],
   stadium: null,
   events: [],
@@ -28,6 +29,8 @@ describe("live transport", () => {
     expect(parsed?.frame.frameId).toBe(0);
     expect(parsed?.legalSelections).toEqual([[0]]);
     expect(parsed?.controls.canAdvance).toBe(true);
+    expect(parsed?.controls.simulatorAvailable).toBe(false);
+    expect(parsed?.controls.viewMode).toBe("player");
     expect(parsed?.publicProtocol).toBeNull();
   });
 
@@ -36,16 +39,93 @@ describe("live transport", () => {
       type: "snapshot",
       sessionId: "official-1",
       engine: "official-battle",
-      publicProtocol: "1.0",
+      publicProtocol: "1.1",
       hiddenInformationPolicy: "player_view",
       frame,
-      controls: { canAdvance: true },
+      controls: { canAdvance: true, simulatorAvailable: true, viewMode: "player" },
       cardCatalog: [{ id: 4321, name: "Dragapult ex", number: "130", expansion: "Test", sourceLink: "https://example.test/card" }],
     });
     expect(parsed?.legalSelections).toEqual([]);
     expect(parsed?.controls.canAdvance).toBe(true);
+    expect(parsed?.controls.simulatorAvailable).toBe(true);
+    expect(parsed?.controls.viewMode).toBe("player");
     expect(parsed?.hiddenInformationPolicy).toBe("player_view");
     expect(parsed?.cardCatalog[0].id).toBe(4321);
+  });
+
+  it("accepts an explicit simulator-full snapshot", () => {
+    const simulatorFrame = structuredClone(frame) as any;
+    simulatorFrame.players[1].hand = [{
+      playerIndex: 1,
+      serial: 9001,
+      cardId: 5555,
+      name: "Opponent Secret",
+      zone: "hand",
+      slot: 0,
+      hp: null,
+      maxHp: null,
+      damage: 0,
+      energies: [],
+      tools: [],
+      status: [],
+      evolution: [],
+      imageUrl: null,
+    }];
+    simulatorFrame.players[1].handCount = 1;
+    const parsed = parseLiveSnapshot({
+      type: "snapshot",
+      sessionId: "official-1",
+      engine: "official-battle",
+      publicProtocol: "1.1",
+      hiddenInformationPolicy: "simulator_full",
+      frame: simulatorFrame,
+      controls: { canAdvance: true, simulatorAvailable: true, viewMode: "simulator" },
+      cardCatalog: [{ id: 5555, name: "Opponent Secret", number: "1", expansion: "Test", sourceLink: "" }],
+    });
+    expect(parsed?.controls.viewMode).toBe("simulator");
+    expect(parsed?.hiddenInformationPolicy).toBe("simulator_full");
+    expect(parsed?.frame.players[1].hand[0].name).toBe("Opponent Secret");
+  });
+
+  it("purges all simulator-derived history when full-card mode turns off", () => {
+    const simulatorFrame = structuredClone(frame) as any;
+    simulatorFrame.frameId = 1;
+    simulatorFrame.players[1].hand = [{
+      playerIndex: 1,
+      serial: 9001,
+      cardId: 5555,
+      name: "Opponent Secret",
+      zone: "hand",
+      slot: 0,
+      hp: null,
+      maxHp: null,
+      damage: 0,
+      energies: [],
+      tools: [],
+      status: [],
+      evolution: [],
+      imageUrl: null,
+    }];
+    simulatorFrame.players[1].handCount = 1;
+    const current: Pick<BattleReplay, "replayId" | "hiddenInformationPolicy" | "frames"> = {
+      replayId: "official-1",
+      hiddenInformationPolicy: "simulator_full",
+      frames: [parseLiveSnapshot({ type: "snapshot", sessionId: "official-1", engine: "official-battle", publicProtocol: "1.1", hiddenInformationPolicy: "simulator_full", frame: simulatorFrame, controls: { canAdvance: true, simulatorAvailable: true, viewMode: "simulator" } })!.frame],
+    };
+    const safeSnapshot = parseLiveSnapshot({
+      type: "snapshot",
+      sessionId: "official-1",
+      engine: "official-battle",
+      publicProtocol: "1.1",
+      hiddenInformationPolicy: "player_view",
+      frame: { ...frame, frameId: 1 },
+      controls: { canAdvance: true, simulatorAvailable: true, viewMode: "player" },
+      cardCatalog: [],
+    }) as LiveSnapshot;
+    const merged = mergeLiveSnapshotFrames(current, safeSnapshot);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].players[1].hand).toEqual([]);
+    expect(JSON.stringify(merged)).not.toContain("Opponent Secret");
   });
 
   it("ignores non-snapshot messages", () => {
