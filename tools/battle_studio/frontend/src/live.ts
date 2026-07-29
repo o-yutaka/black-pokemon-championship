@@ -2,7 +2,12 @@ import type { PublicCardCatalogEntry } from "./cardArt";
 import { battleFrameSchema, type BattleFrame } from "./types";
 
 export type LiveStatus = "disconnected" | "connecting" | "connected" | "closed" | "error";
-export type LiveControls = { canAdvance: boolean };
+export type ViewMode = "player" | "simulator";
+export type LiveControls = {
+  canAdvance: boolean;
+  simulatorAvailable: boolean;
+  viewMode: ViewMode;
+};
 export type LiveSnapshot = {
   sessionId: string;
   engine: string;
@@ -11,9 +16,16 @@ export type LiveSnapshot = {
   controls: LiveControls;
   cardCatalog: PublicCardCatalogEntry[];
   publicProtocol: string | null;
-  hiddenInformationPolicy: "player_view" | "spectator" | "unknown";
+  hiddenInformationPolicy: "player_view" | "simulator_full" | "spectator" | "unknown";
 };
-export type LiveConnection = { sessionId: string; engine: string; step(selection?: number[]): void; ping(): void; close(): void };
+export type LiveConnection = {
+  sessionId: string;
+  engine: string;
+  step(selection?: number[]): void;
+  setViewMode(mode: ViewMode): void;
+  ping(): void;
+  close(): void;
+};
 export type LiveSessionOptions = {
   engine?: "emulator" | "official" | "official-native";
   bundleId?: string;
@@ -57,8 +69,18 @@ export function parseLiveSnapshot(raw: unknown): LiveSnapshot | null {
     ? value.legalSelections.filter((entry): entry is number[] => Array.isArray(entry) && entry.every((item) => Number.isInteger(item)))
     : [];
   const rawControls = value.controls && typeof value.controls === "object" ? value.controls as Record<string, unknown> : null;
-  const controls = { canAdvance: rawControls ? rawControls.canAdvance === true : legalSelections.length > 0 };
-  const hiddenInformationPolicy = value.hiddenInformationPolicy === "player_view" || value.hiddenInformationPolicy === "spectator" ? value.hiddenInformationPolicy : "unknown";
+  const viewMode: ViewMode = rawControls?.viewMode === "simulator" ? "simulator" : "player";
+  const controls = {
+    canAdvance: rawControls ? rawControls.canAdvance === true : legalSelections.length > 0,
+    simulatorAvailable: rawControls?.simulatorAvailable === true,
+    viewMode,
+  };
+  const hiddenInformationPolicy =
+    value.hiddenInformationPolicy === "player_view"
+    || value.hiddenInformationPolicy === "simulator_full"
+    || value.hiddenInformationPolicy === "spectator"
+      ? value.hiddenInformationPolicy
+      : "unknown";
   return {
     sessionId: value.sessionId,
     engine: value.engine,
@@ -121,11 +143,25 @@ export async function connectLive(
       if (socket.readyState !== WebSocket.OPEN) throw new Error("WebSocketが接続されていません");
       socket.send(JSON.stringify(publicControl ? { type: "advance" } : { type: "step", selection: selection ?? [0] }));
     },
-    ping() { if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "ping" })); },
-    close() { if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "close" })); else socket.close(); },
+    setViewMode(mode) {
+      if (socket.readyState !== WebSocket.OPEN) throw new Error("WebSocketが接続されていません");
+      socket.send(JSON.stringify({ type: "set_view_mode", mode }));
+    },
+    ping() {
+      if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "ping" }));
+    },
+    close() {
+      if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "close" }));
+      else socket.close();
+    },
   };
 }
 
-export function connectLiveEmulator(baseUrl: string, onSnapshot: (snapshot: LiveSnapshot) => void, onStatus: (status: LiveStatus) => void, onError: (message: string) => void): Promise<LiveConnection> {
+export function connectLiveEmulator(
+  baseUrl: string,
+  onSnapshot: (snapshot: LiveSnapshot) => void,
+  onStatus: (status: LiveStatus) => void,
+  onError: (message: string) => void,
+): Promise<LiveConnection> {
   return connectLive(baseUrl, { engine: "emulator" }, onSnapshot, onStatus, onError);
 }
