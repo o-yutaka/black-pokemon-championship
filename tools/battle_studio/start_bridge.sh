@@ -23,7 +23,7 @@ done
 
 command -v node >/dev/null || { echo 'Node.jsがありません' >&2; exit 1; }
 command -v npm >/dev/null || { echo 'npmがありません' >&2; exit 1; }
-command -v python3 >/dev/null || { echo 'python3がありません' >&2; exit 1; }
+command -v python3 >/dev/null || { echo 'Python3がありません' >&2; exit 1; }
 
 printf '\n[1/5] フロントエンド依存関係を確認\n'
 cd "$FRONTEND"
@@ -108,4 +108,4 @@ printf '============================================================\n\n'
 ) &
 
 cd "$BACKEND"
-exec "$VENV/bin/python" -m uvicorn live_server:app --host 0.0.0.0 --port "$PORT"
+exec "$VENV/bin/python" -m uvicorn main:app --host 0.0.0.0 --port "$PORT"

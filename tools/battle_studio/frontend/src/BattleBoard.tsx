@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { cardArtUrl, type CardArtCatalog } from "./cardArt";
 import { energyJa, phaseJa } from "./locale";
 import { cardKey, type BattleFrame, type CardInstance } from "./types";
+import "./all-cards-ui.css";
 
 export type MotionMode = "full" | "balanced" | "lite";
 
@@ -19,21 +20,27 @@ function hpRatio(card: CardInstance): number {
   return Math.max(0, Math.min(1, card.hp / card.maxHp));
 }
 
-function allBoardCards(frame: BattleFrame): CardInstance[] {
-  return frame.players.flatMap((player) => [player.active, ...player.bench].filter((card): card is CardInstance => card !== null));
+function allVisibleCards(frame: BattleFrame): CardInstance[] {
+  const cards: CardInstance[] = [];
+  if (frame.stadium) cards.push(frame.stadium);
+  for (const player of frame.players) {
+    if (player.active) cards.push(player.active);
+    cards.push(...player.bench, ...player.hand, ...player.discard);
+  }
+  return cards;
 }
 
 function findCard(frame: BattleFrame, key: string | null): CardInstance | null {
   if (!key) return null;
-  return allBoardCards(frame).find((card) => cardKey(card) === key) ?? null;
+  return allVisibleCards(frame).find((card) => cardKey(card) === key) ?? null;
 }
 
 function inferActionFx(previous: BattleFrame | null, frame: BattleFrame): ActionFx | null {
   if (!previous || previous.frameId === frame.frameId) return null;
   const events = frame.events.slice(previous.events.length);
   const text = events.map((event) => `${event.type} ${event.text}`.toLowerCase()).join(" ");
-  const before = new Map(allBoardCards(previous).map((card) => [cardKey(card), card]));
-  const after = new Map(allBoardCards(frame).map((card) => [cardKey(card), card]));
+  const before = new Map(allVisibleCards(previous).map((card) => [cardKey(card), card]));
+  const after = new Map(allVisibleCards(frame).map((card) => [cardKey(card), card]));
   const actor = frame.decision?.actor ?? frame.actingPlayer;
 
   for (const [key, card] of after) {
@@ -88,6 +95,8 @@ export function CardFace({ card, compact = false, onSelect, catalog, highlight =
       <div className="hp-readout"><strong>HP {hpText}</strong><span>{card.damage > 0 ? `${card.damage}ダメージ` : "準備完了"}</span></div>
       <div className="hp-track"><i style={{ width: `${ratio * 100}%` }} /></div>
       <div className="energy-row">{card.energies.length ? card.energies.map((energy, index) => <span key={`${energy}-${index}`} className={`energy-chip energy-${energy.toLowerCase()}`} title={`${energyJa(energy)}エネルギー`}>{energyJa(energy).slice(0, 1)}</span>) : <span className="muted">エネルギーなし</span>}</div>
+      {card.tools.length > 0 && <div className="attachment-row" aria-label="ポケモンのどうぐ">{card.tools.map((tool, index) => <span key={`${tool}-${index}`}>どうぐ: {tool}</span>)}</div>}
+      {card.evolution.length > 0 && <div className="evolution-stack" aria-label={`進化元 ${card.evolution.length}枚`}>{card.evolution.map((cardId, index) => { const image = catalog.get(cardId); return image ? <img key={`${cardId}-${index}`} src={image} alt="進化元カード" loading="lazy" decoding="async" /> : <span key={`${cardId}-${index}`}>進化元</span>; })}</div>}
       {card.status.length > 0 && <div className="status-row">{card.status.join(" · ")}</div>}
     </div>
   </button>;
@@ -106,11 +115,32 @@ function PlayerInfo({ frame, playerIndex, marker }: { frame: BattleFrame; player
   </div>;
 }
 
+function CardBack({ label, count }: { label: string; count: number }) {
+  return <div className="card-back-stack" aria-label={`${label} ${count}枚`}><div className="card-back"><span>BLACK</span><b>{label}</b></div><strong>{count}</strong></div>;
+}
+
+function FaceUpZone({ label, cards, onSelect, catalog, marker }: { label: string; cards: CardInstance[]; onSelect: (card: CardInstance) => void; catalog: CardArtCatalog; marker: string }) {
+  return <section className="visible-zone" data-board-marker={marker}>
+    <header><strong>{label}</strong><span>{cards.length}枚</span></header>
+    {cards.length ? <div className="zone-card-strip">{cards.map((card) => <CardFace key={cardKey(card)} card={card} compact onSelect={onSelect} catalog={catalog} />)}</div> : <div className="zone-empty">なし</div>}
+  </section>;
+}
+
+function ZoneShelf({ frame, playerIndex, isSelf, onSelect, catalog, marker }: { frame: BattleFrame; playerIndex: 0 | 1; isSelf: boolean; onSelect: (card: CardInstance) => void; catalog: CardArtCatalog; marker: string }) {
+  const player = frame.players[playerIndex];
+  return <div className={`zone-shelf ${isSelf ? "self-zones" : "opponent-zones"}`} data-board-marker={marker}>
+    <div className="hidden-zone-row"><CardBack label="山札" count={player.deckCount} /><CardBack label="サイド" count={player.prizeCount} />{!isSelf && <CardBack label="手札" count={player.handCount} />}</div>
+    {isSelf && <FaceUpZone label="手札" cards={player.hand} onSelect={onSelect} catalog={catalog} marker={`${marker}-hand`} />}
+    <FaceUpZone label="トラッシュ" cards={player.discard} onSelect={onSelect} catalog={catalog} marker={`${marker}-discard`} />
+  </div>;
+}
+
 function BenchArea({ frame, playerIndex, onSelect, catalog, targetKey, marker }: { frame: BattleFrame; playerIndex: 0 | 1; onSelect: (card: CardInstance) => void; catalog: CardArtCatalog; targetKey: string | null; marker: string }) {
   const player = frame.players[playerIndex];
+  const slots = player.bench.length > 5 ? 8 : 5;
   return <div className="bench-area" data-board-marker={marker}>
-    <div className="bench-label">ベンチ</div>
-    <div className="bench-row">{Array.from({ length: 5 }, (_, index) => { const boardCard = player.bench[index] ?? null; return <CardFace key={index} card={boardCard} compact onSelect={onSelect} catalog={catalog} highlight={boardCard ? cardKey(boardCard) === targetKey : false} />; })}</div>
+    <div className="bench-label">ベンチ {player.bench.length}/{slots}</div>
+    <div className={`bench-row ${slots === 8 ? "bench-eight" : "bench-five"}`}>{Array.from({ length: slots }, (_, index) => { const boardCard = player.bench[index] ?? null; return <CardFace key={index} card={boardCard} compact onSelect={onSelect} catalog={catalog} highlight={boardCard ? cardKey(boardCard) === targetKey : false} />; })}</div>
   </div>;
 }
 
@@ -119,18 +149,22 @@ function ActiveArea({ frame, playerIndex, onSelect, catalog, targetKey, marker }
   return <div className="active-stage" data-board-marker={marker}><div className="active-ring"><span>バトル場</span><CardFace card={player.active} onSelect={onSelect} catalog={catalog} highlight={player.active ? cardKey(player.active) === targetKey : false} /></div></div>;
 }
 
-function PlayerBoard({ frame, playerIndex, onSelect, catalog, fx }: { frame: BattleFrame; playerIndex: 0 | 1; onSelect: (card: CardInstance) => void; catalog: CardArtCatalog; fx: ActionFx | null }) {
+function PlayerBoard({ frame, playerIndex, side, onSelect, catalog, fx }: { frame: BattleFrame; playerIndex: 0 | 1; side: "opponent" | "self"; onSelect: (card: CardInstance) => void; catalog: CardArtCatalog; fx: ActionFx | null }) {
   const player = frame.players[playerIndex];
   const acting = playerIndex === frame.actingPlayer;
   const targetKey = fx?.targetKey ?? null;
-  const side = playerIndex === 1 ? "opponent" : "self";
   const info = <PlayerInfo frame={frame} playerIndex={playerIndex} marker={`${side}-info`} />;
+  const zones = <ZoneShelf frame={frame} playerIndex={playerIndex} isSelf={side === "self"} onSelect={onSelect} catalog={catalog} marker={`${side}-zones`} />;
   const bench = <BenchArea frame={frame} playerIndex={playerIndex} onSelect={onSelect} catalog={catalog} targetKey={targetKey} marker={`${side}-bench`} />;
   const active = <ActiveArea frame={frame} playerIndex={playerIndex} onSelect={onSelect} catalog={catalog} targetKey={targetKey} marker={`${side}-active`} />;
 
   return <section className={`player-board player-${playerIndex} side-${side} ${acting ? "acting" : "waiting"}`} aria-label={`${player.name}の盤面`}>
-    {playerIndex === 1 ? <>{info}{bench}{active}</> : <>{active}{bench}{info}</>}
+    {side === "opponent" ? <>{info}{zones}{bench}{active}</> : <>{active}{bench}{zones}{info}</>}
   </section>;
+}
+
+function StadiumArea({ stadium, onSelect, catalog }: { stadium: CardInstance | null; onSelect: (card: CardInstance) => void; catalog: CardArtCatalog }) {
+  return <div className="stadium-zone" data-board-marker="stadium"><span>スタジアム</span>{stadium ? <CardFace card={stadium} compact onSelect={onSelect} catalog={catalog} /> : <div className="stadium-empty">なし</div>}</div>;
 }
 
 function ActionLayer({ fx, mode }: { fx: ActionFx | null; mode: MotionMode }) {
@@ -140,7 +174,7 @@ function ActionLayer({ fx, mode }: { fx: ActionFx | null; mode: MotionMode }) {
 
 export function BattleBoard({ frame, previousFrame, onSelect, catalog, motionMode }: { frame: BattleFrame; previousFrame: BattleFrame | null; onSelect: (card: CardInstance) => void; catalog: CardArtCatalog; motionMode: MotionMode }) {
   const fx = inferActionFx(previousFrame, frame);
-  return <div className={`battle-column pocket-board motion-${motionMode}`}><div className="playmat-grid" aria-hidden="true" /><PlayerBoard frame={frame} playerIndex={1} onSelect={onSelect} catalog={catalog} fx={fx} /><div className="center-line" data-board-marker="center"><span>{frame.stadium ? frame.stadium.name : "スタジアムなし"}</span><strong>ターン {frame.turn}</strong><span>{phaseJa(frame.phase)}</span></div><PlayerBoard frame={frame} playerIndex={0} onSelect={onSelect} catalog={catalog} fx={fx} /><ActionLayer fx={fx} mode={motionMode} /></div>;
+  return <div className={`battle-column pocket-board motion-${motionMode}`}><div className="playmat-grid" aria-hidden="true" /><PlayerBoard frame={frame} playerIndex={1} side="opponent" onSelect={onSelect} catalog={catalog} fx={fx} /><div className="center-line" data-board-marker="center"><span>{phaseJa(frame.phase)}</span><StadiumArea stadium={frame.stadium} onSelect={onSelect} catalog={catalog} /><strong>ターン {frame.turn}</strong></div><PlayerBoard frame={frame} playerIndex={0} side="self" onSelect={onSelect} catalog={catalog} fx={fx} /><ActionLayer fx={fx} mode={motionMode} /></div>;
 }
 
 export function selectedCardWithArt(card: CardInstance, catalog: CardArtCatalog): CardInstance {

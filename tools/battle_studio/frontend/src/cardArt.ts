@@ -5,8 +5,9 @@ export type PublicCardCatalogEntry = { id: number; name: string; number: string;
 type UnknownRecord = Record<string, unknown>;
 type CatalogCard = PublicCardCatalogEntry;
 
-const CACHE_KEY = "black.real-card-art.v1";
+const CACHE_KEY = "black.real-card-art.v2";
 const API_ROOT = "https://api.pokemontcg.io/v2/cards";
+const MAX_CONCURRENT_LOOKUPS = 6;
 
 function asRecord(value: unknown): UnknownRecord | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as UnknownRecord : null;
@@ -24,7 +25,7 @@ function pickNumber(record: UnknownRecord): number | null {
 function pickUrl(record: UnknownRecord): string | null {
   for (const key of ["imageUrl", "image_url", "image", "artUrl", "art_url", "cardImage", "card_image"]) {
     const value = record[key];
-    if (typeof value === "string" && /^https?:\/\//i.test(value)) return value;
+    if (typeof value === "string" && /^https:\/\//i.test(value)) return value;
   }
   return null;
 }
@@ -52,6 +53,10 @@ function readCache(): Record<string, string> {
     const value = JSON.parse(localStorage.getItem(CACHE_KEY) ?? "{}");
     return value && typeof value === "object" ? value as Record<string, string> : {};
   } catch { return {}; }
+}
+
+function writeCache(cache: Record<string, string>): void {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify(cache)); } catch { /* private mode or quota */ }
 }
 
 function normalizeNumber(value: string): string {
@@ -95,20 +100,26 @@ async function resolveFromApi(card: CatalogCard, signal: AbortSignal): Promise<s
 }
 
 async function resolveCards(rows: CatalogCard[], cache: Record<string, string>, signal: AbortSignal): Promise<void> {
+  const pending: CatalogCard[] = [];
   for (const card of rows) {
     const direct = directImage(card.sourceLink);
     if (direct) cache[String(card.id)] = direct;
+    else if (!cache[String(card.id)]) pending.push(card);
   }
-  for (const card of rows) {
-    if (cache[String(card.id)]) continue;
-    const url = await resolveFromApi(card, signal).catch(() => null);
-    if (url) cache[String(card.id)] = url;
-  }
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < pending.length && !signal.aborted) {
+      const card = pending[cursor++];
+      const url = await resolveFromApi(card, signal).catch(() => null);
+      if (url) cache[String(card.id)] = url;
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(MAX_CONCURRENT_LOOKUPS, pending.length) }, worker));
 }
 
 export function useCardArtCatalog(requestedIds: number[], publicCards: PublicCardCatalogEntry[] = []): CardArtCatalog {
   const [entries, setEntries] = useState<Array<[number, string]>>(() => Object.entries(readCache()).map(([id, url]) => [Number(id), url]));
-  const idKey = [...new Set(requestedIds)].sort((a, b) => a - b).join(",");
+  const idKey = [...new Set([...requestedIds, ...publicCards.map((card) => card.id)])].filter((id) => id > 0).sort((a, b) => a - b).join(",");
   const publicKey = publicCards.map((card) => `${card.id}:${card.name}:${card.number}:${card.expansion}:${card.sourceLink}`).join("|");
   useEffect(() => {
     if (!idKey) return;
@@ -120,7 +131,7 @@ export function useCardArtCatalog(requestedIds: number[], publicCards: PublicCar
       const supplied = publicCards.filter((card) => wanted.has(card.id));
       await resolveCards(supplied, displayCache, controller.signal);
       const suppliedIds = new Set(supplied.map((card) => card.id));
-      const unresolved = new Set([...wanted].filter((id) => !suppliedIds.has(id)));
+      const unresolved = new Set([...wanted].filter((id) => !displayCache[String(id)] && !suppliedIds.has(id)));
       if (unresolved.size) {
         const response = await fetch("/api/cards", { signal: controller.signal, cache: "force-cache" });
         if (response.ok) {
@@ -136,13 +147,13 @@ export function useCardArtCatalog(requestedIds: number[], publicCards: PublicCar
             rows.push({ id, name: text(record, "name", "card_name", "Card Name"), number: text(record, "number", "collection_no", "Collection No."), expansion: text(record, "expansion", "Expansion"), sourceLink: text(record, "sourceLink", "link") });
           }
           await resolveCards(rows, displayCache, controller.signal);
-          for (const id of unresolved) {
-            const url = displayCache[String(id)];
-            if (url) persistentCache[String(id)] = url;
-          }
         }
       }
-      localStorage.setItem(CACHE_KEY, JSON.stringify(persistentCache));
+      for (const id of wanted) {
+        const url = displayCache[String(id)];
+        if (url) persistentCache[String(id)] = url;
+      }
+      writeCache(persistentCache);
       setEntries(Object.entries(displayCache).map(([id, url]) => [Number(id), url]));
     })().catch(() => undefined);
     return () => controller.abort();
