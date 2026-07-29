@@ -19,6 +19,8 @@ from websockets.sync.client import connect
 ROOT = Path(__file__).resolve().parent
 RAW_CARD_ID = 987654321
 RAW_SERIAL = 123456789
+HIDDEN_CARD_IDS = (787654321, 687654321, 587654321)
+HIDDEN_NAMES = ("Secret Hand", "Secret Deck", "Secret Prize")
 
 
 def free_port() -> int:
@@ -29,11 +31,7 @@ def free_port() -> int:
 
 def request_json(url: str, data: dict | None = None) -> dict:
     body = None if data is None else json.dumps(data).encode()
-    request = urllib.request.Request(
-        url,
-        data=body,
-        headers={"Content-Type": "application/json"},
-    )
+    request = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(request, timeout=3) as response:
         return json.loads(response.read())
 
@@ -55,11 +53,7 @@ def upload_file(url: str, path: Path) -> dict:
         + data
         + f"\r\n--{boundary}--\r\n".encode()
     )
-    request = urllib.request.Request(
-        url,
-        data=body,
-        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
-    )
+    request = urllib.request.Request(url, data=body, headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
     with urllib.request.urlopen(request, timeout=5) as response:
         return json.loads(response.read())
 
@@ -86,19 +80,20 @@ import sys
 frame_id = 0
 
 
-def card(player, zone, serial, card_id, name):
+def card(player, zone, serial, card_id, name, slot=0):
+    board = zone in {"active", "bench"}
     return {
         "playerIndex": player,
         "serial": serial,
         "cardId": card_id,
         "name": name,
         "zone": zone,
-        "slot": 0,
-        "hp": 200,
-        "maxHp": 320,
-        "damage": 120,
-        "energies": [44444444],
-        "tools": [55555555],
+        "slot": slot,
+        "hp": 200 if board else None,
+        "maxHp": 320 if board else None,
+        "damage": 120 if board else 0,
+        "energies": [44444444] if board else [],
+        "tools": [55555555] if board else [],
         "status": [],
         "evolution": [],
         "imageUrl": None,
@@ -108,7 +103,9 @@ def card(player, zone, serial, card_id, name):
 def frame():
     own = card(0, "active", 123456789, 987654321, "Dragapult ex")
     opponent = card(1, "active", 223456789, 887654321, "Rocket Mewtwo ex")
-    secret = card(1, "hand", 323456789, 787654321, "Secret Hand")
+    secret_hand = card(1, "hand", 323456789, 787654321, "Secret Hand")
+    secret_deck = card(1, "deck", 423456789, 687654321, "Secret Deck")
+    secret_prize = card(1, "prize", 523456789, 587654321, "Secret Prize")
     return {
         "frameId": frame_id,
         "turn": 3,
@@ -122,7 +119,9 @@ def frame():
                 "bench": [],
                 "hand": [own],
                 "handCount": 1,
+                "deck": [],
                 "deckCount": 42,
+                "prize": [],
                 "prizeCount": 5,
                 "discard": [],
                 "supporterPlayed": False,
@@ -132,9 +131,11 @@ def frame():
                 "name": "Opponent",
                 "active": opponent,
                 "bench": [],
-                "hand": [secret],
+                "hand": [secret_hand],
                 "handCount": 4,
+                "deck": [secret_deck],
                 "deckCount": 39,
+                "prize": [secret_prize],
                 "prizeCount": 4,
                 "discard": [],
                 "supporterPlayed": False,
@@ -142,22 +143,14 @@ def frame():
             },
         ],
         "stadium": None,
-        "events": [
-            {
-                "type": "log",
-                "actor": 0,
-                "text": "selection index=7 /tmp/libcg.so",
-            }
-        ],
+        "events": [{"type": "log", "actor": 0, "text": "selection index=7 /tmp/libcg.so"}],
         "decision": {
             "actor": 0,
             "goal": "searchId=123456789",
             "chosen": "[7]",
             "confidence": 0.8,
             "elapsedMs": 2.0,
-            "candidates": [
-                {"label": "ATTACK", "score": 1.0, "selected": True}
-            ],
+            "candidates": [{"label": "ATTACK", "score": 1.0, "selected": True}],
             "selectedAction": {"optionIndex": 7},
             "hiddenBelief": {"secret": 1},
         },
@@ -169,27 +162,10 @@ for line in sys.stdin:
     message = json.loads(line)
     if message.get("type") == "step":
         if message.get("selection") != [7]:
-            print(
-                json.dumps(
-                    {
-                        "type": "error",
-                        "detail": "wrong selection /tmp/private serial=123456789",
-                    }
-                ),
-                flush=True,
-            )
+            print(json.dumps({"type": "error", "detail": "wrong selection /tmp/private serial=123456789"}), flush=True)
             continue
         frame_id += 1
-    print(
-        json.dumps(
-            {
-                "type": "snapshot",
-                "frame": frame(),
-                "legalSelections": [[7], [8]],
-            }
-        ),
-        flush=True,
-    )
+    print(json.dumps({"type": "snapshot", "frame": frame(), "legalSelections": [[7], [8]]}), flush=True)
 ''',
         encoding="utf-8",
     )
@@ -207,6 +183,18 @@ def assert_session_gone(uri: str) -> None:
     assert not reconnectable, "closed session remained reconnectable"
 
 
+def assert_hidden(snapshot: dict) -> None:
+    encoded = json.dumps(snapshot, ensure_ascii=False)
+    assert snapshot["hiddenInformationPolicy"] == "player_view"
+    assert snapshot["frame"]["players"][1]["hand"] == []
+    assert snapshot["frame"]["players"][1].get("deck", []) == []
+    assert snapshot["frame"]["players"][1].get("prize", []) == []
+    for secret in HIDDEN_NAMES:
+        assert secret not in encoded
+    for raw_id in HIDDEN_CARD_IDS:
+        assert str(raw_id) not in encoded
+
+
 def main() -> int:
     port = free_port()
     with tempfile.TemporaryDirectory(prefix="black-privacy-smoke-") as temp:
@@ -219,12 +207,13 @@ def main() -> int:
             **os.environ,
             "BLACK_OFFICIAL_RUNNER": str(runner),
             "BLACK_BUNDLE_ROOT": str(temp_path / "bundles"),
+            "BLACK_ALLOW_SIMULATOR_VIEW": "1",
         }
         command = [
             sys.executable,
             "-m",
             "uvicorn",
-            "live_server:app",
+            "main:app",
             "--host",
             "127.0.0.1",
             "--port",
@@ -232,14 +221,7 @@ def main() -> int:
             "--log-level",
             "warning",
         ]
-        process = subprocess.Popen(
-            command,
-            cwd=ROOT,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            env=env,
-        )
+        process = subprocess.Popen(command, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
         evidence: dict = {"port": port, "command": command, "checks": []}
         try:
             deadline = time.time() + 10
@@ -253,18 +235,16 @@ def main() -> int:
             if not health or not health.get("ok"):
                 raise RuntimeError("health endpoint did not become ready")
             assert health.get("publicView") == "1.1"
+            assert health.get("simulatorView") is True
             evidence["health"] = health
-            evidence["checks"].append("http_health_pass")
+            evidence["checks"].extend(["http_health_pass", "simulator_capability_pass"])
 
             if os.environ.get("EXPECT_FRONTEND_DIST") == "1":
                 assert health.get("frontendDist") is True
                 assert 'id="root"' in request_text(f"http://127.0.0.1:{port}/")
                 evidence["checks"].append("built_pwa_static_serve_pass")
 
-            emulator = request_json(
-                f"http://127.0.0.1:{port}/api/sessions",
-                {"engine": "emulator"},
-            )
+            emulator = request_json(f"http://127.0.0.1:{port}/api/sessions", {"engine": "emulator"})
             evidence["checks"].append("session_create_pass")
             emulator_uri = f"ws://127.0.0.1:{port}{emulator['wsPath']}"
             with connect(emulator_uri, open_timeout=3, close_timeout=3) as websocket:
@@ -284,9 +264,7 @@ def main() -> int:
                     assert message["frame"]["frameId"] == expected
                     assert message["frame"]["players"][0]["active"]["serial"] == 1001
                     frames.append(message["frame"])
-                evidence["checks"].extend(
-                    ["three_live_steps_pass", "card_instance_identity_stable"]
-                )
+                evidence["checks"].extend(["three_live_steps_pass", "card_instance_identity_stable"])
 
                 websocket.send(json.dumps({"type": "step", "selection": [9]}))
                 rejected = json.loads(websocket.recv(timeout=3))
@@ -300,20 +278,14 @@ def main() -> int:
             assert_session_gone(emulator_uri)
             evidence["checks"].append("session_cleanup_pass")
 
-            uploaded = upload_file(
-                f"http://127.0.0.1:{port}/api/bundles",
-                bundle,
-            )
+            uploaded = upload_file(f"http://127.0.0.1:{port}/api/bundles", bundle)
             official = request_json(
                 f"http://127.0.0.1:{port}/api/sessions",
-                {
-                    "engine": "official",
-                    "bundleId": uploaded["bundleId"],
-                    "subjectPlayer": 0,
-                },
+                {"engine": "official", "bundleId": uploaded["bundleId"], "subjectPlayer": 0},
             )
             assert official["engine"] == "official-battle"
             assert official["publicProtocol"] == "1.1"
+            assert official["simulatorAvailable"] is True
             evidence["checks"].append("official_public_session_create_pass")
 
             official_uri = f"ws://127.0.0.1:{port}{official['wsPath']}"
@@ -321,10 +293,11 @@ def main() -> int:
                 snapshot = json.loads(websocket.recv(timeout=3))
                 encoded = json.dumps(snapshot, ensure_ascii=False)
                 assert snapshot["publicProtocol"] == "1.1"
-                assert snapshot["hiddenInformationPolicy"] == "player_view"
-                assert "legalSelections" not in snapshot
                 assert snapshot["controls"]["canAdvance"] is True
-                assert snapshot["frame"]["players"][1]["hand"] == []
+                assert snapshot["controls"]["simulatorAvailable"] is True
+                assert snapshot["controls"]["viewMode"] == "player"
+                assert "legalSelections" not in snapshot
+                assert_hidden(snapshot)
                 evidence["checks"].append("official_public_snapshot_pass")
 
                 for secret in (
@@ -341,6 +314,26 @@ def main() -> int:
                     assert secret not in encoded
                 evidence["checks"].append("official_raw_identifiers_absent")
 
+                websocket.send(json.dumps({"type": "set_view_mode", "mode": "simulator"}))
+                simulator = json.loads(websocket.recv(timeout=3))
+                simulator_encoded = json.dumps(simulator, ensure_ascii=False)
+                assert simulator["hiddenInformationPolicy"] == "simulator_full"
+                assert simulator["controls"]["viewMode"] == "simulator"
+                assert len(simulator["frame"]["players"][1]["hand"]) == 1
+                assert len(simulator["frame"]["players"][1]["deck"]) == 1
+                assert len(simulator["frame"]["players"][1]["prize"]) == 1
+                for secret in HIDDEN_NAMES:
+                    assert secret in simulator_encoded
+                for raw_id in HIDDEN_CARD_IDS:
+                    assert str(raw_id) not in simulator_encoded
+                evidence["checks"].append("simulator_full_reveal_pass")
+
+                websocket.send(json.dumps({"type": "set_view_mode", "mode": "player"}))
+                hidden_again = json.loads(websocket.recv(timeout=3))
+                assert hidden_again["controls"]["viewMode"] == "player"
+                assert_hidden(hidden_again)
+                evidence["checks"].append("simulator_rehide_pass")
+
                 websocket.send(json.dumps({"type": "step", "selection": [7]}))
                 hidden = json.loads(websocket.recv(timeout=3))
                 assert hidden["type"] == "error"
@@ -352,11 +345,9 @@ def main() -> int:
                 websocket.send(json.dumps({"type": "advance"}))
                 advanced = json.loads(websocket.recv(timeout=3))
                 assert advanced["frame"]["frameId"] == 1
-                assert (
-                    advanced["frame"]["players"][0]["active"]["serial"]
-                    == initial_serial
-                )
+                assert advanced["frame"]["players"][0]["active"]["serial"] == initial_serial
                 assert "legalSelections" not in advanced
+                assert_hidden(advanced)
                 evidence["checks"].append("official_advance_pass")
 
                 websocket.send(json.dumps({"type": "close"}))
@@ -377,6 +368,11 @@ def main() -> int:
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=5)
+            if process.returncode not in (0, -15):
+                stdout = process.stdout.read() if process.stdout else ""
+                stderr = process.stderr.read() if process.stderr else ""
+                print(stdout, file=sys.stderr)
+                print(stderr, file=sys.stderr)
 
 
 if __name__ == "__main__":
