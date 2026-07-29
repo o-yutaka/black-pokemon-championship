@@ -33,14 +33,23 @@ def _sha256(path: Path) -> str | None:
         return None
 
 
+def _worktree_fingerprint(head: str | None, status: str | None) -> str | None:
+    if head is None or status is None:
+        return None
+    payload = f"{head}\n{status}\n".encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
 def _runtime_git(repo_root: Path) -> dict[str, Any]:
-    status = _git(repo_root, "status", "--porcelain")
+    status = _git(repo_root, "status", "--porcelain=v1", "--untracked-files=all")
+    head = _git(repo_root, "rev-parse", "HEAD")
     return {
         "repoRoot": str(repo_root),
         "branch": _git(repo_root, "branch", "--show-current"),
-        "head": _git(repo_root, "rev-parse", "HEAD"),
+        "head": head,
         "dirty": None if status is None else bool(status),
         "dirtyEntryCount": None if status is None else len(status.splitlines()),
+        "worktreeFingerprint": _worktree_fingerprint(head, status),
     }
 
 
@@ -50,15 +59,13 @@ def _frontend_build(frontend_dist: Path, runtime_git: Mapping[str, Any]) -> dict
     built_dirty_raw = os.environ.get("BLACK_FRONTEND_BUILD_DIRTY")
     built_dirty = None if built_dirty_raw is None else built_dirty_raw == "1"
     built_at = os.environ.get("BLACK_FRONTEND_BUILT_AT") or None
-    runtime_head = runtime_git.get("head")
-    runtime_dirty = runtime_git.get("dirty")
-    provenance_known = built_head is not None and built_dirty is not None
+    built_fingerprint = os.environ.get("BLACK_FRONTEND_BUILD_FINGERPRINT") or None
+    runtime_fingerprint = runtime_git.get("worktreeFingerprint")
+    provenance_known = built_head is not None and built_dirty is not None and built_fingerprint is not None
     matches_runtime = bool(
         provenance_known
-        and runtime_head
-        and built_head == runtime_head
-        and runtime_dirty is not None
-        and built_dirty == runtime_dirty
+        and runtime_fingerprint
+        and built_fingerprint == runtime_fingerprint
     )
     index_path = frontend_dist / "index.html"
     return {
@@ -69,6 +76,7 @@ def _frontend_build(frontend_dist: Path, runtime_git: Mapping[str, Any]) -> dict
         "gitHead": built_head,
         "gitBranch": built_branch,
         "gitDirty": built_dirty,
+        "worktreeFingerprint": built_fingerprint,
         "provenanceKnown": provenance_known,
         "matchesRuntimeWorktree": matches_runtime,
     }
@@ -113,7 +121,9 @@ def build_health(live_server: Any) -> dict[str, Any]:
     warnings: list[str] = []
     if not official_start_available:
         warnings.append("OFFICIAL_RUNTIME_UNAVAILABLE")
-    if not frontend_build["provenanceKnown"]:
+    if not frontend_build["indexExists"]:
+        warnings.append("FRONTEND_BUILD_MISSING")
+    elif not frontend_build["provenanceKnown"]:
         warnings.append("FRONTEND_BUILD_PROVENANCE_UNKNOWN")
     elif not frontend_build["matchesRuntimeWorktree"]:
         warnings.append("FRONTEND_BUILD_DOES_NOT_MATCH_RUNTIME_WORKTREE")
@@ -136,8 +146,12 @@ def build_health(live_server: Any) -> dict[str, Any]:
     return {
         "ok": True,
         "service": "black-battle-studio-live-bridge",
-        "healthSchemaVersion": "2.0",
-        # Temporary compatibility for old smoke clients. New UI reads the explicit sections below.
+        "healthSchemaVersion": "2.1",
+        "fieldSemantics": {
+            "emulator": "capability_available_not_active_session",
+            "officialCabt": "new_official_session_start_available_not_current_session",
+            "frontendDist": "directory_exists_not_source_match",
+        },
         **legacy,
         "legacyFieldsDeprecated": sorted(legacy),
         "capabilities": {

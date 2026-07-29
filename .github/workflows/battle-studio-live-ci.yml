@@ -93,7 +93,10 @@ jobs:
           }
           assert required.issubset(set(result["checks"]))
           health = result["health"]
-          assert health["healthSchemaVersion"] == "2.0"
+          assert health["healthSchemaVersion"] == "2.1"
+          assert health["fieldSemantics"]["emulator"] == "capability_available_not_active_session"
+          assert health["fieldSemantics"]["officialCabt"] == "new_official_session_start_available_not_current_session"
+          assert health["fieldSemantics"]["frontendDist"] == "directory_exists_not_source_match"
           assert health["capabilities"]["officialSessionStartAvailable"] is True
           assert health["capabilities"]["simulatorViewAllowed"] is True
           assert "activeSessions" in health
