@@ -7,6 +7,7 @@ import { EngineConsole, type EngineStartRequest } from "./EngineConsole";
 import { connectLive, mergeLiveSnapshotFrames, type LiveConnection, type LiveSnapshot, type LiveStatus, type ViewMode } from "./live";
 import { motionModeJa, phaseJa, zoneJa } from "./locale";
 import { NativeRuntimePanel } from "./NativeRuntimePanel";
+import { OfficialScoreDashboardDialog } from "./OfficialScoreDashboard";
 import { analyzeReplayFailure, publishReplayFailureReport, REPLAY_EVIDENCE_FRAME_EVENT } from "./replay-failure";
 import { readReplayFile } from "./replay";
 import type { BattleFrame, BattleReplay, CardInstance } from "./types";
@@ -54,6 +55,7 @@ export default function App() {
   const [viewMode, setViewMode] = useState<ViewMode>("player");
   const [publicCards, setPublicCards] = useState<PublicCardCatalogEntry[]>([]);
   const [showSetup, setShowSetup] = useState(false);
+  const [showOfficialScores, setShowOfficialScores] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const liveRef = useRef<LiveConnection | null>(null);
   const frame = replay.frames[Math.min(frameIndex, replay.frames.length - 1)];
@@ -176,7 +178,7 @@ export default function App() {
 
       <header className="game-topbar">
         <div className="game-brand"><span className="brand-ball" /><div><strong>BLACK BATTLE</strong><small>{isLive ? "公式対戦" : "対戦ビュー"}</small></div></div>
-        <div className="game-top-actions"><button type="button" onClick={() => fileRef.current?.click()} aria-label="対戦記録を開く">記録</button><button className="primary" type="button" onClick={() => setShowSetup(true)}>対戦準備</button></div>
+        <div className="game-top-actions"><button className="official-score-launch" type="button" onClick={() => setShowOfficialScores(true)}>公式row <b>844.4</b></button><button type="button" onClick={() => fileRef.current?.click()} aria-label="対戦記録を開く">記録</button><button className="primary" type="button" onClick={() => setShowSetup(true)}>対戦準備</button></div>
       </header>
 
       <section className="game-hud" aria-label="対戦状況">
@@ -188,6 +190,7 @@ export default function App() {
       {viewMode === "simulator" && <div className="simulator-banner" role="status"><strong>シミュレーターモード ON</strong><span>両者の非公開カードを表示中。OFFへ戻すと即座に隠れます。</span></div>}
       {error && <div className="error-banner friendly-error" role="alert"><strong>開けませんでした</strong><span>{error}</span><button type="button" onClick={() => setError(null)}>閉じる</button></div>}
 
+      {showOfficialScores && <OfficialScoreDashboardDialog onClose={() => setShowOfficialScores(false)} />}
       {showSetup && <div className="sheet-backdrop" role="presentation" onMouseDown={() => setShowSetup(false)}><section className="setup-sheet game-setup-sheet" role="dialog" aria-modal="true" aria-label="対戦準備" onMouseDown={(event) => event.stopPropagation()}><header><div><span>対戦準備</span><h2>3つ選んで開始</h2><p>公式エンジン、自分のAI、相手。</p></div><button type="button" onClick={() => setShowSetup(false)}>閉じる</button></header><NativeRuntimePanel liveStatus={liveStatus} onStart={(request) => void startEngine(request)} onError={setError} /><details className="advanced-setup"><summary>外部Runner・エミュレーター</summary><EngineConsole liveStatus={liveStatus} liveEngine={liveEngine} legalSelectionCount={legalSelections.length} canAdvance={liveCanAdvance} onStart={(request) => void startEngine(request)} onStep={stepLive} onDisconnect={disconnectLive} onError={setError} /></details></section></div>}
 
       <DecisionIDE replay={replay} frame={frame} previousFrame={previousFrame} frameIndex={frameIndex} onSelectFrame={selectFrame} onSelectCard={setSelectedCard} catalog={catalog} motionMode={motionMode} />

@@ -1,0 +1,63 @@
+.official-score-backdrop { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 22px; background: rgba(2, 8, 18, .78); backdrop-filter: blur(10px); }
+.official-score-dialog { position: relative; width: min(1180px, 100%); max-height: min(900px, calc(100vh - 44px)); overflow: auto; border-radius: 26px; box-shadow: 0 36px 100px rgba(0, 0, 0, .58); }
+.official-score-close { position: sticky; top: 14px; z-index: 4; float: right; margin: 14px 14px -54px 0; border: 1px solid rgba(148, 163, 184, .45); border-radius: 999px; padding: 9px 15px; color: #0f2747; background: rgba(255, 255, 255, .92); font-weight: 900; cursor: pointer; }
+.official-score-dashboard { --official-navy: #102a4c; --official-slate: #52647b; --official-line: #dce4ee; box-sizing: border-box; min-height: 620px; padding: 42px 46px 30px; color: var(--official-navy); background: linear-gradient(145deg, #f8fbff 0%, #ffffff 46%, #f4f8fc 100%); }
+.official-score-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 28px; padding-right: 92px; }
+.official-score-kicker { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; color: #4e6680; font-size: .72rem; font-weight: 950; letter-spacing: .14em; }
+.official-live-dot { width: 9px; height: 9px; border-radius: 50%; background: #18a36b; box-shadow: 0 0 0 5px rgba(24, 163, 107, .12), 0 0 16px rgba(24, 163, 107, .42); }
+.official-score-head h2 { margin: 0; font-size: clamp(1.45rem, 3vw, 2.15rem); line-height: 1.08; letter-spacing: -.035em; }
+.official-score-head p { max-width: 700px; margin: 10px 0 0; color: var(--official-slate); font-size: .94rem; line-height: 1.55; }
+.official-score-refresh { display: grid; justify-items: end; gap: 5px; flex: 0 0 auto; padding-top: 4px; }
+.official-score-refresh > span { color: #74869c; font-size: .66rem; font-weight: 950; letter-spacing: .14em; }
+.official-score-refresh time { color: var(--official-navy); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .86rem; font-weight: 800; }
+.official-score-refresh button { margin-top: 6px; border: 1px solid #cbd7e4; border-radius: 10px; padding: 8px 11px; color: #17385f; background: #fff; font-weight: 850; cursor: pointer; }
+.official-score-refresh button:hover { border-color: #87a5c7; background: #f4f8fd; }
+.official-score-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin: 34px 0 28px; }
+.official-score-card { position: relative; overflow: hidden; min-height: 150px; padding: 21px 22px 18px; border: 1px solid #cfd9e5; border-radius: 18px; background: rgba(255, 255, 255, .84); box-shadow: 0 10px 28px rgba(16, 42, 76, .06); }
+.official-score-card::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 5px; background: var(--tone); }
+.official-score-card > span { display: block; color: var(--official-slate); font-size: .9rem; font-weight: 900; }
+.official-score-card strong { display: block; margin: 13px 0 8px; color: var(--tone); font-size: clamp(2.25rem, 5vw, 3.45rem); line-height: .95; letter-spacing: -.055em; }
+.official-score-card small { color: #718198; font-size: .76rem; font-weight: 750; }
+.official-score-card.tone-green { --tone: #159766; }
+.official-score-card.tone-blue { --tone: #2474c6; }
+.official-score-card.tone-red { --tone: #d44a4a; }
+.official-score-table { border-top: 1px solid var(--official-line); }
+.official-score-table-head, .official-score-row { display: grid; grid-template-columns: minmax(155px, .8fr) minmax(190px, 1.25fr) minmax(170px, .9fr) minmax(260px, 1.55fr); gap: 18px; align-items: center; }
+.official-score-table-head { padding: 13px 8px 9px; color: #8392a4; font-size: .65rem; font-weight: 950; letter-spacing: .13em; }
+.official-score-row { min-height: 66px; padding: 9px 8px; border-top: 1px solid #e5ebf2; }
+.official-score-row > strong { color: var(--official-navy); font-size: .91rem; }
+.official-status { display: inline-flex; align-items: center; justify-content: center; min-width: 94px; border-radius: 999px; padding: 7px 10px; color: #fff; font-size: .62rem; font-weight: 950; letter-spacing: .045em; white-space: nowrap; }
+.status-complete { background: #169a68; }
+.status-public_notebook_only { background: #2a73bd; }
+.status-hard_rule { background: #142f52; }
+.official-row-value { display: grid; gap: 3px; }
+.official-row-value b { color: #243e5f; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .78rem; }
+.official-row-value small { color: #6e7f94; font-size: .84rem; font-weight: 900; }
+.official-row-decision { color: #5c6d82; font-size: .78rem; font-weight: 700; line-height: 1.35; }
+.official-score-guard { display: flex; align-items: center; gap: 18px; margin-top: 22px; padding: 16px 18px; border: 1px solid #d6e0eb; border-radius: 14px; background: #f1f6fb; }
+.official-score-guard > span { flex: 0 0 auto; border-radius: 999px; padding: 7px 10px; color: #fff; background: #142f52; font-size: .62rem; font-weight: 950; letter-spacing: .08em; }
+.official-score-guard p { margin: 0; color: #5c6c80; font-size: .78rem; line-height: 1.45; }
+.official-score-launch { border: 1px solid rgba(100, 145, 196, .44) !important; color: #d9ebff !important; background: linear-gradient(135deg, rgba(26, 68, 112, .92), rgba(14, 41, 72, .96)) !important; }
+.official-score-launch b { margin-left: 5px; color: #7fe0b5; }
+@media (max-width: 900px) {
+  .official-score-dashboard { padding: 34px 24px 26px; }
+  .official-score-head { padding-right: 70px; }
+  .official-score-cards { gap: 12px; }
+  .official-score-table-head { display: none; }
+  .official-score-row { grid-template-columns: 1fr 1fr; gap: 10px 16px; padding: 16px 6px; }
+  .official-score-row > div, .official-score-row > strong { align-self: center; }
+  .official-row-decision { grid-column: 1 / -1; }
+}
+@media (max-width: 660px) {
+  .official-score-backdrop { padding: 0; }
+  .official-score-dialog { width: 100%; max-height: 100vh; border-radius: 0; }
+  .official-score-dashboard { min-height: 100vh; padding: 28px 16px 30px; }
+  .official-score-head { display: block; padding-right: 54px; }
+  .official-score-refresh { justify-items: start; margin-top: 18px; }
+  .official-score-cards { grid-template-columns: 1fr; }
+  .official-score-card { min-height: 118px; }
+  .official-score-card strong { font-size: 2.65rem; }
+  .official-score-row { grid-template-columns: 1fr; gap: 8px; }
+  .official-row-decision { grid-column: auto; }
+  .official-score-guard { align-items: flex-start; flex-direction: column; gap: 9px; }
+}
