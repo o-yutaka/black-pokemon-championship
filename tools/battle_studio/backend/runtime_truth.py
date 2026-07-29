@@ -107,6 +107,7 @@ def build_health(live_server: Any) -> dict[str, Any]:
     native_engine_count = len(live_server.NATIVE.engines)
     official_start_available = official_process or native_engine_count > 0
     simulator_allowed = bool(live_server._simulator_view_available())
+    card_catalog_available = bool(live_server._card_catalog_available())
     active_sessions = _active_sessions(live_server.SESSIONS)
 
     warnings: list[str] = []
@@ -119,17 +120,33 @@ def build_health(live_server: Any) -> dict[str, Any]:
     if runtime_git["dirty"]:
         warnings.append("RUNTIME_WORKTREE_DIRTY")
 
+    legacy = {
+        "emulator": True,
+        "officialCabt": official_start_available,
+        "officialProcessRunner": official_process,
+        "nativeOfficialEngineCount": native_engine_count,
+        "nativeBundleCount": len(live_server.NATIVE.bundles),
+        "cardCatalog": card_catalog_available,
+        "frontendDist": live_server.FRONTEND_DIST.is_dir(),
+        "publicView": live_server.PUBLIC_PROTOCOL_VERSION,
+        "simulatorView": simulator_allowed,
+        "pid": os.getpid(),
+    }
+
     return {
         "ok": True,
         "service": "black-battle-studio-live-bridge",
         "healthSchemaVersion": "2.0",
+        # Temporary compatibility for old smoke clients. New UI reads the explicit sections below.
+        **legacy,
+        "legacyFieldsDeprecated": sorted(legacy),
         "capabilities": {
             "emulatorAvailable": True,
             "officialProcessRunnerAvailable": official_process,
             "nativeOfficialEngineCount": native_engine_count,
             "officialSessionStartAvailable": official_start_available,
             "simulatorViewAllowed": simulator_allowed,
-            "cardCatalogAvailable": bool(live_server._card_catalog_available()),
+            "cardCatalogAvailable": card_catalog_available,
             "publicViewProtocol": live_server.PUBLIC_PROTOCOL_VERSION,
         },
         "activeSessions": active_sessions,
@@ -143,16 +160,5 @@ def build_health(live_server: Any) -> dict[str, Any]:
             "nativeBundleCount": len(live_server.NATIVE.bundles),
         },
         "warnings": warnings,
-        "legacy": {
-            "emulator": True,
-            "officialCabt": official_start_available,
-            "officialProcessRunner": official_process,
-            "nativeOfficialEngineCount": native_engine_count,
-            "nativeBundleCount": len(live_server.NATIVE.bundles),
-            "cardCatalog": bool(live_server._card_catalog_available()),
-            "frontendDist": live_server.FRONTEND_DIST.is_dir(),
-            "publicView": live_server.PUBLIC_PROTOCOL_VERSION,
-            "simulatorView": simulator_allowed,
-            "pid": os.getpid(),
-        },
+        "legacy": legacy,
     }
