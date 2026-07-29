@@ -18,6 +18,7 @@ for argument in "$@"; do
       printf '  --iphone     WindowsのLANポート転送とFirewallを管理者権限で設定する\n'
       printf '  --simulator  公式セッション限定の全カード表示切替を許可する（初期値OFF）\n'
       printf '  カードDBを手動指定する場合: BLACK_CARD_DATA_DIR=/path/to/data bash tools/battle_studio/start_bridge.sh\n'
+      printf '  別ポートの場合: BLACK_BATTLE_STUDIO_PORT=8010 bash tools/battle_studio/start_bridge.sh\n'
       exit 0
       ;;
     *) printf '不明な引数: %s\n' "$argument" >&2; exit 2 ;;
@@ -27,6 +28,8 @@ done
 command -v node >/dev/null || { echo 'Node.jsがありません' >&2; exit 1; }
 command -v npm >/dev/null || { echo 'npmがありません' >&2; exit 1; }
 command -v python3 >/dev/null || { echo 'python3がありません' >&2; exit 1; }
+command -v git >/dev/null || { echo 'gitがありません' >&2; exit 1; }
+command -v sha256sum >/dev/null || { echo 'sha256sumがありません' >&2; exit 1; }
 
 # Never mistake an older Bridge on the same port for this launch.
 HEALTH_TMP="$(mktemp)"
@@ -40,22 +43,23 @@ with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=1) as
     sys.stdout.buffer.write(response.read())
 PY
 then
-  EXISTING_PID="$(python3 - "$HEALTH_TMP" <<'PY'
+  python3 - "$HEALTH_TMP" <<'PY' >&2 || true
 import json, sys
 try:
     value = json.load(open(sys.argv[1], encoding="utf-8"))
 except Exception:
-    print("unknown")
+    print("既存BridgeのhealthはJSONとして読めません")
 else:
-    print(value.get("runtime", {}).get("pid", value.get("pid", "unknown")))
+    runtime = value.get("runtime") or {}
+    git = runtime.get("git") or {}
+    build = runtime.get("frontendBuild") or {}
+    print("エラー: このportでは既にBridgeが応答しています。新しいbuildへ接続したふりをせず停止します。")
+    print(f"既存PID: {runtime.get('pid', value.get('pid', 'unknown'))}")
+    print(f"既存CWD: {runtime.get('cwd', 'unknown')}")
+    print(f"既存source: {git.get('branch', 'unknown')} @ {git.get('head', 'unknown')}")
+    print(f"既存build: {build.get('gitBranch', 'unknown')} @ {build.get('gitHead', 'unknown')}")
 PY
-)"
-  printf 'エラー: port %s では既にBridgeが応答しています。新しいbuildへ接続したふりをせず停止します。\n' "$PORT" >&2
-  printf '既存PID: %s\n' "$EXISTING_PID" >&2
-  if [[ "$EXISTING_PID" =~ ^[0-9]+$ && -e "/proc/$EXISTING_PID/cwd" ]]; then
-    printf '既存CWD: %s\n' "$(readlink -f "/proc/$EXISTING_PID/cwd")" >&2
-  fi
-  printf '既存プロセスを停止してから再実行してください。\n' >&2
+  printf '既存プロセスを停止するか、BLACK_BATTLE_STUDIO_PORTで別ポートを指定してください。\n' >&2
   exit 3
 fi
 if command -v ss >/dev/null && ss -ltn "sport = :$PORT" 2>/dev/null | grep -q LISTEN; then
@@ -72,18 +76,21 @@ fi
 
 GIT_HEAD="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || true)"
 GIT_BRANCH="$(git -C "$ROOT" branch --show-current 2>/dev/null || true)"
+DIRTY_OUTPUT="$(git -C "$ROOT" status --porcelain=v1 --untracked-files=all 2>/dev/null || true)"
 GIT_DIRTY=0
 DIRTY_COUNT=0
-if DIRTY_OUTPUT="$(git -C "$ROOT" status --porcelain 2>/dev/null)" && [[ -n "$DIRTY_OUTPUT" ]]; then
+if [[ -n "$DIRTY_OUTPUT" ]]; then
   GIT_DIRTY=1
   DIRTY_COUNT="$(printf '%s\n' "$DIRTY_OUTPUT" | wc -l | tr -d ' ')"
 fi
+GIT_FINGERPRINT="$(printf '%s\n%s\n' "$GIT_HEAD" "$DIRTY_OUTPUT" | sha256sum | awk '{print $1}')"
 export BLACK_FRONTEND_BUILD_HEAD="$GIT_HEAD"
 export BLACK_FRONTEND_BUILD_BRANCH="$GIT_BRANCH"
 export BLACK_FRONTEND_BUILD_DIRTY="$GIT_DIRTY"
+export BLACK_FRONTEND_BUILD_FINGERPRINT="$GIT_FINGERPRINT"
 export BLACK_FRONTEND_BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-printf '\nSOURCE branch=%s head=%s dirty=%s entries=%s\n' "${GIT_BRANCH:-detached}" "${GIT_HEAD:-unknown}" "$GIT_DIRTY" "$DIRTY_COUNT"
+printf '\nSOURCE branch=%s head=%s dirty=%s entries=%s fingerprint=%s\n' "${GIT_BRANCH:-detached}" "${GIT_HEAD:-unknown}" "$GIT_DIRTY" "$DIRTY_COUNT" "$GIT_FINGERPRINT"
 
 printf '\n[1/5] フロントエンド依存関係を確認\n'
 cd "$FRONTEND"
@@ -157,6 +164,7 @@ if [[ -n "$WINDOWS_IP" ]]; then
 fi
 printf 'source        : %s @ %s dirty=%s\n' "${GIT_BRANCH:-detached}" "${GIT_HEAD:0:12}" "$GIT_DIRTY"
 printf 'build time    : %s\n' "$BLACK_FRONTEND_BUILT_AT"
+printf 'build指紋     : %s\n' "$GIT_FINGERPRINT"
 printf 'カードDB      : %s\n' "$CARD_DATA_SUMMARY"
 printf '全カード表示  : %s\n' "$SIMULATOR_SUMMARY"
 printf '公式Runtime   : 起動後 /api/health の capabilities を確認\n'
