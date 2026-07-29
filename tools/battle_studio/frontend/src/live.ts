@@ -1,5 +1,5 @@
 import type { PublicCardCatalogEntry } from "./cardArt";
-import { battleFrameSchema, type BattleFrame } from "./types";
+import { battleFrameSchema, type BattleFrame, type BattleReplay } from "./types";
 
 export type LiveStatus = "disconnected" | "connecting" | "connected" | "closed" | "error";
 export type ViewMode = "player" | "simulator";
@@ -91,6 +91,20 @@ export function parseLiveSnapshot(raw: unknown): LiveSnapshot | null {
     publicProtocol: typeof value.publicProtocol === "string" ? value.publicProtocol : null,
     hiddenInformationPolicy,
   };
+}
+
+export function mergeLiveSnapshotFrames(
+  current: Pick<BattleReplay, "replayId" | "hiddenInformationPolicy" | "frames">,
+  snapshot: LiveSnapshot,
+): BattleFrame[] {
+  const sameSession = current.replayId === snapshot.sessionId;
+  const simulatorTurnedOff =
+    sameSession
+    && current.hiddenInformationPolicy === "simulator_full"
+    && snapshot.hiddenInformationPolicy === "player_view";
+  if (!sameSession || simulatorTurnedOff) return [snapshot.frame];
+  return [...current.frames.filter((item) => item.frameId !== snapshot.frame.frameId), snapshot.frame]
+    .sort((left, right) => left.frameId - right.frameId);
 }
 
 export async function connectLive(
