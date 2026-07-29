@@ -7,13 +7,16 @@ BACKEND="$ROOT/tools/battle_studio/backend"
 VENV="${BLACK_BATTLE_STUDIO_VENV:-$ROOT/.venv-battle-studio}"
 PORT="${BLACK_BATTLE_STUDIO_PORT:-8000}"
 ENABLE_IPHONE=0
+ENABLE_SIMULATOR=0
 
 for argument in "$@"; do
   case "$argument" in
     --iphone) ENABLE_IPHONE=1 ;;
+    --simulator) ENABLE_SIMULATOR=1 ;;
     --help|-h)
-      printf '使い方: bash tools/battle_studio/start_bridge.sh [--iphone]\n'
-      printf '  --iphone  WindowsのLANポート転送とFirewallを管理者権限で設定する\n'
+      printf '使い方: bash tools/battle_studio/start_bridge.sh [--iphone] [--simulator]\n'
+      printf '  --iphone     WindowsのLANポート転送とFirewallを管理者権限で設定する\n'
+      printf '  --simulator  ローカル限定の全カード表示切替を有効にする（画面上の初期値はOFF）\n'
       printf '  カードDBを手動指定する場合: BLACK_CARD_DATA_DIR=/path/to/data bash tools/battle_studio/start_bridge.sh\n'
       exit 0
       ;;
@@ -21,9 +24,15 @@ for argument in "$@"; do
   esac
 done
 
+if [[ "$ENABLE_SIMULATOR" == "1" ]]; then
+  export BLACK_ALLOW_SIMULATOR_VIEW=1
+else
+  unset BLACK_ALLOW_SIMULATOR_VIEW 2>/dev/null || true
+fi
+
 command -v node >/dev/null || { echo 'Node.jsがありません' >&2; exit 1; }
 command -v npm >/dev/null || { echo 'npmがありません' >&2; exit 1; }
-command -v python3 >/dev/null || { echo 'Python3がありません' >&2; exit 1; }
+command -v python3 >/dev/null || { echo 'python3がありません' >&2; exit 1; }
 
 printf '\n[1/5] フロントエンド依存関係を確認\n'
 cd "$FRONTEND"
@@ -84,14 +93,20 @@ if command -v powershell.exe >/dev/null; then
   WINDOWS_IP="$(powershell.exe -NoProfile -Command "(Get-NetIPConfiguration | Where-Object { \$_.NetAdapter.Status -eq 'Up' -and \$_.IPv4DefaultGateway } | Select-Object -First 1).IPv4Address.IPAddress" 2>/dev/null | tr -d '\r' | head -n 1 || true)"
 fi
 
+SIMULATOR_SUMMARY="無効"
+if [[ "$ENABLE_SIMULATOR" == "1" ]]; then
+  SIMULATOR_SUMMARY="有効（画面の初期値はOFF）"
+fi
+
 printf '\n============================================================\n'
 printf 'BLACK Battle Studio Bridge 起動\n'
-printf 'PC URL     : %s\n' "$PC_URL"
+printf 'PC URL       : %s\n' "$PC_URL"
 if [[ -n "$WINDOWS_IP" ]]; then
-  printf 'iPhone URL : http://%s:%s/\n' "$WINDOWS_IP" "$PORT"
+  printf 'iPhone URL   : http://%s:%s/\n' "$WINDOWS_IP" "$PORT"
 fi
-printf 'カードDB    : %s\n' "$CARD_DATA_SUMMARY"
-printf '停止        : Ctrl+C\n'
+printf 'カードDB      : %s\n' "$CARD_DATA_SUMMARY"
+printf '全カード表示  : %s\n' "$SIMULATOR_SUMMARY"
+printf '停止          : Ctrl+C\n'
 printf '============================================================\n\n'
 
 (
