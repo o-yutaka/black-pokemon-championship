@@ -1,4 +1,5 @@
 export type OfficialRowStatus = "COMPLETE" | "PUBLIC_NOTEBOOK_ONLY" | "HARD_RULE";
+export type OfficialScoreDataMode = "STATIC_SNAPSHOT" | "IMPORTED_SNAPSHOT";
 
 export type OfficialScoreCard = {
   id: string;
@@ -20,16 +21,22 @@ export type OfficialScoreRow = {
 export type OfficialScoreDashboardData = {
   title: string;
   subtitle: string;
-  refreshedAt: string;
+  capturedAt: string;
+  sourceLabel: string;
+  dataMode: OfficialScoreDataMode;
+  automaticRefresh: false;
   cards: OfficialScoreCard[];
   rows: OfficialScoreRow[];
   guardNote: string;
 };
 
 export const officialScoreDashboardData: OfficialScoreDashboardData = {
-  title: "Live Pokémon official-row dashboard",
-  subtitle: "High-vote public notebook surface, exact official score boundaries, and no-delete guard.",
-  refreshedAt: "2026-07-28T22:12:00Z",
+  title: "Pokémon official-row audit snapshot",
+  subtitle: "Exact official score boundaries, public-notebook separation, and no-delete guard. This is not a live feed.",
+  capturedAt: "2026-07-28T22:12:00Z",
+  sourceLabel: "Manual audit snapshot supplied on 2026-07-28",
+  dataMode: "STATIC_SNAPSHOT",
+  automaticRefresh: false,
   cards: [
     {
       id: "owned-high-water",
@@ -60,7 +67,7 @@ export const officialScoreDashboardData: OfficialScoreDashboardData = {
       lane: "Owned high-water",
       rowId: 55056992,
       publicScore: 844.4,
-      decision: "RETAIN · current official high-water",
+      decision: "RETAIN · current official high-water at capture time",
     },
     {
       id: "rmy-souta",
@@ -103,7 +110,7 @@ export const officialScoreDashboardData: OfficialScoreDashboardData = {
       decision: "FROZEN READ-ONLY · no-delete / no-recovery guard",
     },
   ],
-  guardNote: "This visual changes no policy code and creates no official submission. It keeps the public notebook honest, current, and identity-safe.",
+  guardNote: "This snapshot changes no policy code and creates no official submission. Replace it only with a newly verified audit JSON.",
 };
 
 function csvCell(value: string | number | null): string {
@@ -122,4 +129,44 @@ export function officialScoreCsv(data: OfficialScoreDashboardData = officialScor
     row.decision,
   ].map(csvCell).join(","));
   return [header.join(","), ...lines].join("\n") + "\n";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+export function parseOfficialScoreDashboardData(value: unknown): OfficialScoreDashboardData {
+  if (!isRecord(value)) throw new Error("監査JSONの先頭はobjectである必要があります");
+  if (typeof value.title !== "string" || typeof value.subtitle !== "string") throw new Error("title / subtitleが必要です");
+  if (typeof value.capturedAt !== "string" || Number.isNaN(Date.parse(value.capturedAt))) throw new Error("capturedAtはISO日時で指定してください");
+  if (typeof value.sourceLabel !== "string") throw new Error("sourceLabelが必要です");
+  if (!Array.isArray(value.cards) || !Array.isArray(value.rows)) throw new Error("cards / rows配列が必要です");
+
+  const cards = value.cards.map((raw, index): OfficialScoreCard => {
+    if (!isRecord(raw)) throw new Error(`cards[${index}]が不正です`);
+    if (typeof raw.id !== "string" || typeof raw.title !== "string" || typeof raw.value !== "number" || typeof raw.subtitle !== "string") throw new Error(`cards[${index}]の必須項目が不足しています`);
+    if (!['green', 'blue', 'red'].includes(String(raw.tone))) throw new Error(`cards[${index}].toneが不正です`);
+    return { id: raw.id, title: raw.title, value: raw.value, subtitle: raw.subtitle, tone: raw.tone as OfficialScoreCard["tone"] };
+  });
+
+  const rows = value.rows.map((raw, index): OfficialScoreRow => {
+    if (!isRecord(raw)) throw new Error(`rows[${index}]が不正です`);
+    if (!['COMPLETE', 'PUBLIC_NOTEBOOK_ONLY', 'HARD_RULE'].includes(String(raw.status))) throw new Error(`rows[${index}].statusが不正です`);
+    if (typeof raw.id !== "string" || typeof raw.lane !== "string" || typeof raw.decision !== "string") throw new Error(`rows[${index}]の必須項目が不足しています`);
+    if (raw.rowId !== null && typeof raw.rowId !== "number") throw new Error(`rows[${index}].rowIdが不正です`);
+    if (raw.publicScore !== null && typeof raw.publicScore !== "number") throw new Error(`rows[${index}].publicScoreが不正です`);
+    return { id: raw.id, status: raw.status as OfficialRowStatus, lane: raw.lane, rowId: raw.rowId as number | null, publicScore: raw.publicScore as number | null, decision: raw.decision };
+  });
+
+  return {
+    title: value.title,
+    subtitle: value.subtitle,
+    capturedAt: value.capturedAt,
+    sourceLabel: value.sourceLabel,
+    dataMode: "IMPORTED_SNAPSHOT",
+    automaticRefresh: false,
+    cards,
+    rows,
+    guardNote: typeof value.guardNote === "string" ? value.guardNote : officialScoreDashboardData.guardNote,
+  };
 }
