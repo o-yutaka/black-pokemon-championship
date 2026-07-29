@@ -50,7 +50,11 @@ jobs:
 
       - name: Compile bridge
         working-directory: tools/battle_studio/backend
-        run: python -m py_compile emulator_engine.py live_server.py main.py public_battle_view.py complete_public_view.py official_replay_adapter.py run_connection_smoke.py
+        run: python -m py_compile emulator_engine.py live_server.py main.py runtime_truth.py public_battle_view.py complete_public_view.py official_replay_adapter.py run_connection_smoke.py
+
+      - name: Runtime truth unit tests
+        working-directory: tools/battle_studio/backend
+        run: python -m unittest -v test_runtime_truth.py
 
       - name: Real TCP and WebSocket smoke
         working-directory: tools/battle_studio/backend
@@ -88,6 +92,12 @@ jobs:
               "official_session_cleanup_pass",
           }
           assert required.issubset(set(result["checks"]))
+          health = result["health"]
+          assert health["healthSchemaVersion"] == "2.0"
+          assert health["capabilities"]["officialSessionStartAvailable"] is True
+          assert health["capabilities"]["simulatorViewAllowed"] is True
+          assert "activeSessions" in health
+          assert "runtime" in health
           print(json.dumps(result, indent=2))
           PY
 

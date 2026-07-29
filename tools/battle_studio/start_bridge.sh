@@ -16,7 +16,7 @@ for argument in "$@"; do
     --help|-h)
       printf '使い方: bash tools/battle_studio/start_bridge.sh [--iphone] [--simulator]\n'
       printf '  --iphone     WindowsのLANポート転送とFirewallを管理者権限で設定する\n'
-      printf '  --simulator  ローカル限定の全カード表示切替を有効にする（画面上の初期値はOFF）\n'
+      printf '  --simulator  公式セッション限定の全カード表示切替を許可する（初期値OFF）\n'
       printf '  カードDBを手動指定する場合: BLACK_CARD_DATA_DIR=/path/to/data bash tools/battle_studio/start_bridge.sh\n'
       exit 0
       ;;
@@ -24,15 +24,66 @@ for argument in "$@"; do
   esac
 done
 
+command -v node >/dev/null || { echo 'Node.jsがありません' >&2; exit 1; }
+command -v npm >/dev/null || { echo 'npmがありません' >&2; exit 1; }
+command -v python3 >/dev/null || { echo 'python3がありません' >&2; exit 1; }
+
+# Never mistake an older Bridge on the same port for this launch.
+HEALTH_TMP="$(mktemp)"
+trap 'rm -f "$HEALTH_TMP"' EXIT
+if python3 - "$PORT" >"$HEALTH_TMP" 2>/dev/null <<'PY'
+import sys
+import urllib.request
+
+port = int(sys.argv[1])
+with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=1) as response:
+    sys.stdout.buffer.write(response.read())
+PY
+then
+  EXISTING_PID="$(python3 - "$HEALTH_TMP" <<'PY'
+import json, sys
+try:
+    value = json.load(open(sys.argv[1], encoding="utf-8"))
+except Exception:
+    print("unknown")
+else:
+    print(value.get("runtime", {}).get("pid", value.get("pid", "unknown")))
+PY
+)"
+  printf 'エラー: port %s では既にBridgeが応答しています。新しいbuildへ接続したふりをせず停止します。\n' "$PORT" >&2
+  printf '既存PID: %s\n' "$EXISTING_PID" >&2
+  if [[ "$EXISTING_PID" =~ ^[0-9]+$ && -e "/proc/$EXISTING_PID/cwd" ]]; then
+    printf '既存CWD: %s\n' "$(readlink -f "/proc/$EXISTING_PID/cwd")" >&2
+  fi
+  printf '既存プロセスを停止してから再実行してください。\n' >&2
+  exit 3
+fi
+if command -v ss >/dev/null && ss -ltn "sport = :$PORT" 2>/dev/null | grep -q LISTEN; then
+  printf 'エラー: port %s は別プロセスが使用中です。自動killせず停止します。\n' "$PORT" >&2
+  ss -ltnp "sport = :$PORT" 2>/dev/null >&2 || true
+  exit 3
+fi
+
 if [[ "$ENABLE_SIMULATOR" == "1" ]]; then
   export BLACK_ALLOW_SIMULATOR_VIEW=1
 else
   unset BLACK_ALLOW_SIMULATOR_VIEW 2>/dev/null || true
 fi
 
-command -v node >/dev/null || { echo 'Node.jsがありません' >&2; exit 1; }
-command -v npm >/dev/null || { echo 'npmがありません' >&2; exit 1; }
-command -v python3 >/dev/null || { echo 'python3がありません' >&2; exit 1; }
+GIT_HEAD="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || true)"
+GIT_BRANCH="$(git -C "$ROOT" branch --show-current 2>/dev/null || true)"
+GIT_DIRTY=0
+DIRTY_COUNT=0
+if DIRTY_OUTPUT="$(git -C "$ROOT" status --porcelain 2>/dev/null)" && [[ -n "$DIRTY_OUTPUT" ]]; then
+  GIT_DIRTY=1
+  DIRTY_COUNT="$(printf '%s\n' "$DIRTY_OUTPUT" | wc -l | tr -d ' ')"
+fi
+export BLACK_FRONTEND_BUILD_HEAD="$GIT_HEAD"
+export BLACK_FRONTEND_BUILD_BRANCH="$GIT_BRANCH"
+export BLACK_FRONTEND_BUILD_DIRTY="$GIT_DIRTY"
+export BLACK_FRONTEND_BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+printf '\nSOURCE branch=%s head=%s dirty=%s entries=%s\n' "${GIT_BRANCH:-detached}" "${GIT_HEAD:-unknown}" "$GIT_DIRTY" "$DIRTY_COUNT"
 
 printf '\n[1/5] フロントエンド依存関係を確認\n'
 cd "$FRONTEND"
@@ -75,7 +126,7 @@ if [[ "$CARD_DATA_STATUS" == "FOUND" ]]; then
   printf 'ID一覧検出  : %s\n' "${CARD_DATA_RESULT[3]}"
 else
   printf '警告: %s\n' "${CARD_DATA_RESULT[1]:-カードDBが見つかりません}" >&2
-  printf 'Bridgeと公式Runtimeは起動できますが、カード検索はCSV配置まで使用できません。\n' >&2
+  printf 'Bridgeは起動できますが、カード検索はCSV配置まで使用できません。\n' >&2
 fi
 
 if [[ "$ENABLE_IPHONE" == "1" ]]; then
@@ -95,7 +146,7 @@ fi
 
 SIMULATOR_SUMMARY="無効"
 if [[ "$ENABLE_SIMULATOR" == "1" ]]; then
-  SIMULATOR_SUMMARY="有効（画面の初期値はOFF）"
+  SIMULATOR_SUMMARY="許可（公式セッション時のみ・初期値OFF）"
 fi
 
 printf '\n============================================================\n'
@@ -104,8 +155,11 @@ printf 'PC URL       : %s\n' "$PC_URL"
 if [[ -n "$WINDOWS_IP" ]]; then
   printf 'iPhone URL   : http://%s:%s/\n' "$WINDOWS_IP" "$PORT"
 fi
+printf 'source        : %s @ %s dirty=%s\n' "${GIT_BRANCH:-detached}" "${GIT_HEAD:0:12}" "$GIT_DIRTY"
+printf 'build time    : %s\n' "$BLACK_FRONTEND_BUILT_AT"
 printf 'カードDB      : %s\n' "$CARD_DATA_SUMMARY"
 printf '全カード表示  : %s\n' "$SIMULATOR_SUMMARY"
+printf '公式Runtime   : 起動後 /api/health の capabilities を確認\n'
 printf '停止          : Ctrl+C\n'
 printf '============================================================\n\n'
 
