@@ -26,10 +26,17 @@ def card(player: int, serial: int, card_id: int, name: str, zone: str, slot: int
 
 
 def catalog_for(limit: int = 80):
+    names = {
+        2: "Opponent Secret Hand",
+        40: "Opponent Secret Deck",
+        41: "Opponent Secret Prize",
+        50: "Self Secret Deck",
+        51: "Self Secret Prize",
+    }
     return [
         {
             "id": value,
-            "name": f"Card {value}",
+            "name": names.get(value, f"Card {value}"),
             "number": str(value),
             "expansion": "Test",
             "sourceLink": "",
@@ -133,7 +140,7 @@ class CompletePublicBattleViewTest(unittest.TestCase):
             "Self Secret Prize",
         ):
             self.assertIn(secret, simulator_encoded)
-            self.assertIn(secret.replace("Secret ", "") if False else "Card", simulator_catalog)
+            self.assertIn(secret, simulator_catalog)
 
         normal_again, normal_cards_again = view.render(sample_frame())
         normal_encoded = str(normal_again)
@@ -146,12 +153,13 @@ class CompletePublicBattleViewTest(unittest.TestCase):
             "Self Secret Prize",
         ):
             self.assertNotIn(secret, normal_encoded)
+            self.assertNotIn(secret, normal_catalog)
+
         hidden_actual_ids = {2, 40, 41, 50, 51}
         visible_catalog_ids = {entry["id"] for entry in normal_cards_again}
         simulator_catalog_ids = {entry["id"] for entry in simulator_cards}
         self.assertTrue(simulator_catalog_ids - visible_catalog_ids)
-        self.assertNotEqual(hidden_actual_ids, simulator_catalog_ids)
-        self.assertNotIn("Opponent Secret", normal_catalog)
+        self.assertTrue(hidden_actual_ids.isdisjoint(simulator_catalog_ids))
 
 
 if __name__ == "__main__":
