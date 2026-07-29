@@ -20,7 +20,7 @@ export const cardInstanceSchema = z.object({
 export const playerStateSchema = z.object({
   name: z.string(),
   active: cardInstanceSchema.nullable(),
-  bench: z.array(cardInstanceSchema).max(5),
+  bench: z.array(cardInstanceSchema).max(8),
   hand: z.array(cardInstanceSchema).default([]),
   handCount: z.number().int().nonnegative(),
   deckCount: z.number().int().nonnegative(),
