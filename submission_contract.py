@@ -15,7 +15,10 @@ ROOT_FILE_ORDER = (
 )
 BLACK_ENGINE_FILE_ORDER = (
     "__init__.py",
+    "decision_authority.py",
+    "decision_point.py",
     "decision_trace.py",
+    "hros_search_adapter.py",
     "official_search_trace.py",
     "policy.py",
     "runtime.py",
