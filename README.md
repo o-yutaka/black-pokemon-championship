@@ -4,8 +4,6 @@ A standalone stateful agent built for Kaggle CABT with a fixed Dragapult / Drakl
 
 The main engineering focus is broader than the game domain: **execute only actions exposed by the external engine, reject invalid output, degrade safely under failure, and build the exact reviewed deployment artifact**.
 
-## What this repository demonstrates
-
 | Engineering concern | Implementation |
 |---|---|
 | External action contract | Option indexes are validated against the current `select.option` array |
@@ -16,8 +14,13 @@ The main engineering focus is broader than the game domain: **execute only actio
 | Hosted-runner compatibility | Raw `exec()` probe without assuming normal `__file__` module context |
 | Reproducible packaging | Reviewed source is copied into a canonical submission bundle |
 | Honest evaluation | Fast evaluation is labeled crash/speed/regression screening, not promotion proof |
+| PC simulation | Lightweight multi-process runner using the official `cg.game` engine |
 
 Read the full transferable engineering analysis: [`docs/engineering-case-study.md`](docs/engineering-case-study.md).
+
+Read the `ptcg-abc` integration boundary: [`docs/ptcg-abc-integration.md`](docs/ptcg-abc-integration.md).
+
+Read the PC simulation guide: [`docs/pc-simulation.md`](docs/pc-simulation.md).
 
 ## Runtime boundary
 
@@ -61,7 +64,7 @@ python scripts/static_gate.py
 python -m pytest -q
 python scripts/build_submission.py \
   --cg-dir /home/user/HROS/submission/cg \
-  --out artifacts/submission.zip
+  --out artifacts/submission.tar.gz
 ```
 
 The static gate:
@@ -71,6 +74,26 @@ The static gate:
 - builds and extracts the submission artifact
 - runs the extracted entrypoint through isolated raw `exec()`
 - verifies the 60-card deck handshake and a normal option-index response
+
+## Lightweight PC simulation
+
+For repeated local matches without launching a subprocess per worker:
+
+```bash
+python scripts/pc_simulate.py \
+  --cg-dir /home/user/HROS/submission/cg \
+  --opponent-deck /path/to/opponent.csv \
+  --games 10000 \
+  --workers 8
+```
+
+The runner keeps the official `cg.game` engine as the game truth source, uses one engine instance per spawned worker, preserves `SubmissionRuntime` legality/fallback, and writes:
+
+```text
+artifacts/pc_simulation/summary.json
+```
+
+This is for local crash/speed/regression/strategy screening. It is explicitly **not official leaderboard evidence**.
 
 ## Fast regression screen
 
@@ -99,7 +122,8 @@ This harness is for crash, speed, and regression screening against the supplied 
 3. [`scripts/static_gate.py`](scripts/static_gate.py) — deployment-artifact execution gate
 4. [`black_engine/policy.py`](black_engine/policy.py) — deterministic stateful policy
 5. [`scripts/build_submission.py`](scripts/build_submission.py) — canonical builder
-6. [`scripts/fast_eval.py`](scripts/fast_eval.py) — bounded evaluation screen
+6. [`scripts/pc_simulate.py`](scripts/pc_simulate.py) — lightweight PC multi-process simulation
+7. [`scripts/fast_eval.py`](scripts/fast_eval.py) — bounded evaluation screen
 
 ## Transfer to business agents
 
