@@ -4,6 +4,8 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from .decision_authority import DecisionAuthority
+
 
 @dataclass(frozen=True)
 class RuntimeDecision:
@@ -61,6 +63,7 @@ class SubmissionRuntime:
         self.deck = [int(card) for card in deck]
         self.budget_ms = max(1.0, float(budget_ms))
         self._last_overlay: dict[str, Any] | None = None
+        self._authority = DecisionAuthority(policy)
         if hasattr(policy, "set_deck"):
             policy.set_deck(self.deck)
 
@@ -80,6 +83,22 @@ class SubmissionRuntime:
         overlay["elapsedMs"] = elapsed_ms
         overlay["runtimeSource"] = source
         overlay["runtimeSelection"] = list(selection)
+        points = self._authority.last_points
+        overlay["decisionPoint"] = {
+            "count": len(points),
+            "options": [
+                {
+                    "optionIndex": point.option_index,
+                    "actionType": point.action_type,
+                    "cardId": point.card_id,
+                    "targetId": point.target_id,
+                    "semantic": point.semantic,
+                }
+                for point in points
+            ],
+            "authority": source,
+            "hrosVerified": self._authority.last_hros_verified,
+        }
         warnings = list(overlay.get("warnings") or [])
         if error:
             warnings.append(error)
@@ -103,12 +122,13 @@ class SubmissionRuntime:
 
         error = None
         try:
-            proposed = self.policy.agent(obs, configuration)
+            authority = self._authority.decide(obs, configuration)
+            proposed = authority.selection
             elapsed = (time.perf_counter() - started) * 1000.0
             legal = legalize_selection(obs, proposed)
             if legal is not None and elapsed <= self.budget_ms:
-                self._capture_overlay(source="policy", selection=legal, elapsed_ms=elapsed)
-                return RuntimeDecision(legal, "policy", elapsed)
+                self._capture_overlay(source=authority.source, selection=legal, elapsed_ms=elapsed)
+                return RuntimeDecision(legal, authority.source, elapsed)
             error = "timeout" if elapsed > self.budget_ms else "invalid_selection"
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"
