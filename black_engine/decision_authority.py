@@ -6,7 +6,7 @@ from typing import Any
 
 from .decision_point import DecisionPoint, build_decision_points
 from .hros_search_adapter import HROSSearchAdapter
-from .support import legalize_selection if False else normalize_selection
+from .support import normalize_selection
 
 
 @dataclass(frozen=True)
@@ -22,8 +22,8 @@ class DecisionAuthority:
 
     The existing DragapultPolicy remains the canonical policy. This layer does
     not invent actions or bypass the runtime legality gate. HROS promotion is
-    opt-in so the production submission remains behavior-compatible until the
-    external verifier is proven against the official engine.
+    opt-in so production behavior stays unchanged until the external verifier
+    is proven against the official engine.
     """
 
     def __init__(self, policy: Any) -> None:
@@ -36,10 +36,9 @@ class DecisionAuthority:
     def decide(self, obs: dict, configuration: Any = None) -> AuthorityResult:
         self.last_points = build_decision_points(obs)
         self.last_hros_verified = False
-        selection = self.policy.agent(obs, configuration)
-        selection = normalize_selection(obs, selection)
+        selection = normalize_selection(obs, self.policy.agent(obs, configuration))
 
-        # HROS is an external verifier. It may propose a legal alternative only
+        # HROS is an external verifier. It can propose a legal alternative only
         # when explicitly enabled; otherwise it remains evidence-only.
         if self.hros.available and os.environ.get("BLACK_ENABLE_HROS_PROMOTION") == "1":
             indexes = [point.option_index for point in self.last_points]
