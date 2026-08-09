@@ -4,6 +4,8 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from .decision_engine import DecisionEngine
+
 
 @dataclass(frozen=True)
 class RuntimeDecision:
@@ -61,6 +63,7 @@ class SubmissionRuntime:
         self.deck = [int(card) for card in deck]
         self.budget_ms = max(1.0, float(budget_ms))
         self._last_overlay: dict[str, Any] | None = None
+        self._decision_engine = DecisionEngine(policy) if all(callable(getattr(policy, name, None)) for name in ("build_context", "score_option")) else None
         if hasattr(policy, "set_deck"):
             policy.set_deck(self.deck)
 
@@ -80,13 +83,21 @@ class SubmissionRuntime:
         overlay["elapsedMs"] = elapsed_ms
         overlay["runtimeSource"] = source
         overlay["runtimeSelection"] = list(selection)
+        if self._decision_engine is not None and self._decision_engine.last_result is not None:
+            result = self._decision_engine.last_result
+            overlay["decisionAuthority"] = result.authority
+            overlay["decisionPointCount"] = len(result.candidates)
+            overlay["officialSearchUsed"] = result.searched
+            overlay["candidateScores"] = [
+                {"optionIndex": c.point.option_index, "score": c.score, "reason": c.reason, "officialVerified": c.official_verified}
+                for c in result.candidates
+            ]
         warnings = list(overlay.get("warnings") or [])
         if error:
             warnings.append(error)
         overlay["warnings"] = warnings
         ledger = dict(overlay.get("truthLedger") or {})
         ledger.update({"runtime": source, "runtimeSelection": list(selection), "runtimeError": error})
-        overlay["truthLedger"] = ledger
         self._last_overlay = overlay
 
     def get_decision_overlay(self) -> dict[str, Any] | None:
@@ -103,12 +114,18 @@ class SubmissionRuntime:
 
         error = None
         try:
-            proposed = self.policy.agent(obs, configuration)
+            if self._decision_engine is not None:
+                result = self._decision_engine.evaluate(obs)
+                proposed = result.selection
+                source = "decision_engine"
+            else:
+                proposed = self.policy.agent(obs, configuration)
+                source = "policy"
             elapsed = (time.perf_counter() - started) * 1000.0
             legal = legalize_selection(obs, proposed)
             if legal is not None and elapsed <= self.budget_ms:
-                self._capture_overlay(source="policy", selection=legal, elapsed_ms=elapsed)
-                return RuntimeDecision(legal, "policy", elapsed)
+                self._capture_overlay(source=source, selection=legal, elapsed_ms=elapsed)
+                return RuntimeDecision(legal, source, elapsed)
             error = "timeout" if elapsed > self.budget_ms else "invalid_selection"
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"
