@@ -1,0 +1,31 @@
+name: BLACK Pokemon Competition Exec
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [competition-exec]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install test dependencies
+        run: python -m pip install -U pytest
+      - name: Static gate
+        run: python scripts/static_gate.py
+      - name: Unit tests
+        run: python -m pytest -q
+      - name: Build submission artifact
+        run: |
+          mkdir -p /tmp/empty-cg
+          python scripts/build_submission.py --cg-dir /tmp/empty-cg --out artifacts/submission.tar.gz
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: black-pokemon-competition-${{ github.sha }}
+          path: artifacts/
